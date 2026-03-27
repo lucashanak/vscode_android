@@ -28,7 +28,6 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import android.widget.FrameLayout
 import org.json.JSONObject
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
@@ -519,10 +518,6 @@ class MainActivity : AppCompatActivity() {
             ): GeckoResult<Any>? {
                 if (message is JSONObject) {
                     when (message.optString("type")) {
-                        "resize" -> {
-                            val reservedPx = message.optInt("height", 0)
-                            runOnUiThread { resizeGeckoView(reservedPx) }
-                        }
                         "overlayVisibility" -> {
                             val visible = message.optBoolean("visible", false)
                             runOnUiThread { onOverlayVisibilityChanged(visible) }
@@ -546,18 +541,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun resizeGeckoView(reservedCssPx: Int) {
-        val params = geckoView.layoutParams as FrameLayout.LayoutParams
-        // CSS pixels → Android physical pixels (density conversion)
-        val newMargin = if (reservedCssPx > 0) {
-            (reservedCssPx * resources.displayMetrics.density).toInt()
-        } else 0
-        if (params.bottomMargin != newMargin) {
-            params.bottomMargin = newMargin
-            geckoView.layoutParams = params
-            FileLogger.d(TAG, "GeckoView bottom margin: ${reservedCssPx}css → ${newMargin}px (density=${resources.displayMetrics.density})")
-        }
-    }
+
 
     private fun openAuthPopup(uri: String): GeckoResult<GeckoSession>? {
         // IMPORTANT: Do NOT call session.open() — onNewSession requires an unopened session.
@@ -662,7 +646,6 @@ class MainActivity : AppCompatActivity() {
         tunnelSession = null
         currentTunnelUrl = null
         sysKBSuppressed = false
-        resizeGeckoView(0)
         geckoView.visibility = View.GONE
         launcherScroll.visibility = View.VISIBLE
     }

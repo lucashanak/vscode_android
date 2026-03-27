@@ -1,14 +1,12 @@
 /* ================================================================
-   VS Code Tunnel Client — Overlay Styles
+   VS Code Tunnel — Overlay Styles
    ================================================================ */
 
 #vsc-overlay {
     position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
+    bottom: 0; left: 0; right: 0;
     z-index: 999999;
-    background: rgba(30, 30, 30, 0.95);
+    background: rgba(30, 30, 30, 0.96);
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
@@ -17,7 +15,6 @@
     user-select: none;
     -webkit-user-select: none;
 }
-
 #vsc-overlay.vsc-collapsed {
     transform: translateY(100%) !important;
     opacity: 0;
@@ -33,11 +30,9 @@
     background: rgba(20, 20, 20, 0.9);
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
-
 .vsc-tool-btn {
     padding: 5px 10px;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 12px; font-weight: 600;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     background: rgba(255, 255, 255, 0.08);
     color: #aaa;
@@ -46,54 +41,35 @@
     cursor: pointer;
     touch-action: manipulation;
 }
-
 .vsc-tool-btn.vsc-active {
-    background: #007acc;
-    color: #fff;
-    border-color: #007acc;
+    background: #007acc; color: #fff; border-color: #007acc;
 }
-
 .vsc-spacer { flex: 1; }
 
 /* ---- Panels ---- */
-.vsc-panels-container {
-    display: block;
-}
+.vsc-panels-container { display: block; }
+.vsc-panel { display: none; padding: 2px; }
+.vsc-panel.vsc-active-panel { display: block; }
 
-.vsc-panel {
-    display: none;
-    padding: 2px;
-}
-
-.vsc-panel.vsc-active-panel {
-    display: block;
-}
-
-/* ---- Keyboard ---- */
+/* ---- Keyboard rows ---- */
 .vsc-row {
     display: flex;
     gap: 2px;
     padding: 1px 2px;
     flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
     justify-content: center;
 }
-
-.vsc-row::-webkit-scrollbar { display: none; }
-
 .vsc-key {
     flex: 1 1 0;
     min-width: 0;
-    height: 32px;
-    padding: 0 1px;
-    font-size: 11px;
-    font-weight: 500;
+    height: 38px;
+    padding: 0 2px;
+    font-size: 14px; font-weight: 500;
     font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
     background: rgba(255, 255, 255, 0.1);
     color: #ddd;
     border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
+    border-radius: 4px;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -101,32 +77,31 @@
     touch-action: manipulation;
     transition: background 0.08s;
 }
-
 .vsc-key:active, .vsc-key.vsc-pressed {
     background: rgba(0, 122, 204, 0.5);
     border-color: #007acc;
 }
-
 .vsc-key.vsc-active {
-    background: #007acc;
-    color: #fff;
-    border-color: #007acc;
+    background: #007acc; color: #fff; border-color: #007acc;
 }
 
-/* Shifted letters */
 .vsc-shifted .vsc-char-key { text-transform: uppercase; }
-
-/* Wider keys */
-.vsc-wide-key { flex: 1.5 1 0; }
 .vsc-space-key { flex: 3 1 0; }
-.vsc-fkey { font-size: 9px; }
-.vsc-arrow { font-size: 12px; }
+.vsc-mod-btn { font-size: 11px; }
 
-/* Symbol row — fixed width, scrollable */
-.vsc-row-symbols .vsc-key {
+/* Scrollable rows (supplementary keys) */
+.vsc-row-scroll {
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.vsc-row-scroll::-webkit-scrollbar { display: none; }
+.vsc-row-scroll .vsc-key {
     flex: 0 0 auto;
-    min-width: 28px;
-    padding: 0 4px;
+    min-width: 32px;
+    height: 30px;
+    padding: 0 5px;
+    font-size: 11px;
 }
 
 /* ---- Touchpad ---- */
@@ -134,9 +109,9 @@
     display: flex;
     flex-direction: column;
 }
-
 .vsc-touchpad-area {
-    height: 160px;
+    flex: 1;
+    min-height: 120px;
     margin: 4px;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -146,25 +121,21 @@
     justify-content: center;
     touch-action: none;
 }
-
 .vsc-touchpad-hint {
     color: rgba(255, 255, 255, 0.2);
     font-size: 14px;
     pointer-events: none;
     font-family: -apple-system, BlinkMacSystemFont, sans-serif;
 }
-
 .vsc-touchpad-buttons {
     display: flex;
     gap: 4px;
     padding: 4px;
 }
-
 .vsc-tp-btn {
     flex: 1;
     height: 36px;
-    font-size: 13px;
-    font-weight: 500;
+    font-size: 13px; font-weight: 500;
     font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     background: rgba(255, 255, 255, 0.08);
     color: #bbb;
@@ -173,7 +144,6 @@
     cursor: pointer;
     touch-action: manipulation;
 }
-
 .vsc-tp-btn:active {
     background: rgba(0, 122, 204, 0.4);
     border-color: #007acc;
@@ -181,8 +151,7 @@
 
 /* ---- Cursor ---- */
 #vsc-cursor {
-    position: fixed;
-    top: 0; left: 0;
+    position: fixed; top: 0; left: 0;
     width: 12px; height: 12px;
     margin-left: -6px; margin-top: -6px;
     background: rgba(0, 122, 204, 0.8);
@@ -202,59 +171,67 @@
     border-radius: 50%;
     background: rgba(0, 122, 204, 0.9);
     color: #fff;
-    font-size: 16px;
-    font-weight: bold;
+    font-size: 16px; font-weight: bold;
     border: 2px solid rgba(255, 255, 255, 0.3);
     cursor: pointer;
     z-index: 1000001;
     display: none;
-    align-items: center;
-    justify-content: center;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
     touch-action: manipulation;
 }
+#vsc-float-toggle:active { background: rgba(0, 90, 160, 0.9); }
 
-#vsc-float-toggle:active {
-    background: rgba(0, 90, 160, 0.9);
-}
-
-/* ---- Wide display: side-by-side ---- */
+/* ==== WIDE DISPLAY: side-by-side, KB wider ==== */
 @media (min-width: 901px) {
-    #vsc-overlay.vsc-wide .vsc-toolbar .vsc-tab-btn { display: none; }
+    #vsc-overlay.vsc-wide .vsc-toolbar #vsc-tp-toggle { display: none; }
 
     #vsc-overlay.vsc-wide .vsc-panels-container {
         display: flex;
         flex-direction: row;
+        align-items: stretch;
     }
-
     #vsc-overlay.vsc-wide .vsc-panel {
         display: block;
-        flex: 1;
+    }
+    #vsc-overlay.vsc-wide .vsc-keyboard-panel {
+        flex: 2;
         min-width: 0;
     }
-
     #vsc-overlay.vsc-wide .vsc-touchpad-panel {
         display: flex;
         flex-direction: column;
+        flex: 1;
+        min-width: 0;
         border-left: 1px solid rgba(255, 255, 255, 0.1);
-        max-width: 40%;
+    }
+    /* Touchpad fills remaining height to match keyboard */
+    #vsc-overlay.vsc-wide .vsc-touchpad-area {
+        flex: 1;
+        min-height: 0;
     }
 
-    #vsc-overlay.vsc-wide .vsc-touchpad-area { height: 120px; }
+    #vsc-overlay.vsc-wide .vsc-key {
+        height: 34px;
+        font-size: 12px;
+    }
+    #vsc-overlay.vsc-wide .vsc-row-scroll .vsc-key {
+        height: 28px;
+        font-size: 10px;
+    }
 }
 
-/* ---- Landscape ---- */
+/* ==== LANDSCAPE (narrow) ==== */
 @media (orientation: landscape) and (max-width: 900px) {
-    .vsc-key { height: 26px; font-size: 10px; }
+    .vsc-key { height: 32px; font-size: 12px; }
     .vsc-row { gap: 1px; padding: 0 1px; }
-    .vsc-touchpad-area { height: 80px; }
+    .vsc-row-scroll .vsc-key { height: 26px; font-size: 10px; }
     .vsc-tp-btn { height: 28px; font-size: 11px; }
     .vsc-toolbar { padding: 2px 4px; }
     .vsc-tool-btn { padding: 3px 6px; font-size: 10px; }
+    .vsc-touchpad-area { min-height: 80px; }
 }
 
-/* ---- Small screens ---- */
+/* ==== SMALL PORTRAIT ==== */
 @media (max-width: 400px) {
-    .vsc-key { height: 28px; font-size: 10px; }
-    .vsc-touchpad-area { height: 100px; }
+    .vsc-key { height: 36px; font-size: 13px; }
 }
