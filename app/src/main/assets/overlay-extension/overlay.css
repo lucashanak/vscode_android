@@ -234,6 +234,11 @@
     background: rgba(0, 90, 160, 0.9);
 }
 
+/* ---- HTML padding transition (overlay pushes content up) ---- */
+html.vsc-overlay-active {
+    transition: padding-bottom 0.15s ease;
+}
+
 /* ---- Hidden Input (system keyboard) ---- */
 #vsc-hidden-input {
     position: fixed;
@@ -274,6 +279,34 @@
     .vsc-tool-btn {
         padding: 4px 8px;
         font-size: 11px;
+    }
+}
+
+/* ---- Wide display: side-by-side KB + TP ---- */
+@media (min-width: 901px) {
+    #vsc-overlay.vsc-wide .vsc-toolbar .vsc-tab-btn {
+        display: none;
+    }
+
+    #vsc-overlay.vsc-wide .vsc-panels-container {
+        display: flex;
+        flex-direction: row;
+    }
+
+    #vsc-overlay.vsc-wide .vsc-panel {
+        display: block;
+        flex: 1;
+        min-width: 0;
+    }
+
+    #vsc-overlay.vsc-wide .vsc-touchpad-panel {
+        display: flex;
+        flex-direction: column;
+        border-left: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    #vsc-overlay.vsc-wide .vsc-touchpad-area {
+        height: 140px;
     }
 }
 

@@ -258,91 +258,93 @@
                 <button class="vsc-tool-btn" id="vsc-hide-btn">Hide</button>
             </div>
 
-            <div class="vsc-panel vsc-keyboard-panel vsc-active-panel">
-                <!-- Row 1: Essential keys -->
-                <div class="vsc-row vsc-row-main">
-                    <button class="vsc-key" data-key="Esc">Esc</button>
-                    <button class="vsc-key" data-key="Tab">Tab</button>
-                    <button class="vsc-key vsc-mod-btn" data-mod="ctrl">Ctrl</button>
-                    <button class="vsc-key vsc-mod-btn" data-mod="alt">Alt</button>
-                    <button class="vsc-key vsc-mod-btn" data-mod="shift">Shift</button>
-                    <button class="vsc-key vsc-mod-btn" data-mod="meta">Meta</button>
-                    <button class="vsc-key vsc-arrow" data-key="Up">\u25B2</button>
-                    <button class="vsc-key vsc-arrow" data-key="Down">\u25BC</button>
-                    <button class="vsc-key vsc-arrow" data-key="Left">\u25C0</button>
-                    <button class="vsc-key vsc-arrow" data-key="Right">\u25B6</button>
+            <div class="vsc-panels-container">
+                <div class="vsc-panel vsc-keyboard-panel vsc-active-panel">
+                    <!-- Row 1: Essential keys -->
+                    <div class="vsc-row vsc-row-main">
+                        <button class="vsc-key" data-key="Esc">Esc</button>
+                        <button class="vsc-key" data-key="Tab">Tab</button>
+                        <button class="vsc-key vsc-mod-btn" data-mod="ctrl">Ctrl</button>
+                        <button class="vsc-key vsc-mod-btn" data-mod="alt">Alt</button>
+                        <button class="vsc-key vsc-mod-btn" data-mod="shift">Shift</button>
+                        <button class="vsc-key vsc-mod-btn" data-mod="meta">Meta</button>
+                        <button class="vsc-key vsc-arrow" data-key="Up">\u25B2</button>
+                        <button class="vsc-key vsc-arrow" data-key="Down">\u25BC</button>
+                        <button class="vsc-key vsc-arrow" data-key="Left">\u25C0</button>
+                        <button class="vsc-key vsc-arrow" data-key="Right">\u25B6</button>
+                    </div>
+
+                    <!-- Row 2: F-keys (expandable) -->
+                    <div class="vsc-row vsc-row-extra vsc-hidden">
+                        <button class="vsc-key vsc-fkey" data-key="F1">F1</button>
+                        <button class="vsc-key vsc-fkey" data-key="F2">F2</button>
+                        <button class="vsc-key vsc-fkey" data-key="F3">F3</button>
+                        <button class="vsc-key vsc-fkey" data-key="F4">F4</button>
+                        <button class="vsc-key vsc-fkey" data-key="F5">F5</button>
+                        <button class="vsc-key vsc-fkey" data-key="F6">F6</button>
+                        <button class="vsc-key vsc-fkey" data-key="F7">F7</button>
+                        <button class="vsc-key vsc-fkey" data-key="F8">F8</button>
+                        <button class="vsc-key vsc-fkey" data-key="F9">F9</button>
+                        <button class="vsc-key vsc-fkey" data-key="F10">F10</button>
+                        <button class="vsc-key vsc-fkey" data-key="F11">F11</button>
+                        <button class="vsc-key vsc-fkey" data-key="F12">F12</button>
+                    </div>
+
+                    <!-- Row 3: Symbols -->
+                    <div class="vsc-row vsc-row-extra vsc-hidden">
+                        <button class="vsc-key" data-key="\`">\`</button>
+                        <button class="vsc-key" data-key="~">~</button>
+                        <button class="vsc-key" data-key="|">|</button>
+                        <button class="vsc-key" data-key="\\">\\</button>
+                        <button class="vsc-key" data-key="{">{</button>
+                        <button class="vsc-key" data-key="}">}</button>
+                        <button class="vsc-key" data-key="[">[</button>
+                        <button class="vsc-key" data-key="]">]</button>
+                        <button class="vsc-key" data-key="(">(</button>
+                        <button class="vsc-key" data-key=")">)</button>
+                        <button class="vsc-key" data-key=";">;</button>
+                        <button class="vsc-key" data-key=":">:</button>
+                    </div>
+
+                    <!-- Row 4: More symbols -->
+                    <div class="vsc-row vsc-row-extra vsc-hidden">
+                        <button class="vsc-key" data-key="'">'</button>
+                        <button class="vsc-key" data-key='"'>"</button>
+                        <button class="vsc-key" data-key="-">-</button>
+                        <button class="vsc-key" data-key="=">=</button>
+                        <button class="vsc-key" data-key="_">_</button>
+                        <button class="vsc-key" data-key="+">+</button>
+                        <button class="vsc-key" data-key="&">&amp;</button>
+                        <button class="vsc-key" data-key="*">*</button>
+                        <button class="vsc-key" data-key="#">#</button>
+                        <button class="vsc-key" data-key="@">@</button>
+                        <button class="vsc-key" data-key="!">!</button>
+                        <button class="vsc-key" data-key="/">/</button>
+                    </div>
+
+                    <!-- Row 5: Navigation keys -->
+                    <div class="vsc-row vsc-row-extra vsc-hidden">
+                        <button class="vsc-key" data-key="Home">Home</button>
+                        <button class="vsc-key" data-key="End">End</button>
+                        <button class="vsc-key" data-key="PgUp">PgUp</button>
+                        <button class="vsc-key" data-key="PgDn">PgDn</button>
+                        <button class="vsc-key" data-key="Ins">Ins</button>
+                        <button class="vsc-key" data-key="Del">Del</button>
+                        <button class="vsc-key" data-key="Enter">Enter</button>
+                        <button class="vsc-key" data-key="Bksp">Bksp</button>
+                        <button class="vsc-key" data-key="Space">Space</button>
+                    </div>
                 </div>
 
-                <!-- Row 2: F-keys (expandable) -->
-                <div class="vsc-row vsc-row-extra vsc-hidden">
-                    <button class="vsc-key vsc-fkey" data-key="F1">F1</button>
-                    <button class="vsc-key vsc-fkey" data-key="F2">F2</button>
-                    <button class="vsc-key vsc-fkey" data-key="F3">F3</button>
-                    <button class="vsc-key vsc-fkey" data-key="F4">F4</button>
-                    <button class="vsc-key vsc-fkey" data-key="F5">F5</button>
-                    <button class="vsc-key vsc-fkey" data-key="F6">F6</button>
-                    <button class="vsc-key vsc-fkey" data-key="F7">F7</button>
-                    <button class="vsc-key vsc-fkey" data-key="F8">F8</button>
-                    <button class="vsc-key vsc-fkey" data-key="F9">F9</button>
-                    <button class="vsc-key vsc-fkey" data-key="F10">F10</button>
-                    <button class="vsc-key vsc-fkey" data-key="F11">F11</button>
-                    <button class="vsc-key vsc-fkey" data-key="F12">F12</button>
-                </div>
-
-                <!-- Row 3: Symbols -->
-                <div class="vsc-row vsc-row-extra vsc-hidden">
-                    <button class="vsc-key" data-key="\`">\`</button>
-                    <button class="vsc-key" data-key="~">~</button>
-                    <button class="vsc-key" data-key="|">|</button>
-                    <button class="vsc-key" data-key="\\">\\</button>
-                    <button class="vsc-key" data-key="{">{</button>
-                    <button class="vsc-key" data-key="}">}</button>
-                    <button class="vsc-key" data-key="[">[</button>
-                    <button class="vsc-key" data-key="]">]</button>
-                    <button class="vsc-key" data-key="(">(</button>
-                    <button class="vsc-key" data-key=")">)</button>
-                    <button class="vsc-key" data-key=";">;</button>
-                    <button class="vsc-key" data-key=":">:</button>
-                </div>
-
-                <!-- Row 4: More symbols -->
-                <div class="vsc-row vsc-row-extra vsc-hidden">
-                    <button class="vsc-key" data-key="'">'</button>
-                    <button class="vsc-key" data-key='"'>"</button>
-                    <button class="vsc-key" data-key="-">-</button>
-                    <button class="vsc-key" data-key="=">=</button>
-                    <button class="vsc-key" data-key="_">_</button>
-                    <button class="vsc-key" data-key="+">+</button>
-                    <button class="vsc-key" data-key="&">&amp;</button>
-                    <button class="vsc-key" data-key="*">*</button>
-                    <button class="vsc-key" data-key="#">#</button>
-                    <button class="vsc-key" data-key="@">@</button>
-                    <button class="vsc-key" data-key="!">!</button>
-                    <button class="vsc-key" data-key="/">/</button>
-                </div>
-
-                <!-- Row 5: Navigation keys -->
-                <div class="vsc-row vsc-row-extra vsc-hidden">
-                    <button class="vsc-key" data-key="Home">Home</button>
-                    <button class="vsc-key" data-key="End">End</button>
-                    <button class="vsc-key" data-key="PgUp">PgUp</button>
-                    <button class="vsc-key" data-key="PgDn">PgDn</button>
-                    <button class="vsc-key" data-key="Ins">Ins</button>
-                    <button class="vsc-key" data-key="Del">Del</button>
-                    <button class="vsc-key" data-key="Enter">Enter</button>
-                    <button class="vsc-key" data-key="Bksp">Bksp</button>
-                    <button class="vsc-key" data-key="Space">Space</button>
-                </div>
-            </div>
-
-            <div class="vsc-panel vsc-touchpad-panel">
-                <div class="vsc-touchpad-area" id="vsc-touchpad">
-                    <div class="vsc-touchpad-hint">Drag to move cursor</div>
-                </div>
-                <div class="vsc-touchpad-buttons">
-                    <button class="vsc-tp-btn" id="vsc-tp-left">Left Click</button>
-                    <button class="vsc-tp-btn" id="vsc-tp-middle">Middle</button>
-                    <button class="vsc-tp-btn" id="vsc-tp-right">Right Click</button>
+                <div class="vsc-panel vsc-touchpad-panel">
+                    <div class="vsc-touchpad-area" id="vsc-touchpad">
+                        <div class="vsc-touchpad-hint">Drag to move cursor</div>
+                    </div>
+                    <div class="vsc-touchpad-buttons">
+                        <button class="vsc-tp-btn" id="vsc-tp-left">Left Click</button>
+                        <button class="vsc-tp-btn" id="vsc-tp-middle">Middle</button>
+                        <button class="vsc-tp-btn" id="vsc-tp-right">Right Click</button>
+                    </div>
                 </div>
             </div>
         `;
@@ -535,6 +537,7 @@
                 row.classList.toggle('vsc-hidden', !state.keyboardExpanded);
             });
             e.target.textContent = state.keyboardExpanded ? 'Less' : 'More';
+            requestAnimationFrame(() => updatePadding(overlay, 0));
         });
 
         // System keyboard toggle
@@ -548,6 +551,9 @@
             } else {
                 hiddenInput.blur();
                 hiddenInput.style.top = '-9999px';
+                // Reset transform when manually closing sysKB
+                overlay.style.transform = '';
+                updatePadding(overlay, 0);
             }
             e.target.classList.toggle('vsc-active', state.sysKeyboardVisible);
         });
@@ -557,6 +563,7 @@
             e.preventDefault();
             state.overlayVisible = false;
             overlay.classList.add('vsc-collapsed');
+            updatePadding(overlay, 0);
             showFloatingToggle(overlay);
         });
     }
@@ -572,6 +579,8 @@
                 state.overlayVisible = true;
                 overlay.classList.remove('vsc-collapsed');
                 toggle.style.display = 'none';
+                // Recalculate padding after overlay is visible again
+                requestAnimationFrame(() => updatePadding(overlay, 0));
             });
             // Prevent focus stealing
             toggle.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
@@ -592,16 +601,74 @@
     }
 
     // ========================================================================
+    // PADDING — push VS Code content up instead of covering it
+    // ========================================================================
+    function updatePadding(overlay, sysKBOffset) {
+        if (overlay.classList.contains('vsc-collapsed')) {
+            document.documentElement.style.paddingBottom = '';
+            return;
+        }
+        const overlayHeight = overlay.getBoundingClientRect().height;
+        const totalPadding = overlayHeight + (sysKBOffset > 0 ? sysKBOffset : 0);
+        document.documentElement.style.paddingBottom = totalPadding + 'px';
+    }
+
+    // ========================================================================
     // VIEWPORT ADJUSTMENT (when system keyboard appears)
     // ========================================================================
-    function setupViewportListener(overlay) {
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', () => {
-                const vv = window.visualViewport;
-                const offset = window.innerHeight - vv.height;
-                overlay.style.transform = `translateY(-${offset}px)`;
-            });
+    function setupViewportListener(overlay, hiddenInput) {
+        const SYSKB_THRESHOLD = 100; // px — viewport shrinks more than this = sysKB visible
+
+        function updateOverlayPosition() {
+            if (!window.visualViewport) return;
+            const vv = window.visualViewport;
+            const offset = window.innerHeight - vv.height - vv.offsetTop;
+            const sysKBNow = offset > SYSKB_THRESHOLD;
+
+            if (sysKBNow !== state.sysKeyboardVisible) {
+                state.sysKeyboardVisible = sysKBNow;
+                const btn = document.getElementById('vsc-syskb-btn');
+                if (btn) btn.classList.toggle('vsc-active', sysKBNow);
+            }
+
+            overlay.style.transform = offset > 0 ? `translateY(-${offset}px)` : '';
+            updatePadding(overlay, offset);
         }
+
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', updateOverlayPosition);
+            window.visualViewport.addEventListener('scroll', updateOverlayPosition);
+        }
+
+        // When hidden input loses focus, sysKB is gone — reset position
+        hiddenInput.addEventListener('focusout', () => {
+            state.sysKeyboardVisible = false;
+            const btn = document.getElementById('vsc-syskb-btn');
+            if (btn) btn.classList.remove('vsc-active');
+            overlay.style.transform = '';
+            updatePadding(overlay, 0);
+        });
+    }
+
+    // ========================================================================
+    // WIDE DISPLAY — side-by-side KB + TP
+    // ========================================================================
+    function updateWideLayout(overlay) {
+        const isWide = window.innerWidth > 900;
+        overlay.classList.toggle('vsc-wide', isWide);
+
+        if (isWide) {
+            // In wide mode, both panels are always visible
+            overlay.querySelector('.vsc-keyboard-panel').classList.add('vsc-active-panel');
+            overlay.querySelector('.vsc-touchpad-panel').classList.add('vsc-active-panel');
+        } else {
+            // Restore tab-based switching
+            const activeTab = state.activeTab;
+            overlay.querySelector('.vsc-keyboard-panel').classList.toggle('vsc-active-panel', activeTab === 'keyboard');
+            overlay.querySelector('.vsc-touchpad-panel').classList.toggle('vsc-active-panel', activeTab === 'touchpad');
+        }
+
+        requestAnimationFrame(() => updatePadding(overlay, 0));
     }
 
     // ========================================================================
@@ -622,8 +689,13 @@
         setupKeyboardEvents(overlay);
         setupTouchpad(overlay);
         setupToolbar(overlay, hiddenInput);
-        setupViewportListener(overlay);
+        setupViewportListener(overlay, hiddenInput);
         updateCursor();
+
+        // Enable padding transition and set initial padding
+        document.documentElement.classList.add('vsc-overlay-active');
+        updateWideLayout(overlay);
+        window.addEventListener('resize', () => updateWideLayout(overlay));
     }
 
     // Run immediately if body exists, otherwise wait

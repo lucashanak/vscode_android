@@ -3,6 +3,7 @@ package com.vscodetunnel.app
 import android.app.Dialog
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.widget.ScrollView
@@ -37,6 +38,8 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_TOKEN = "token"
         private const val KEY_RECENT_URLS = "urls"
         private const val MAX_RECENT = 5
+        private const val STATE_TUNNEL_URL = "tunnel_url"
+        private const val STATE_GECKOVIEW_VISIBLE = "geckoview_visible"
         private val APP_VERSION: String get() = BuildConfig.VERSION_NAME
     }
 
@@ -45,6 +48,7 @@ class MainActivity : AppCompatActivity() {
     private var tunnelSession: GeckoSession? = null
     private var pollJob: Job? = null
     private var authDialog: Dialog? = null
+    private var currentTunnelUrl: String? = null
 
     // UI references
     private lateinit var btnGitHubLogin: Button
@@ -372,6 +376,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         saveRecentUrl(url)
+        currentTunnelUrl = url
         openTunnel(url)
     }
 
@@ -582,6 +587,7 @@ class MainActivity : AppCompatActivity() {
         geckoView.releaseSession()
         tunnelSession?.close()
         tunnelSession = null
+        currentTunnelUrl = null
         geckoView.visibility = View.GONE
         launcherScroll.visibility = View.VISIBLE
     }
@@ -688,6 +694,31 @@ class MainActivity : AppCompatActivity() {
                 onBackPressedDispatcher.onBackPressed()
             }
         })
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        FileLogger.d(TAG, "Configuration changed: orientation=${newConfig.orientation}, " +
+            "screenWidthDp=${newConfig.screenWidthDp}, screenHeightDp=${newConfig.screenHeightDp}, " +
+            "smallestScreenWidthDp=${newConfig.smallestScreenWidthDp}, densityDpi=${newConfig.densityDpi}")
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(STATE_TUNNEL_URL, currentTunnelUrl)
+        outState.putBoolean(STATE_GECKOVIEW_VISIBLE, geckoView.visibility == View.VISIBLE)
+        FileLogger.d(TAG, "onSaveInstanceState: url=$currentTunnelUrl, visible=${geckoView.visibility == View.VISIBLE}")
+    }
+
+    override fun onRestoreInstanceState(savedInstanceState: Bundle) {
+        super.onRestoreInstanceState(savedInstanceState)
+        val wasVisible = savedInstanceState.getBoolean(STATE_GECKOVIEW_VISIBLE, false)
+        val savedUrl = savedInstanceState.getString(STATE_TUNNEL_URL)
+        FileLogger.d(TAG, "onRestoreInstanceState: url=$savedUrl, wasVisible=$wasVisible")
+        if (wasVisible && !savedUrl.isNullOrBlank()) {
+            currentTunnelUrl = savedUrl
+            openTunnel(savedUrl)
+        }
     }
 
     override fun onDestroy() {
