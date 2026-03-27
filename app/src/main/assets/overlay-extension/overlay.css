@@ -1,0 +1,297 @@
+/* ================================================================
+   VS Code Tunnel Client — Overlay Styles
+   ================================================================ */
+
+#vsc-overlay {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 999999;
+    background: rgba(30, 30, 30, 0.94);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: transform 0.25s ease, opacity 0.25s ease;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+#vsc-overlay.vsc-collapsed {
+    transform: translateY(100%) !important;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* ---- Toolbar ---- */
+.vsc-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    background: rgba(20, 20, 20, 0.9);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.vsc-tool-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: rgba(255, 255, 255, 0.08);
+    color: #aaa;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.vsc-tool-btn.vsc-active {
+    background: #007acc;
+    color: #fff;
+    border-color: #007acc;
+}
+
+.vsc-spacer {
+    flex: 1;
+}
+
+/* ---- Panels ---- */
+.vsc-panel {
+    display: none;
+    padding: 4px;
+}
+
+.vsc-panel.vsc-active-panel {
+    display: block;
+}
+
+/* ---- Keyboard ---- */
+.vsc-row {
+    display: flex;
+    gap: 3px;
+    padding: 2px 2px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.vsc-row::-webkit-scrollbar {
+    display: none;
+}
+
+.vsc-row.vsc-hidden {
+    display: none;
+}
+
+.vsc-key {
+    flex: 0 0 auto;
+    min-width: 36px;
+    height: 36px;
+    padding: 0 6px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    background: rgba(255, 255, 255, 0.1);
+    color: #ddd;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: manipulation;
+    transition: background 0.08s;
+}
+
+.vsc-key:active,
+.vsc-key.vsc-pressed {
+    background: rgba(0, 122, 204, 0.5);
+    border-color: #007acc;
+}
+
+.vsc-key.vsc-active {
+    background: #007acc;
+    color: #fff;
+    border-color: #007acc;
+}
+
+/* Modifier keys - wider */
+.vsc-mod-btn {
+    min-width: 44px;
+    font-size: 11px;
+}
+
+/* Arrow keys */
+.vsc-arrow {
+    min-width: 32px;
+    font-size: 14px;
+}
+
+/* F-keys - compact */
+.vsc-fkey {
+    min-width: 34px;
+    font-size: 11px;
+}
+
+/* ---- Touchpad ---- */
+.vsc-touchpad-panel {
+    display: none;
+}
+
+.vsc-touchpad-panel.vsc-active-panel {
+    display: flex;
+    flex-direction: column;
+}
+
+.vsc-touchpad-area {
+    height: 180px;
+    margin: 4px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+    position: relative;
+}
+
+.vsc-touchpad-hint {
+    color: rgba(255, 255, 255, 0.2);
+    font-size: 14px;
+    pointer-events: none;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.vsc-touchpad-buttons {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+}
+
+.vsc-tp-btn {
+    flex: 1;
+    height: 40px;
+    font-size: 13px;
+    font-weight: 500;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    background: rgba(255, 255, 255, 0.08);
+    color: #bbb;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+.vsc-tp-btn:active {
+    background: rgba(0, 122, 204, 0.4);
+    border-color: #007acc;
+}
+
+/* ---- Cursor Indicator ---- */
+#vsc-cursor {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 12px;
+    height: 12px;
+    margin-left: -6px;
+    margin-top: -6px;
+    background: rgba(0, 122, 204, 0.8);
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 1000000;
+    transition: transform 0.05s linear;
+    box-shadow: 0 0 6px rgba(0, 122, 204, 0.5);
+}
+
+/* ---- Floating Toggle Button ---- */
+#vsc-float-toggle {
+    position: fixed;
+    bottom: 12px;
+    right: 12px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(0, 122, 204, 0.9);
+    color: #fff;
+    font-size: 16px;
+    font-weight: bold;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    cursor: pointer;
+    z-index: 1000001;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+    touch-action: manipulation;
+}
+
+#vsc-float-toggle:active {
+    background: rgba(0, 90, 160, 0.9);
+}
+
+/* ---- Hidden Input (system keyboard) ---- */
+#vsc-hidden-input {
+    position: fixed;
+    top: -9999px;
+    left: -9999px;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    border: none;
+    outline: none;
+}
+
+/* ---- Landscape optimization ---- */
+@media (orientation: landscape) {
+    .vsc-touchpad-area {
+        height: 120px;
+    }
+
+    .vsc-key {
+        min-width: 32px;
+        height: 32px;
+        font-size: 11px;
+    }
+
+    .vsc-mod-btn {
+        min-width: 40px;
+    }
+
+    .vsc-tp-btn {
+        height: 34px;
+        font-size: 12px;
+    }
+
+    .vsc-toolbar {
+        padding: 2px 6px;
+    }
+
+    .vsc-tool-btn {
+        padding: 4px 8px;
+        font-size: 11px;
+    }
+}
+
+/* ---- Small screens ---- */
+@media (max-width: 400px) {
+    .vsc-key {
+        min-width: 30px;
+        height: 32px;
+        font-size: 10px;
+        padding: 0 3px;
+    }
+
+    .vsc-mod-btn {
+        min-width: 36px;
+        font-size: 9px;
+    }
+
+    .vsc-touchpad-area {
+        height: 140px;
+    }
+}

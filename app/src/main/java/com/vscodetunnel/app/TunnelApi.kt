@@ -1,0 +1,123 @@
+package com.vscodetunnel.app
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+
+object TunnelApi {
+    private const val BASE_URL = "https://global.rel.tunnels.api.visualstudio.com"
+
+    data class Tunnel(
+        val name: String,
+        val tunnelId: String,
+        val isOnline: Boolean,
+        val description: String
+    )
+
+    suspend fun listTunnels(token: String): List<Tunnel> = withContext(Dispatchers.IO) {
+        val params = "global=true&api-version=2023-09-27-preview&includePorts=true"
+        val auth = "Github client_id=${GitHubAuth.CLIENT_ID} $token"
+
+        val conn = (URL("$BASE_URL/tunnels?$params").openConnection() as HttpURLConnection).apply {
+            setRequestProperty("Authorization", auth)
+            setRequestProperty("User-Agent", "VSCodeTunnel-Android/2.0")
+        }
+
+        val code = conn.responseCode
+        if (code == 401 || code == 403) {
+            conn.disconnect()
+            throw AuthExpiredException()
+        }
+
+        val body = try {
+            conn.inputStream.bufferedReader().readText()
+        } catch (_: Exception) {
+            conn.errorStream?.bufferedReader()?.readText() ?: ""
+        }
+        conn.disconnect()
+        parseTunnels(JSONObject(body))
+    }
+
+    private fun parseTunnels(json: JSONObject): List<Tunnel> {
+        val tunnels = mutableListOf<Tunnel>()
+        val value = json.optJSONArray("value") ?: return tunnels
+
+        for (i in 0 until value.length()) {
+            val item = value.getJSONObject(i)
+            // Handle both nested (clustered) and flat responses
+            val innerValue = item.optJSONArray("value")
+            if (innerValue != null) {
+                for (j in 0 until innerValue.length()) {
+                    parseSingleTunnel(innerValue.getJSONObject(j))?.let { tunnels.add(it) }
+                }
+            } else {
+                parseSingleTunnel(item)?.let { tunnels.add(it) }
+            }
+        }
+
+        // Sort: online first, then alphabetically
+        return tunnels.sortedWith(compareByDescending<Tunnel> { it.isOnline }.thenBy { it.name })
+    }
+
+    private fun parseSingleTunnel(obj: JSONObject): Tunnel? {
+        val name = extractTunnelName(obj) ?: return null
+        val isOnline = isTunnelOnline(obj)
+        val desc = if (isOnline) "Online" else "Offline"
+        return Tunnel(
+            name = name,
+            tunnelId = obj.optString("tunnelId", name),
+            isOnline = isOnline,
+            description = desc
+        )
+    }
+
+    private fun extractTunnelName(obj: JSONObject): String? {
+        val name = obj.optString("name", "")
+        if (name.isNotBlank()) return name
+
+        val labels = obj.optJSONArray("labels")
+        if (labels != null) {
+            for (i in 0 until labels.length()) {
+                val label = labels.getString(i)
+                if (!label.startsWith("_")) return label
+            }
+        }
+
+        val tunnelId = obj.optString("tunnelId", "")
+        return tunnelId.ifBlank { null }
+    }
+
+    private fun isTunnelOnline(obj: JSONObject): Boolean {
+        val status = obj.optJSONObject("status")
+        if (status != null && status.optInt("hostConnectionCount", 0) > 0) return true
+
+        val endpoints = obj.optJSONArray("endpoints")
+        return endpoints != null && endpoints.length() > 0
+    }
+
+    fun buildTunnelUrl(tunnelName: String): String {
+        return "https://vscode.dev/tunnel/${URLEncoder.encode(tunnelName, "UTF-8")}"
+    }
+
+    suspend fun checkUpdate(currentVersion: String): JSONObject? = withContext(Dispatchers.IO) {
+        try {
+            val conn = (URL("https://api.github.com/repos/lucashanak/vscode_android/releases/latest").openConnection() as HttpURLConnection).apply {
+                setRequestProperty("User-Agent", "VSCodeTunnel-Android/2.0")
+                setRequestProperty("Accept", "application/vnd.github+json")
+            }
+            val body = conn.inputStream.bufferedReader().readText()
+            conn.disconnect()
+            val release = JSONObject(body)
+            val tag = release.optString("tag_name", "").trimStart('v')
+            val current = currentVersion.trimStart('v')
+            if (tag.isNotBlank() && tag != current) release else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    class AuthExpiredException : Exception("Session expired")
+}

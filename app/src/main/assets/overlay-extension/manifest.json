@@ -1,0 +1,24 @@
+{
+  "manifest_version": 2,
+  "name": "VSCode Tunnel Overlay",
+  "version": "1.0",
+  "description": "Injects keyboard and touchpad overlay into vscode.dev",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "overlay@vscodetunnel.app"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://vscode.dev/*",
+        "*://*.vscode.dev/*",
+        "*://insiders.vscode.dev/*"
+      ],
+      "js": ["overlay.js"],
+      "css": ["overlay.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}
