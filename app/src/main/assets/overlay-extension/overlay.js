@@ -425,7 +425,6 @@
         updateCursor();
 
         updateLayout(overlay);
-        attachKeyEvents(overlay);
         showFloatingToggle(overlay);
 
         window.addEventListener('resize', () => updateLayout(overlay));

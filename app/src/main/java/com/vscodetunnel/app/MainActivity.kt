@@ -83,11 +83,8 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.rootFrame)) { view, windowInsets ->
-            if (sysKBSuppressed && windowInsets.isVisible(WindowInsetsCompat.Type.ime())) {
-                // IME is trying to show but we're suppressing it — hide immediately
-                val controller = WindowInsetsControllerCompat(window, view)
-                controller.hide(WindowInsetsCompat.Type.ime())
-                // Only apply system bar insets
+            if (sysKBSuppressed) {
+                // Overlay active — ignore ALL IME insets, only apply system bars
                 val sysBarInsets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
                 view.setPadding(sysBarInsets.left, sysBarInsets.top, sysBarInsets.right, sysBarInsets.bottom)
             } else {
@@ -546,6 +543,8 @@ class MainActivity : AppCompatActivity() {
         } else {
             resizeGeckoView(0)
         }
+        // Force insets re-evaluation so IME padding is cleared/applied correctly
+        ViewCompat.requestApplyInsets(findViewById(R.id.rootFrame))
     }
 
     private fun resizeGeckoView(reservedCssPx: Int) {
