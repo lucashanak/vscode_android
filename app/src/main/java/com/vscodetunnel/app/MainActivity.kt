@@ -523,9 +523,9 @@ class MainActivity : AppCompatActivity() {
                             val reservedPx = message.optInt("height", 0)
                             runOnUiThread { resizeGeckoView(reservedPx) }
                         }
-                        "setSysKBSuppressed" -> {
-                            val suppressed = message.optBoolean("suppressed", false)
-                            runOnUiThread { setSysKBSuppressed(suppressed) }
+                        "overlayVisibility" -> {
+                            val visible = message.optBoolean("visible", false)
+                            runOnUiThread { onOverlayVisibilityChanged(visible) }
                         }
                     }
                 }
@@ -536,11 +536,11 @@ class MainActivity : AppCompatActivity() {
         session.webExtensionController.setMessageDelegate(extension, messageDelegate, "browser")
     }
 
-    private fun setSysKBSuppressed(suppressed: Boolean) {
-        sysKBSuppressed = suppressed
-        FileLogger.d(TAG, "SysKB suppressed: $suppressed")
-        if (suppressed) {
-            // Immediately hide the keyboard
+    private fun onOverlayVisibilityChanged(visible: Boolean) {
+        sysKBSuppressed = visible
+        FileLogger.d(TAG, "Overlay visible: $visible, sysKB suppressed: $visible")
+        if (visible) {
+            // Overlay shown — suppress system keyboard
             val controller = WindowInsetsControllerCompat(window, geckoView)
             controller.hide(WindowInsetsCompat.Type.ime())
         }

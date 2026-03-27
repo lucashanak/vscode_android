@@ -1,7 +1,6 @@
 (function () {
     'use strict';
 
-    // Already injected and present in DOM? Skip.
     if (document.getElementById('vsc-overlay')) return;
 
     // ========================================================================
@@ -11,15 +10,12 @@
         modifiers: { ctrl: false, alt: false, shift: false, meta: false },
         cursor: { x: window.innerWidth / 2, y: window.innerHeight / 2 },
         touchpad: { tracking: false, lastX: 0, lastY: 0, fingers: 0, scrollLastY: 0 },
-        overlayVisible: true,
-        keyboardExpanded: false,
-        activeTab: 'keyboard', // 'keyboard' | 'touchpad'
+        overlayVisible: false,
         sensitivity: 1.5,
         scrollSensitivity: 3,
         tapStart: 0,
         tapTimeout: null,
-        lastTap: 0,
-        sysKBSuppressed: false
+        lastTap: 0
     };
 
     // ========================================================================
@@ -71,271 +67,130 @@
         '%':       { key: '%',         code: 'Digit5',       keyCode: 53,  shift: true },
         '^':       { key: '^',         code: 'Digit6',       keyCode: 54,  shift: true },
         '$':       { key: '$',         code: 'Digit4',       keyCode: 52,  shift: true },
+        '<':       { key: '<',         code: 'Comma',        keyCode: 188, shift: true },
+        '>':       { key: '>', code: 'Period',       keyCode: 190, shift: true },
     };
-
-    // F-keys
-    for (let i = 1; i <= 12; i++) {
-        KEYS['F' + i] = { key: 'F' + i, code: 'F' + i, keyCode: 111 + i };
-    }
-
-    // Digit keys
-    for (let i = 0; i <= 9; i++) {
-        KEYS[String(i)] = { key: String(i), code: 'Digit' + i, keyCode: 48 + i };
-    }
-
-    // '<' and '>' (not yet in map)
-    KEYS['<'] = { key: '<', code: 'Comma',  keyCode: 188, shift: true };
-    KEYS['>'] = { key: '>', code: 'Period', keyCode: 190, shift: true };
+    for (let i = 1; i <= 12; i++) KEYS['F' + i] = { key: 'F' + i, code: 'F' + i, keyCode: 111 + i };
+    for (let i = 0; i <= 9; i++) KEYS[String(i)] = { key: String(i), code: 'Digit' + i, keyCode: 48 + i };
 
     // ========================================================================
     // KEY DISPATCH
     // ========================================================================
     function getTarget() {
-        // Try to find Monaco's input textarea first
         return document.querySelector('.monaco-editor .inputarea') ||
-               document.activeElement ||
-               document.body;
+               document.activeElement || document.body;
     }
 
-    function dispatchKey(keyDef, extraOpts) {
+    function dispatchKey(keyDef) {
         const target = getTarget();
         const opts = {
-            key: keyDef.key,
-            code: keyDef.code,
-            keyCode: keyDef.keyCode,
-            which: keyDef.keyCode,
-            bubbles: true,
-            cancelable: true,
-            ctrlKey: state.modifiers.ctrl,
-            altKey: state.modifiers.alt,
+            key: keyDef.key, code: keyDef.code,
+            keyCode: keyDef.keyCode, which: keyDef.keyCode,
+            bubbles: true, cancelable: true,
+            ctrlKey: state.modifiers.ctrl, altKey: state.modifiers.alt,
             shiftKey: state.modifiers.shift || (keyDef.shift || false),
             metaKey: state.modifiers.meta,
-            ...extraOpts
         };
-
         target.dispatchEvent(new KeyboardEvent('keydown', opts));
-
-        // For printable characters, also use execCommand
         if (keyDef.key.length === 1 && !opts.ctrlKey && !opts.altKey && !opts.metaKey) {
             document.execCommand('insertText', false, keyDef.key);
         }
-
         target.dispatchEvent(new KeyboardEvent('keyup', opts));
-
-        // Auto-release modifiers after key press (one-shot mode)
         resetModifiers();
     }
 
     function dispatchCharKey(char) {
-        const upper = char.toUpperCase();
-        const lower = char.toLowerCase();
-        const isUpper = char === upper && char !== lower;
-        const code = 'Key' + upper;
-        const keyCode = upper.charCodeAt(0);
-
-        dispatchKey({
-            key: char,
-            code: code,
-            keyCode: keyCode,
-            shift: isUpper
-        });
+        const upper = char.toUpperCase(), lower = char.toLowerCase();
+        dispatchKey({ key: char, code: 'Key' + upper, keyCode: upper.charCodeAt(0), shift: char === upper && char !== lower });
     }
 
     function resetModifiers() {
-        state.modifiers.ctrl = false;
-        state.modifiers.alt = false;
-        state.modifiers.shift = false;
-        state.modifiers.meta = false;
-        updateModifierButtons();
-        const kbPanel = document.querySelector('.vsc-keyboard-panel');
-        if (kbPanel) kbPanel.classList.remove('vsc-shifted');
+        state.modifiers.ctrl = state.modifiers.alt = state.modifiers.shift = state.modifiers.meta = false;
+        document.querySelectorAll('.vsc-mod-btn').forEach(btn => btn.classList.toggle('vsc-active', false));
+        const kp = document.querySelector('.vsc-keyboard-panel');
+        if (kp) kp.classList.remove('vsc-shifted');
     }
 
     function toggleModifier(mod) {
         state.modifiers[mod] = !state.modifiers[mod];
-        updateModifierButtons();
-    }
-
-    function updateModifierButtons() {
-        document.querySelectorAll('.vsc-mod-btn').forEach(btn => {
-            const mod = btn.dataset.mod;
-            btn.classList.toggle('vsc-active', state.modifiers[mod]);
-        });
+        document.querySelectorAll('.vsc-mod-btn').forEach(btn => btn.classList.toggle('vsc-active', state.modifiers[btn.dataset.mod]));
     }
 
     // ========================================================================
-    // POINTER + MOUSE DISPATCH
+    // POINTER / MOUSE DISPATCH
     // ========================================================================
     let pointerId = 1;
 
     function dispatchPointer(type, button, extra) {
         const target = document.elementFromPoint(state.cursor.x, state.cursor.y);
         if (!target) return;
-        const opts = {
-            clientX: state.cursor.x,
-            clientY: state.cursor.y,
-            screenX: state.cursor.x,
-            screenY: state.cursor.y,
-            button: button || 0,
-            buttons: button === 2 ? 2 : (button === 0 ? 1 : 0),
-            bubbles: true,
-            cancelable: true,
-            composed: true,
-            view: window,
-            pointerId: pointerId,
-            pointerType: 'mouse',
-            isPrimary: true,
-            width: 1,
-            height: 1,
-            pressure: type === 'pointerdown' ? 0.5 : 0,
+        target.dispatchEvent(new PointerEvent(type, {
+            clientX: state.cursor.x, clientY: state.cursor.y,
+            screenX: state.cursor.x, screenY: state.cursor.y,
+            button: button || 0, buttons: button === 2 ? 2 : (button === 0 ? 1 : 0),
+            bubbles: true, cancelable: true, composed: true, view: window,
+            pointerId, pointerType: 'mouse', isPrimary: true,
+            width: 1, height: 1, pressure: type === 'pointerdown' ? 0.5 : 0,
             ...extra
-        };
-        target.dispatchEvent(new PointerEvent(type, opts));
+        }));
     }
 
-    function dispatchMouse(type, button, extra) {
+    function dispatchMouse(type, button) {
         const target = document.elementFromPoint(state.cursor.x, state.cursor.y);
         if (!target) return;
-        const opts = {
-            clientX: state.cursor.x,
-            clientY: state.cursor.y,
-            screenX: state.cursor.x,
-            screenY: state.cursor.y,
-            button: button || 0,
-            buttons: button === 2 ? 2 : (button === 0 ? 1 : 0),
-            bubbles: true,
-            cancelable: true,
-            view: window,
-            ...extra
-        };
-        target.dispatchEvent(new MouseEvent(type, opts));
+        target.dispatchEvent(new MouseEvent(type, {
+            clientX: state.cursor.x, clientY: state.cursor.y,
+            button: button || 0, buttons: button === 2 ? 2 : (button === 0 ? 1 : 0),
+            bubbles: true, cancelable: true, view: window
+        }));
     }
 
     function clickAt(button) {
-        // Pointer events first (VS Code listens to these), then mouse events as fallback
-        dispatchPointer('pointermove', 0);
-        dispatchMouse('mousemove', 0);
-        dispatchPointer('pointerdown', button);
-        dispatchMouse('mousedown', button);
-        dispatchPointer('pointerup', button);
-        dispatchMouse('mouseup', button);
+        dispatchPointer('pointermove', 0); dispatchMouse('mousemove', 0);
+        dispatchPointer('pointerdown', button); dispatchMouse('mousedown', button);
+        dispatchPointer('pointerup', button); dispatchMouse('mouseup', button);
         dispatchMouse('click', button);
     }
 
     function doubleClickAt() {
-        clickAt(0);
-        clickAt(0);
-        const target = document.elementFromPoint(state.cursor.x, state.cursor.y);
-        if (target) {
-            target.dispatchEvent(new MouseEvent('dblclick', {
-                clientX: state.cursor.x, clientY: state.cursor.y,
-                bubbles: true, cancelable: true, view: window
-            }));
-        }
+        clickAt(0); clickAt(0);
+        const t = document.elementFromPoint(state.cursor.x, state.cursor.y);
+        if (t) t.dispatchEvent(new MouseEvent('dblclick', {
+            clientX: state.cursor.x, clientY: state.cursor.y, bubbles: true, view: window
+        }));
     }
 
     function scrollAt(deltaY) {
-        const target = document.elementFromPoint(state.cursor.x, state.cursor.y);
-        if (!target) return;
-        target.dispatchEvent(new WheelEvent('wheel', {
-            deltaY: deltaY,
-            deltaX: 0,
-            clientX: state.cursor.x,
-            clientY: state.cursor.y,
-            bubbles: true,
-            cancelable: true,
-            view: window
+        const t = document.elementFromPoint(state.cursor.x, state.cursor.y);
+        if (t) t.dispatchEvent(new WheelEvent('wheel', {
+            deltaY, deltaX: 0, clientX: state.cursor.x, clientY: state.cursor.y,
+            bubbles: true, cancelable: true, view: window
         }));
     }
 
     // ========================================================================
-    // BUILD OVERLAY DOM
+    // BUILD OVERLAY
     // ========================================================================
     function buildOverlay() {
         const overlay = document.createElement('div');
         overlay.id = 'vsc-overlay';
+        overlay.classList.add('vsc-collapsed'); // hidden by default
 
-        // Prevent focus stealing from the editor
         overlay.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
         overlay.addEventListener('mousedown', e => e.preventDefault());
 
         overlay.innerHTML = `
             <div class="vsc-toolbar">
-                <button class="vsc-tool-btn vsc-tab-btn vsc-active" data-tab="keyboard">KB</button>
-                <button class="vsc-tool-btn vsc-tab-btn" data-tab="touchpad">TP</button>
-                <button class="vsc-tool-btn" id="vsc-syskb-btn">SysKB</button>
-                <button class="vsc-tool-btn" id="vsc-expand-btn">More</button>
+                <button class="vsc-tool-btn vsc-tab-btn" data-tab="touchpad" id="vsc-tp-toggle">TP</button>
                 <div class="vsc-spacer"></div>
                 <button class="vsc-tool-btn" id="vsc-hide-btn">Hide</button>
             </div>
 
             <div class="vsc-panels-container">
                 <div class="vsc-panel vsc-keyboard-panel vsc-active-panel">
-                    <!-- Number row -->
-                    <div class="vsc-row vsc-row-main">
-                        <button class="vsc-key" data-key="1">1</button>
-                        <button class="vsc-key" data-key="2">2</button>
-                        <button class="vsc-key" data-key="3">3</button>
-                        <button class="vsc-key" data-key="4">4</button>
-                        <button class="vsc-key" data-key="5">5</button>
-                        <button class="vsc-key" data-key="6">6</button>
-                        <button class="vsc-key" data-key="7">7</button>
-                        <button class="vsc-key" data-key="8">8</button>
-                        <button class="vsc-key" data-key="9">9</button>
-                        <button class="vsc-key" data-key="0">0</button>
-                    </div>
-                    <!-- QWERTY row -->
-                    <div class="vsc-row vsc-row-main">
-                        <button class="vsc-key vsc-char-key" data-char="q">q</button>
-                        <button class="vsc-key vsc-char-key" data-char="w">w</button>
-                        <button class="vsc-key vsc-char-key" data-char="e">e</button>
-                        <button class="vsc-key vsc-char-key" data-char="r">r</button>
-                        <button class="vsc-key vsc-char-key" data-char="t">t</button>
-                        <button class="vsc-key vsc-char-key" data-char="y">y</button>
-                        <button class="vsc-key vsc-char-key" data-char="u">u</button>
-                        <button class="vsc-key vsc-char-key" data-char="i">i</button>
-                        <button class="vsc-key vsc-char-key" data-char="o">o</button>
-                        <button class="vsc-key vsc-char-key" data-char="p">p</button>
-                    </div>
-                    <!-- Home row -->
-                    <div class="vsc-row vsc-row-main">
-                        <button class="vsc-key vsc-char-key" data-char="a">a</button>
-                        <button class="vsc-key vsc-char-key" data-char="s">s</button>
-                        <button class="vsc-key vsc-char-key" data-char="d">d</button>
-                        <button class="vsc-key vsc-char-key" data-char="f">f</button>
-                        <button class="vsc-key vsc-char-key" data-char="g">g</button>
-                        <button class="vsc-key vsc-char-key" data-char="h">h</button>
-                        <button class="vsc-key vsc-char-key" data-char="j">j</button>
-                        <button class="vsc-key vsc-char-key" data-char="k">k</button>
-                        <button class="vsc-key vsc-char-key" data-char="l">l</button>
-                    </div>
-                    <!-- Bottom letter row -->
-                    <div class="vsc-row vsc-row-main">
-                        <button class="vsc-key vsc-mod-btn vsc-wide-key" data-mod="shift">\u21E7</button>
-                        <button class="vsc-key vsc-char-key" data-char="z">z</button>
-                        <button class="vsc-key vsc-char-key" data-char="x">x</button>
-                        <button class="vsc-key vsc-char-key" data-char="c">c</button>
-                        <button class="vsc-key vsc-char-key" data-char="v">v</button>
-                        <button class="vsc-key vsc-char-key" data-char="b">b</button>
-                        <button class="vsc-key vsc-char-key" data-char="n">n</button>
-                        <button class="vsc-key vsc-char-key" data-char="m">m</button>
-                        <button class="vsc-key vsc-wide-key" data-key="Bksp">\u232B</button>
-                    </div>
-                    <!-- Modifier + space + arrows row -->
-                    <div class="vsc-row vsc-row-main">
-                        <button class="vsc-key vsc-mod-btn" data-mod="ctrl">Ctrl</button>
-                        <button class="vsc-key vsc-mod-btn" data-mod="alt">Alt</button>
-                        <button class="vsc-key" data-key="Esc">Esc</button>
-                        <button class="vsc-key vsc-space-key" data-key="Space">&nbsp;</button>
-                        <button class="vsc-key" data-key="Enter">\u21B5</button>
-                        <button class="vsc-key vsc-arrow" data-key="Left">\u25C0</button>
-                        <button class="vsc-key vsc-arrow" data-key="Down">\u25BC</button>
-                        <button class="vsc-key vsc-arrow" data-key="Up">\u25B2</button>
-                        <button class="vsc-key vsc-arrow" data-key="Right">\u25B6</button>
-                    </div>
-
-                    <!-- EXPANDABLE: F-keys -->
-                    <div class="vsc-row vsc-row-extra vsc-hidden">
+                    <!-- F-keys -->
+                    <div class="vsc-row">
+                        <button class="vsc-key vsc-fkey" data-key="Esc">Esc</button>
                         <button class="vsc-key vsc-fkey" data-key="F1">F1</button>
                         <button class="vsc-key vsc-fkey" data-key="F2">F2</button>
                         <button class="vsc-key vsc-fkey" data-key="F3">F3</button>
@@ -349,22 +204,82 @@
                         <button class="vsc-key vsc-fkey" data-key="F11">F11</button>
                         <button class="vsc-key vsc-fkey" data-key="F12">F12</button>
                     </div>
-                    <!-- EXPANDABLE: Symbols 1 -->
-                    <div class="vsc-row vsc-row-extra vsc-hidden">
+                    <!-- Numbers + symbols -->
+                    <div class="vsc-row">
                         <button class="vsc-key" data-key="\`">\`</button>
+                        <button class="vsc-key" data-key="1">1</button>
+                        <button class="vsc-key" data-key="2">2</button>
+                        <button class="vsc-key" data-key="3">3</button>
+                        <button class="vsc-key" data-key="4">4</button>
+                        <button class="vsc-key" data-key="5">5</button>
+                        <button class="vsc-key" data-key="6">6</button>
+                        <button class="vsc-key" data-key="7">7</button>
+                        <button class="vsc-key" data-key="8">8</button>
+                        <button class="vsc-key" data-key="9">9</button>
+                        <button class="vsc-key" data-key="0">0</button>
                         <button class="vsc-key" data-key="-">-</button>
                         <button class="vsc-key" data-key="=">=</button>
+                    </div>
+                    <!-- QWERTY -->
+                    <div class="vsc-row">
+                        <button class="vsc-key" data-key="Tab">Tab</button>
+                        <button class="vsc-key vsc-char-key" data-char="q">q</button>
+                        <button class="vsc-key vsc-char-key" data-char="w">w</button>
+                        <button class="vsc-key vsc-char-key" data-char="e">e</button>
+                        <button class="vsc-key vsc-char-key" data-char="r">r</button>
+                        <button class="vsc-key vsc-char-key" data-char="t">t</button>
+                        <button class="vsc-key vsc-char-key" data-char="y">y</button>
+                        <button class="vsc-key vsc-char-key" data-char="u">u</button>
+                        <button class="vsc-key vsc-char-key" data-char="i">i</button>
+                        <button class="vsc-key vsc-char-key" data-char="o">o</button>
+                        <button class="vsc-key vsc-char-key" data-char="p">p</button>
                         <button class="vsc-key" data-key="[">[</button>
                         <button class="vsc-key" data-key="]">]</button>
                         <button class="vsc-key" data-key="\\">\\</button>
+                    </div>
+                    <!-- Home row -->
+                    <div class="vsc-row">
+                        <button class="vsc-key vsc-mod-btn vsc-wide-key" data-mod="ctrl">Ctrl</button>
+                        <button class="vsc-key vsc-char-key" data-char="a">a</button>
+                        <button class="vsc-key vsc-char-key" data-char="s">s</button>
+                        <button class="vsc-key vsc-char-key" data-char="d">d</button>
+                        <button class="vsc-key vsc-char-key" data-char="f">f</button>
+                        <button class="vsc-key vsc-char-key" data-char="g">g</button>
+                        <button class="vsc-key vsc-char-key" data-char="h">h</button>
+                        <button class="vsc-key vsc-char-key" data-char="j">j</button>
+                        <button class="vsc-key vsc-char-key" data-char="k">k</button>
+                        <button class="vsc-key vsc-char-key" data-char="l">l</button>
                         <button class="vsc-key" data-key=";">;</button>
                         <button class="vsc-key" data-key="'">'</button>
+                        <button class="vsc-key vsc-wide-key" data-key="Enter">\u21B5</button>
+                    </div>
+                    <!-- Bottom row -->
+                    <div class="vsc-row">
+                        <button class="vsc-key vsc-mod-btn vsc-wide-key" data-mod="shift">\u21E7</button>
+                        <button class="vsc-key vsc-char-key" data-char="z">z</button>
+                        <button class="vsc-key vsc-char-key" data-char="x">x</button>
+                        <button class="vsc-key vsc-char-key" data-char="c">c</button>
+                        <button class="vsc-key vsc-char-key" data-char="v">v</button>
+                        <button class="vsc-key vsc-char-key" data-char="b">b</button>
+                        <button class="vsc-key vsc-char-key" data-char="n">n</button>
+                        <button class="vsc-key vsc-char-key" data-char="m">m</button>
                         <button class="vsc-key" data-key=",">,</button>
                         <button class="vsc-key" data-key=".">.</button>
                         <button class="vsc-key" data-key="/">/</button>
+                        <button class="vsc-key vsc-wide-key" data-key="Bksp">\u232B</button>
                     </div>
-                    <!-- EXPANDABLE: Symbols 2 (shifted) -->
-                    <div class="vsc-row vsc-row-extra vsc-hidden">
+                    <!-- Modifiers + space + arrows -->
+                    <div class="vsc-row">
+                        <button class="vsc-key vsc-mod-btn" data-mod="alt">Alt</button>
+                        <button class="vsc-key vsc-mod-btn" data-mod="meta">Meta</button>
+                        <button class="vsc-key vsc-space-key" data-key="Space">&nbsp;</button>
+                        <button class="vsc-key vsc-arrow" data-key="Left">\u25C0</button>
+                        <button class="vsc-key vsc-arrow" data-key="Down">\u25BC</button>
+                        <button class="vsc-key vsc-arrow" data-key="Up">\u25B2</button>
+                        <button class="vsc-key vsc-arrow" data-key="Right">\u25B6</button>
+                    </div>
+                    <!-- Extra symbols (scrollable) -->
+                    <div class="vsc-row vsc-row-symbols">
                         <button class="vsc-key" data-key="~">~</button>
                         <button class="vsc-key" data-key="!">!</button>
                         <button class="vsc-key" data-key="@">@</button>
@@ -376,9 +291,8 @@
                         <button class="vsc-key" data-key="*">*</button>
                         <button class="vsc-key" data-key="(">(</button>
                         <button class="vsc-key" data-key=")">)</button>
-                    </div>
-                    <!-- EXPANDABLE: Symbols 3 + brackets -->
-                    <div class="vsc-row vsc-row-extra vsc-hidden">
+                        <button class="vsc-key" data-key="_">_</button>
+                        <button class="vsc-key" data-key="+">+</button>
                         <button class="vsc-key" data-key="{">{</button>
                         <button class="vsc-key" data-key="}">}</button>
                         <button class="vsc-key" data-key="|">|</button>
@@ -387,19 +301,12 @@
                         <button class="vsc-key" data-key="<">&lt;</button>
                         <button class="vsc-key" data-key=">">&gt;</button>
                         <button class="vsc-key" data-key="?">?</button>
-                        <button class="vsc-key" data-key="_">_</button>
-                        <button class="vsc-key" data-key="+">+</button>
-                    </div>
-                    <!-- EXPANDABLE: Navigation -->
-                    <div class="vsc-row vsc-row-extra vsc-hidden">
-                        <button class="vsc-key" data-key="Tab">Tab</button>
-                        <button class="vsc-key" data-key="Home">Home</button>
+                        <button class="vsc-key" data-key="Home">Hm</button>
                         <button class="vsc-key" data-key="End">End</button>
-                        <button class="vsc-key" data-key="PgUp">PgUp</button>
-                        <button class="vsc-key" data-key="PgDn">PgDn</button>
+                        <button class="vsc-key" data-key="PgUp">PU</button>
+                        <button class="vsc-key" data-key="PgDn">PD</button>
                         <button class="vsc-key" data-key="Ins">Ins</button>
                         <button class="vsc-key" data-key="Del">Del</button>
-                        <button class="vsc-key vsc-mod-btn" data-mod="meta">Meta</button>
                     </div>
                 </div>
 
@@ -408,9 +315,9 @@
                         <div class="vsc-touchpad-hint">Drag to move cursor</div>
                     </div>
                     <div class="vsc-touchpad-buttons">
-                        <button class="vsc-tp-btn" id="vsc-tp-left">Left Click</button>
-                        <button class="vsc-tp-btn" id="vsc-tp-middle">Middle</button>
-                        <button class="vsc-tp-btn" id="vsc-tp-right">Right Click</button>
+                        <button class="vsc-tp-btn" id="vsc-tp-left">Left</button>
+                        <button class="vsc-tp-btn" id="vsc-tp-middle">Mid</button>
+                        <button class="vsc-tp-btn" id="vsc-tp-right">Right</button>
                     </div>
                 </div>
             </div>
@@ -418,7 +325,6 @@
 
         document.body.appendChild(overlay);
 
-        // Cursor indicator
         const cursor = document.createElement('div');
         cursor.id = 'vsc-cursor';
         document.body.appendChild(cursor);
@@ -426,32 +332,23 @@
         return overlay;
     }
 
-    // (System keyboard input is no longer proxied — full overlay keyboard handles all input)
-
     // ========================================================================
     // EVENT HANDLERS
     // ========================================================================
     function setupKeyboardEvents(overlay) {
-        // Character keys (letters via data-char)
         overlay.querySelectorAll('.vsc-char-key').forEach(btn => {
             btn.addEventListener('pointerdown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const ch = btn.dataset.char;
-                const sendChar = state.modifiers.shift ? ch.toUpperCase() : ch;
-                dispatchCharKey(sendChar);
+                e.preventDefault(); e.stopPropagation();
+                dispatchCharKey(state.modifiers.shift ? btn.dataset.char.toUpperCase() : btn.dataset.char);
                 btn.classList.add('vsc-pressed');
                 setTimeout(() => btn.classList.remove('vsc-pressed'), 100);
             });
         });
 
-        // Special/symbol keys (via data-key + KEYS map)
         overlay.querySelectorAll('.vsc-key[data-key]:not(.vsc-mod-btn)').forEach(btn => {
             btn.addEventListener('pointerdown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const keyName = btn.dataset.key;
-                const keyDef = KEYS[keyName];
+                e.preventDefault(); e.stopPropagation();
+                const keyDef = KEYS[btn.dataset.key];
                 if (keyDef) {
                     dispatchKey(keyDef);
                     btn.classList.add('vsc-pressed');
@@ -460,13 +357,10 @@
             });
         });
 
-        // Modifier buttons
         overlay.querySelectorAll('.vsc-mod-btn').forEach(btn => {
             btn.addEventListener('pointerdown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
+                e.preventDefault(); e.stopPropagation();
                 toggleModifier(btn.dataset.mod);
-                // Visual shift feedback on letter keys
                 if (btn.dataset.mod === 'shift') {
                     overlay.querySelector('.vsc-keyboard-panel').classList.toggle('vsc-shifted', state.modifiers.shift);
                 }
@@ -479,136 +373,103 @@
 
         pad.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            const touches = e.touches;
-            state.touchpad.fingers = touches.length;
+            const t = e.touches;
+            state.touchpad.fingers = t.length;
             state.touchpad.tracking = true;
-            state.touchpad.lastX = touches[0].clientX;
-            state.touchpad.lastY = touches[0].clientY;
-            if (touches.length >= 2) {
-                state.touchpad.scrollLastY = touches[0].clientY;
-            }
+            state.touchpad.lastX = t[0].clientX;
+            state.touchpad.lastY = t[0].clientY;
+            if (t.length >= 2) state.touchpad.scrollLastY = t[0].clientY;
             state.tapStart = Date.now();
         }, { passive: false });
 
         pad.addEventListener('touchmove', (e) => {
             e.preventDefault();
             if (!state.touchpad.tracking) return;
-
             const touch = e.touches[0];
             const dx = touch.clientX - state.touchpad.lastX;
             const dy = touch.clientY - state.touchpad.lastY;
             state.touchpad.lastX = touch.clientX;
             state.touchpad.lastY = touch.clientY;
-
             if (e.touches.length >= 2) {
-                // Two-finger scroll
                 const scrollDy = touch.clientY - state.touchpad.scrollLastY;
                 state.touchpad.scrollLastY = touch.clientY;
                 scrollAt(scrollDy * state.scrollSensitivity);
             } else {
-                // Single finger - move cursor
                 state.cursor.x = Math.max(0, Math.min(window.innerWidth, state.cursor.x + dx * state.sensitivity));
                 state.cursor.y = Math.max(0, Math.min(window.innerHeight - 200, state.cursor.y + dy * state.sensitivity));
                 updateCursor();
                 dispatchPointer('pointermove', 0);
                 dispatchMouse('mousemove', 0);
             }
-            state.tapStart = 0; // moved, not a tap
+            state.tapStart = 0;
         }, { passive: false });
 
         pad.addEventListener('touchend', (e) => {
             e.preventDefault();
             state.touchpad.tracking = false;
-
-            // Detect tap (short touch without much movement)
             const elapsed = Date.now() - state.tapStart;
             if (state.tapStart > 0 && elapsed < 200) {
                 const now = Date.now();
-                if (state.touchpad.fingers >= 2) {
-                    // Two-finger tap = right click
-                    clickAt(2);
-                } else if (now - state.lastTap < 300) {
-                    // Double tap
-                    doubleClickAt();
-                    state.lastTap = 0;
-                } else {
-                    // Single tap = left click
+                if (state.touchpad.fingers >= 2) { clickAt(2); }
+                else if (now - state.lastTap < 300) { doubleClickAt(); state.lastTap = 0; }
+                else {
                     state.lastTap = now;
                     clearTimeout(state.tapTimeout);
-                    state.tapTimeout = setTimeout(() => {
-                        if (state.lastTap > 0) {
-                            clickAt(0);
-                            state.lastTap = 0;
-                        }
-                    }, 300);
+                    state.tapTimeout = setTimeout(() => { if (state.lastTap > 0) { clickAt(0); state.lastTap = 0; } }, 300);
                 }
             }
-
             state.touchpad.fingers = 0;
         }, { passive: false });
 
-        // Explicit click buttons
-        overlay.querySelector('#vsc-tp-left').addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            clickAt(0);
-        });
-        overlay.querySelector('#vsc-tp-middle').addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            clickAt(1);
-        });
-        overlay.querySelector('#vsc-tp-right').addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            clickAt(2);
+        overlay.querySelector('#vsc-tp-left').addEventListener('pointerdown', (e) => { e.preventDefault(); clickAt(0); });
+        overlay.querySelector('#vsc-tp-middle').addEventListener('pointerdown', (e) => { e.preventDefault(); clickAt(1); });
+        overlay.querySelector('#vsc-tp-right').addEventListener('pointerdown', (e) => { e.preventDefault(); clickAt(2); });
+    }
+
+    // ========================================================================
+    // TOOLBAR + SHOW/HIDE
+    // ========================================================================
+    function sendToAndroid(msg) {
+        try { browser.runtime.sendNativeMessage('browser', msg); } catch (_) {}
+    }
+
+    function showOverlay(overlay) {
+        state.overlayVisible = true;
+        overlay.classList.remove('vsc-collapsed');
+        const toggle = document.getElementById('vsc-float-toggle');
+        if (toggle) toggle.style.display = 'none';
+        sendToAndroid({ type: 'overlayVisibility', visible: true });
+        requestAnimationFrame(() => {
+            sendToAndroid({ type: 'resize', height: Math.round(overlay.getBoundingClientRect().height) });
         });
     }
 
+    function hideOverlay(overlay) {
+        state.overlayVisible = false;
+        overlay.classList.add('vsc-collapsed');
+        sendToAndroid({ type: 'overlayVisibility', visible: false });
+        sendToAndroid({ type: 'resize', height: 0 });
+        showFloatingToggle(overlay);
+    }
+
     function setupToolbar(overlay) {
-        // Tab switching
-        overlay.querySelectorAll('.vsc-tab-btn').forEach(btn => {
-            btn.addEventListener('pointerdown', (e) => {
-                e.preventDefault();
-                const tab = btn.dataset.tab;
-                state.activeTab = tab;
-
-                overlay.querySelectorAll('.vsc-tab-btn').forEach(b => b.classList.remove('vsc-active'));
-                btn.classList.add('vsc-active');
-
-                overlay.querySelector('.vsc-keyboard-panel').classList.toggle('vsc-active-panel', tab === 'keyboard');
-                overlay.querySelector('.vsc-touchpad-panel').classList.toggle('vsc-active-panel', tab === 'touchpad');
+        // TP toggle (narrow screens only — on wide, both panels always visible)
+        overlay.querySelector('#vsc-tp-toggle').addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            const kp = overlay.querySelector('.vsc-keyboard-panel');
+            const tp = overlay.querySelector('.vsc-touchpad-panel');
+            const showTP = !tp.classList.contains('vsc-active-panel');
+            kp.classList.toggle('vsc-active-panel', !showTP);
+            tp.classList.toggle('vsc-active-panel', showTP);
+            e.target.classList.toggle('vsc-active', showTP);
+            requestAnimationFrame(() => {
+                sendToAndroid({ type: 'resize', height: Math.round(overlay.getBoundingClientRect().height) });
             });
         });
 
-        // Expand/collapse extra rows
-        overlay.querySelector('#vsc-expand-btn').addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            state.keyboardExpanded = !state.keyboardExpanded;
-            overlay.querySelectorAll('.vsc-row-extra').forEach(row => {
-                row.classList.toggle('vsc-hidden', !state.keyboardExpanded);
-            });
-            e.target.textContent = state.keyboardExpanded ? 'Less' : 'More';
-            requestAnimationFrame(() => updatePadding(overlay));
-        });
-
-        // System keyboard suppression toggle
-        overlay.querySelector('#vsc-syskb-btn').addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            state.sysKBSuppressed = !state.sysKBSuppressed;
-            e.target.classList.toggle('vsc-active', state.sysKBSuppressed);
-            try {
-                browser.runtime.sendNativeMessage('browser', {
-                    type: 'setSysKBSuppressed',
-                    suppressed: state.sysKBSuppressed
-                });
-            } catch (ex) { /* ignore */ }
-        });
-
-        // Hide overlay
         overlay.querySelector('#vsc-hide-btn').addEventListener('pointerdown', (e) => {
             e.preventDefault();
-            state.overlayVisible = false;
-            overlay.classList.add('vsc-collapsed');
-            updatePadding(overlay);
-            showFloatingToggle(overlay);
+            hideOverlay(overlay);
         });
     }
 
@@ -617,16 +478,8 @@
         if (!toggle) {
             toggle = document.createElement('button');
             toggle.id = 'vsc-float-toggle';
-            toggle.textContent = '⟨/⟩';
-            toggle.addEventListener('pointerdown', (e) => {
-                e.preventDefault();
-                state.overlayVisible = true;
-                overlay.classList.remove('vsc-collapsed');
-                toggle.style.display = 'none';
-                // Recalculate padding after overlay is visible again
-                requestAnimationFrame(() => updatePadding(overlay));
-            });
-            // Prevent focus stealing
+            toggle.textContent = '\u27E8/\u27E9';
+            toggle.addEventListener('pointerdown', (e) => { e.preventDefault(); showOverlay(overlay); });
             toggle.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
             toggle.addEventListener('mousedown', e => e.preventDefault());
             document.body.appendChild(toggle);
@@ -635,68 +488,28 @@
     }
 
     // ========================================================================
-    // CURSOR VISUAL
+    // CURSOR
     // ========================================================================
     function updateCursor() {
         const el = document.getElementById('vsc-cursor');
-        if (el) {
-            el.style.transform = `translate(${state.cursor.x}px, ${state.cursor.y}px)`;
-        }
+        if (el) el.style.transform = `translate(${state.cursor.x}px, ${state.cursor.y}px)`;
     }
 
     // ========================================================================
-    // RESIZE — tell Android to shrink GeckoView so VS Code viewport shrinks
-    //
-    // VS Code reads window.innerHeight (set by GeckoView engine, not CSS).
-    // The only way to change it is to resize the actual GeckoView Android View.
-    // We send the overlay height (in CSS px) to Kotlin via native messaging.
-    // Kotlin converts to physical px and sets bottomMargin on GeckoView.
-    //
-    // System keyboard is handled separately by Android IME insets on rootFrame
-    // — we do NOT include sysKB offset here to avoid double-counting.
-    // ========================================================================
-    let _lastReserved = 0;
-
-    function updatePadding(overlay) {
-        let reserved = 0;
-        if (!overlay.classList.contains('vsc-collapsed')) {
-            reserved = Math.round(overlay.getBoundingClientRect().height);
-        }
-
-        if (reserved === _lastReserved) return;
-        _lastReserved = reserved;
-
-        try {
-            browser.runtime.sendNativeMessage('browser', {
-                type: 'resize',
-                height: reserved
-            });
-        } catch (e) {
-            // Messaging not available — ignore silently
-        }
-    }
-
-    // (System keyboard resize is handled entirely by Android IME insets)
-
-    // ========================================================================
-    // WIDE DISPLAY — side-by-side KB + TP
+    // WIDE LAYOUT — auto side-by-side
     // ========================================================================
     function updateWideLayout(overlay) {
         const isWide = window.innerWidth > 900;
         overlay.classList.toggle('vsc-wide', isWide);
-
         if (isWide) {
-            // In wide mode, both panels are always visible
             overlay.querySelector('.vsc-keyboard-panel').classList.add('vsc-active-panel');
             overlay.querySelector('.vsc-touchpad-panel').classList.add('vsc-active-panel');
-        } else {
-            // Restore tab-based switching
-            const activeTab = state.activeTab;
-            overlay.querySelector('.vsc-keyboard-panel').classList.toggle('vsc-active-panel', activeTab === 'keyboard');
-            overlay.querySelector('.vsc-touchpad-panel').classList.toggle('vsc-active-panel', activeTab === 'touchpad');
         }
-
-        requestAnimationFrame(() => updatePadding(overlay));
+        if (state.overlayVisible) {
+            requestAnimationFrame(() => {
+                sendToAndroid({ type: 'resize', height: Math.round(overlay.getBoundingClientRect().height) });
+            });
+        }
     }
 
     // ========================================================================
@@ -705,27 +518,24 @@
     function init() {
         if (!document.body) return;
 
-        // Clean up any stale elements (from previous injection that lost event handlers)
         for (const id of ['vsc-overlay', 'vsc-cursor', 'vsc-float-toggle']) {
             const el = document.getElementById(id);
             if (el) el.remove();
         }
 
         const overlay = buildOverlay();
-
         setupKeyboardEvents(overlay);
         setupTouchpad(overlay);
         setupToolbar(overlay);
         updateCursor();
 
+        // Start hidden — show floating toggle
+        showFloatingToggle(overlay);
+
         updateWideLayout(overlay);
         window.addEventListener('resize', () => updateWideLayout(overlay));
     }
 
-    // Run immediately if body exists, otherwise wait
-    if (document.body) {
-        init();
-    } else {
-        document.addEventListener('DOMContentLoaded', init);
-    }
+    if (document.body) init();
+    else document.addEventListener('DOMContentLoaded', init);
 })();
