@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { background:#1E1E1E; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; }
+
+/* Toolbar */
+.toolbar { display:flex; align-items:center; gap:4px; padding:3px 6px; background:rgba(20,20,20,0.9); border-bottom:1px solid rgba(255,255,255,0.06); }
+.tool-btn { padding:5px 10px; font-size:12px; font-weight:600; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.08); color:#aaa; border:1px solid rgba(255,255,255,0.1); border-radius:4px; cursor:pointer; touch-action:manipulation; }
+.tool-btn.active { background:#007acc; color:#fff; border-color:#007acc; }
+.spacer { flex:1; }
+
+/* Panels */
+.panels { display:block; }
+.panel { display:none; padding:2px; }
+.panel.active { display:block; }
+
+/* Keyboard */
+.row { display:flex; gap:2px; padding:1px 2px; flex-wrap:nowrap; justify-content:center; }
+.key { flex:1 1 0; min-width:0; height:38px; padding:0 2px; font-size:14px; font-weight:500; font-family:'SF Mono','Fira Code','Consolas',monospace; background:rgba(255,255,255,0.1); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:4px; cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation; transition:background 0.08s; }
+.key:active, .key.pressed { background:rgba(0,122,204,0.5); border-color:#007acc; }
+.key.mod-active { background:#007acc; color:#fff; border-color:#007acc; }
+.space-key { flex:3 1 0; }
+.wide-key { flex:1.5 1 0; }
+.shifted .char-key { text-transform:uppercase; }
+
+/* Scrollable rows */
+.row-scroll { justify-content:flex-start; overflow-x:auto; scrollbar-width:none; }
+.row-scroll::-webkit-scrollbar { display:none; }
+.row-scroll .key { flex:0 0 auto; min-width:32px; height:30px; padding:0 5px; font-size:11px; }
+
+/* Touchpad */
+.tp-panel.active { display:flex; flex-direction:column; }
+.tp-area { flex:1; min-height:120px; margin:4px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:8px; display:flex; align-items:center; justify-content:center; touch-action:none; }
+.tp-hint { color:rgba(255,255,255,0.2); font-size:14px; pointer-events:none; font-family:-apple-system,sans-serif; }
+.tp-buttons { display:flex; gap:4px; padding:4px; }
+.tp-btn { flex:1; height:36px; font-size:13px; font-weight:500; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.08); color:#bbb; border:1px solid rgba(255,255,255,0.12); border-radius:6px; cursor:pointer; touch-action:manipulation; }
+.tp-btn:active { background:rgba(0,122,204,0.4); border-color:#007acc; }
+
+/* Wide: side-by-side */
+@media (min-width:901px) {
+    .toolbar .tab-btn { display:none; }
+    .panels { display:flex; flex-direction:row; align-items:stretch; }
+    .panel { display:block; }
+    .kb-panel { flex:2; min-width:0; }
+    .tp-panel { display:flex; flex-direction:column; flex:1; min-width:0; border-left:1px solid rgba(255,255,255,0.1); }
+    .tp-area { min-height:0; }
+    .key { height:34px; font-size:12px; }
+    .row-scroll .key { height:28px; font-size:10px; }
+}
+
+/* Landscape narrow */
+@media (orientation:landscape) and (max-width:900px) {
+    .key { height:32px; font-size:12px; }
+    .row { gap:1px; padding:0 1px; }
+    .row-scroll .key { height:26px; font-size:10px; }
+    .tp-btn { height:28px; font-size:11px; }
+    .toolbar { padding:2px 4px; }
+    .tool-btn { padding:3px 6px; font-size:10px; }
+    .tp-area { min-height:80px; }
+}
+
+@media (max-width:400px) {
+    .key { height:36px; font-size:13px; }
+}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+    <button class="tool-btn tab-btn" id="tpToggle">TP</button>
+    <div class="spacer"></div>
+    <button class="tool-btn" id="hideBtn">Hide</button>
+</div>
+
+<div class="panels">
+    <div class="panel kb-panel active" id="kbPanel"></div>
+    <div class="panel tp-panel" id="tpPanel">
+        <div class="tp-area" id="tpArea"><div class="tp-hint">Drag to move cursor</div></div>
+        <div class="tp-buttons">
+            <button class="tp-btn" id="tpLeft">Left</button>
+            <button class="tp-btn" id="tpMid">Mid</button>
+            <button class="tp-btn" id="tpRight">Right</button>
+        </div>
+    </div>
+</div>
+
+<script>
+'use strict';
+
+// ======================== STATE ========================
+const mods = { ctrl:false, alt:false, shift:false, meta:false };
+const tp = { tracking:false, lastX:0, lastY:0, fingers:0, scrollLastY:0, tapStart:0, lastTap:0, tapTimeout:null };
+const SENSITIVITY = 1.5, SCROLL_SENS = 3;
+
+// ======================== ANDROID BRIDGE ========================
+const A = window.Android || {
+    sendChar(){}, sendKey(){}, pointerMove(){}, click(){},
+    doubleClick(){}, scroll(){}, hideOverlay(){}, sendModifier(){}
+};
+
+// ======================== KEY HELPERS ========================
+function K(key, label) { return `<button class="key" data-key="${key}">${label||key}</button>`; }
+function C(ch) { return `<button class="key char-key" data-char="${ch}">${ch}</button>`; }
+function M(mod, label) { return `<button class="key key-mod wide-key" data-mod="${mod}">${label}</button>`; }
+
+function compactKB() {
+    return `
+        <div class="row row-scroll">
+            ${K('Esc')} ${K('Tab')} ${K('`')} ${'1234567890'.split('').map(d=>K(d)).join('')}
+            ${K('-')} ${K('=')} ${K('[')} ${K(']')} ${K('\\\\')} ${K(';')} ${K("'")} ${K('/')}
+            ${K('Left','\u25C0')} ${K('Down','\u25BC')} ${K('Up','\u25B2')} ${K('Right','\u25B6')}
+            ${K('Home','Hm')} ${K('End')} ${K('PgUp','PU')} ${K('PgDn','PD')} ${K('Del')} ${K('Ins')}
+        </div>
+        <div class="row">${C('q')}${C('w')}${C('e')}${C('r')}${C('t')}${C('y')}${C('u')}${C('i')}${C('o')}${C('p')}</div>
+        <div class="row">${C('a')}${C('s')}${C('d')}${C('f')}${C('g')}${C('h')}${C('j')}${C('k')}${C('l')}</div>
+        <div class="row">${M('shift','\u21E7')}${C('z')}${C('x')}${C('c')}${C('v')}${C('b')}${C('n')}${C('m')}${K('Bksp','\u232B')}</div>
+        <div class="row">
+            ${M('ctrl','Ctrl')} ${M('alt','Alt')} ${M('meta','Meta')}
+            <button class="key space-key" data-key="Space">&nbsp;</button>
+            ${K(',',',')} ${K('.','.') } ${K('Enter','\u21B5')}
+        </div>
+        <div class="row row-scroll">
+            ${['~','!','@','#','$','%','^','&','*','(',')','-','_','+','=','{','}','[',']','|','\\\\',':',';','"',"'",'<','>',',','.','/','?','`'].map(s=>K(s, s==='&'?'&amp;':s==='<'?'&lt;':s==='>'?'&gt;':s==='"'?'&quot;':s)).join('')}
+            ${'F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12'.split(' ').map(f=>K(f)).join('')}
+        </div>`;
+}
+
+function fullKB() {
+    return `
+        <div class="row">
+            ${K('Esc')} ${'1234567890'.split('').map(d=>K(d)).join('')} ${K('-')} ${K('=')} ${K('Bksp','\u232B')}
+        </div>
+        <div class="row">
+            ${K('Tab')} ${C('q')}${C('w')}${C('e')}${C('r')}${C('t')}${C('y')}${C('u')}${C('i')}${C('o')}${C('p')}
+            ${K('[')} ${K(']')} ${K('\\\\')}
+        </div>
+        <div class="row">
+            ${M('ctrl','Ctrl')} ${C('a')}${C('s')}${C('d')}${C('f')}${C('g')}${C('h')}${C('j')}${C('k')}${C('l')}
+            ${K(';')} ${K("'")} ${K('Enter','\u21B5')}
+        </div>
+        <div class="row">
+            ${M('shift','\u21E7')} ${C('z')}${C('x')}${C('c')}${C('v')}${C('b')}${C('n')}${C('m')}
+            ${K(',')} ${K('.')} ${K('/')} ${M('shift','\u21E7')}
+        </div>
+        <div class="row">
+            ${M('alt','Alt')} ${M('meta','Meta')} ${K('\`')}
+            <button class="key space-key" data-key="Space">&nbsp;</button>
+            ${K('Left','\u25C0')} ${K('Down','\u25BC')} ${K('Up','\u25B2')} ${K('Right','\u25B6')}
+        </div>
+        <div class="row row-scroll">
+            ${'F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12'.split(' ').map(f=>K(f)).join('')}
+            ${['~','!','@','#','$','%','^','&','*','(',')','-','_','+','=','{','}','|',':','"','<','>','?'].map(s=>K(s,s==='&'?'&amp;':s==='<'?'&lt;':s==='>'?'&gt;':s==='"'?'&quot;':s)).join('')}
+            ${K('Home')} ${K('End')} ${K('PgUp')} ${K('PgDn')} ${K('Del')} ${K('Ins')}
+        </div>`;
+}
+
+// ======================== LAYOUT ========================
+let currentLayout = '';
+const kbPanel = document.getElementById('kbPanel');
+const tpPanel = document.getElementById('tpPanel');
+
+function updateLayout() {
+    const wide = window.innerWidth > 900;
+    const layout = wide ? 'wide' : 'compact';
+    if (layout === currentLayout) return;
+    currentLayout = layout;
+    kbPanel.innerHTML = wide ? fullKB() : compactKB();
+    attachKeyEvents();
+    if (wide) {
+        kbPanel.classList.add('active');
+        tpPanel.classList.add('active');
+    }
+}
+
+// ======================== KEY EVENTS ========================
+function resetMods() {
+    mods.ctrl = mods.alt = mods.shift = mods.meta = false;
+    document.querySelectorAll('.key-mod').forEach(b => b.classList.remove('mod-active'));
+    kbPanel.classList.remove('shifted');
+}
+
+function toggleMod(mod) {
+    mods[mod] = !mods[mod];
+    document.querySelectorAll('.key-mod').forEach(b => b.classList.toggle('mod-active', mods[b.dataset.mod]));
+    if (mod === 'shift') kbPanel.classList.toggle('shifted', mods.shift);
+}
+
+// Printable single-char keys that need special key codes for dispatchKey
+const SPECIAL_KEYS = new Set(['Esc','Tab','Enter','Bksp','Del','Space','Home','End',
+    'PgUp','PgDn','Ins','Up','Down','Left','Right',
+    'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12']);
+
+function attachKeyEvents() {
+    // Character keys (a-z)
+    kbPanel.querySelectorAll('.char-key').forEach(btn => {
+        btn.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            const ch = mods.shift ? btn.dataset.char.toUpperCase() : btn.dataset.char;
+            A.sendChar(ch);
+            resetMods();
+            btn.classList.add('pressed'); setTimeout(() => btn.classList.remove('pressed'), 100);
+        });
+    });
+
+    // Special + symbol keys
+    kbPanel.querySelectorAll('.key[data-key]:not(.key-mod)').forEach(btn => {
+        btn.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            const key = btn.dataset.key;
+            if (SPECIAL_KEYS.has(key) || mods.ctrl || mods.alt || mods.meta) {
+                // Special key or modified → send as key event (keydown/keyup)
+                A.sendKey(JSON.stringify({key, ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+            } else {
+                // Printable symbol → send as char insertion
+                A.sendChar(key);
+            }
+            resetMods();
+            btn.classList.add('pressed'); setTimeout(() => btn.classList.remove('pressed'), 100);
+        });
+    });
+
+    // Modifiers
+    kbPanel.querySelectorAll('.key-mod').forEach(btn => {
+        btn.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            toggleMod(btn.dataset.mod);
+        });
+    });
+}
+
+// ======================== TOUCHPAD ========================
+const tpArea = document.getElementById('tpArea');
+tpArea.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const t = e.touches;
+    tp.tracking = true; tp.fingers = t.length;
+    tp.lastX = t[0].clientX; tp.lastY = t[0].clientY;
+    if (t.length >= 2) tp.scrollLastY = t[0].clientY;
+    tp.tapStart = Date.now();
+}, {passive:false});
+
+tpArea.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (!tp.tracking) return;
+    const t = e.touches[0];
+    const dx = t.clientX - tp.lastX, dy = t.clientY - tp.lastY;
+    tp.lastX = t.clientX; tp.lastY = t.clientY;
+    if (e.touches.length >= 2) {
+        const sd = t.clientY - tp.scrollLastY; tp.scrollLastY = t.clientY;
+        A.scroll(sd * SCROLL_SENS);
+    } else {
+        A.pointerMove(dx * SENSITIVITY, dy * SENSITIVITY);
+    }
+    tp.tapStart = 0;
+}, {passive:false});
+
+tpArea.addEventListener('touchend', e => {
+    e.preventDefault();
+    tp.tracking = false;
+    const el = Date.now() - tp.tapStart;
+    if (tp.tapStart > 0 && el < 200) {
+        const now = Date.now();
+        if (tp.fingers >= 2) { A.click(2); }
+        else if (now - tp.lastTap < 300) { A.doubleClick(); tp.lastTap = 0; }
+        else {
+            tp.lastTap = now;
+            clearTimeout(tp.tapTimeout);
+            tp.tapTimeout = setTimeout(() => { if (tp.lastTap > 0) { A.click(0); tp.lastTap = 0; } }, 300);
+        }
+    }
+    tp.fingers = 0;
+}, {passive:false});
+
+document.getElementById('tpLeft').addEventListener('pointerdown', e => { e.preventDefault(); A.click(0); });
+document.getElementById('tpMid').addEventListener('pointerdown', e => { e.preventDefault(); A.click(1); });
+document.getElementById('tpRight').addEventListener('pointerdown', e => { e.preventDefault(); A.click(2); });
+
+// ======================== TOOLBAR ========================
+document.getElementById('tpToggle').addEventListener('pointerdown', e => {
+    e.preventDefault();
+    const show = !tpPanel.classList.contains('active');
+    kbPanel.classList.toggle('active', !show);
+    tpPanel.classList.toggle('active', show);
+    e.target.classList.toggle('active', show);
+});
+
+document.getElementById('hideBtn').addEventListener('pointerdown', e => {
+    e.preventDefault();
+    A.hideOverlay();
+});
+
+// Prevent any focus stealing
+document.addEventListener('touchstart', e => e.preventDefault(), {passive:false});
+document.addEventListener('mousedown', e => e.preventDefault());
+
+// ======================== INIT ========================
+updateLayout();
+window.addEventListener('resize', updateLayout);
+</script>
+</body>
+</html>

@@ -5,11 +5,56 @@
     android:layout_height="match_parent"
     android:fitsSystemWindows="false">
 
-    <!-- GeckoView for tunnel browsing (hidden by default) -->
-    <com.vscodetunnel.app.SuppressableGeckoView
-        android:id="@+id/geckoView"
+    <!-- GeckoView + overlay container (hidden by default) -->
+    <LinearLayout
+        android:id="@+id/geckoContainer"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <!-- GeckoView fills remaining space above overlay -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <com.vscodetunnel.app.SuppressableGeckoView
+                android:id="@+id/geckoView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
+            <!-- Cursor dot overlaid on GeckoView -->
+            <View
+                android:id="@+id/cursorDot"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:background="@drawable/cursor_dot"
+                android:visibility="gone"
+                android:elevation="10dp" />
+        </FrameLayout>
+
+        <!-- Overlay keyboard WebView (shown/hidden dynamically) -->
+        <WebView
+            android:id="@+id/overlayWebView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- Floating toggle to show overlay (over GeckoView) -->
+    <Button
+        android:id="@+id/floatingToggle"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="12dp"
+        android:layout_marginBottom="12dp"
+        android:text="&lt;/&gt;"
+        android:textSize="12sp"
+        android:textColor="#FFFFFF"
+        android:background="@drawable/fab_circle"
+        android:elevation="6dp"
         android:visibility="gone" />
 
 

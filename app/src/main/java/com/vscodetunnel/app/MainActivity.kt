@@ -26,6 +26,7 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import android.webkit.WebView
 import org.json.JSONObject
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
@@ -47,7 +48,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private lateinit var geckoView: SuppressableGeckoView
+    private lateinit var geckoContainer: View
     private lateinit var launcherScroll: View
+    private lateinit var overlayManager: OverlayManager
     private var tunnelSession: GeckoSession? = null
     private var pollJob: Job? = null
     private var authDialog: Dialog? = null
@@ -103,6 +106,17 @@ class MainActivity : AppCompatActivity() {
         GeckoManager.installOverlayExtension(runtime)
 
         geckoView = findViewById(R.id.geckoView)
+        geckoContainer = findViewById(R.id.geckoContainer)
+
+        // Setup overlay manager
+        val overlayWebView = findViewById<WebView>(R.id.overlayWebView)
+        val cursorDot = findViewById<View>(R.id.cursorDot)
+        val floatingToggle = findViewById<Button>(R.id.floatingToggle)
+        overlayManager = OverlayManager(geckoView, overlayWebView, cursorDot, floatingToggle) { visible ->
+            onOverlayVisibilityChanged(visible)
+        }
+        overlayManager.setup()
+        floatingToggle.setOnClickListener { overlayManager.show() }
 
         // Restore state
         val token = authPrefs.getString(KEY_TOKEN, null)
@@ -496,7 +510,8 @@ class MainActivity : AppCompatActivity() {
 
         // Switch to GeckoView
         launcherScroll.visibility = View.GONE
-        geckoView.visibility = View.VISIBLE
+        geckoContainer.visibility = View.VISIBLE
+        findViewById<Button>(R.id.floatingToggle).visibility = View.VISIBLE
     }
 
     private fun setupOverlayMessaging(session: GeckoSession) {
@@ -505,21 +520,11 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // Port-based messaging: content script connects via connectNative('browser')
         val messageDelegate = object : WebExtension.MessageDelegate {
-            override fun onMessage(
-                nativeApp: String,
-                message: Any,
-                sender: WebExtension.MessageSender
-            ): GeckoResult<Any>? {
-                if (message is JSONObject) {
-                    when (message.optString("type")) {
-                        "overlayVisibility" -> {
-                            val visible = message.optBoolean("visible", false)
-                            runOnUiThread { onOverlayVisibilityChanged(visible) }
-                        }
-                    }
-                }
-                return null
+            override fun onConnect(port: WebExtension.Port) {
+                FileLogger.d(TAG, "Content script port connected")
+                runOnUiThread { overlayManager.setPort(port) }
             }
         }
 
@@ -537,12 +542,6 @@ class MainActivity : AppCompatActivity() {
         // Force insets re-evaluation so IME padding is cleared/applied correctly
         ViewCompat.requestApplyInsets(findViewById(R.id.rootFrame))
     }
-
-    // Overlay covers bottom of VS Code like a mobile keyboard.
-    // True viewport resize not possible with content-script overlay
-    // (overlay is inside GeckoView viewport — any resize API either
-    // double-counts or causes visual glitches).
-    // Future: native Android overlay view for actual resize.
 
 
 
@@ -644,13 +643,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showLauncher() {
+        overlayManager.hide()
         geckoView.releaseSession()
         tunnelSession?.close()
         tunnelSession = null
         currentTunnelUrl = null
         sysKBSuppressed = false
         geckoView.suppressIME = false
-        geckoView.visibility = View.GONE
+        geckoContainer.visibility = View.GONE
+        findViewById<Button>(R.id.floatingToggle).visibility = View.GONE
         launcherScroll.visibility = View.VISIBLE
     }
 
@@ -748,7 +749,11 @@ class MainActivity : AppCompatActivity() {
                     authDialog?.dismiss()
                     return
                 }
-                if (geckoView.visibility == View.VISIBLE) {
+                if (overlayManager.isVisible) {
+                    overlayManager.hide()
+                    return
+                }
+                if (geckoContainer.visibility == View.VISIBLE) {
                     showLauncher()
                     return
                 }
