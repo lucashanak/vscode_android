@@ -8,6 +8,11 @@
       "id": "overlay@vscodetunnel.app"
     }
   },
+  "permissions": [
+    "nativeMessaging",
+    "nativeMessagingFromContent",
+    "geckoViewAddons"
+  ],
   "content_scripts": [
     {
       "matches": [

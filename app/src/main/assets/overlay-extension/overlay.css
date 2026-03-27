@@ -234,11 +234,6 @@
     background: rgba(0, 90, 160, 0.9);
 }
 
-/* ---- Viewport resize (shrink html so body + VS Code follow) ---- */
-html.vsc-overlay-active {
-    overflow: hidden !important;
-}
-
 /* ---- Hidden Input (system keyboard) ---- */
 #vsc-hidden-input {
     position: fixed;

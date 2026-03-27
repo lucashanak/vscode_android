@@ -601,41 +601,35 @@
     }
 
     // ========================================================================
-    // RESIZE — shrink VS Code viewport so overlay + sysKB don't cover it
+    // RESIZE — tell Android to shrink GeckoView so VS Code viewport shrinks
     //
-    // VS Code web: body { height: 100% } of <html>.
-    // VS Code reads body dimensions in JS and lays out a grid.
-    // Strategy: set <html> height to (viewport - reserved) px,
-    // then fire a resize event so VS Code recalculates its layout.
+    // VS Code reads window.innerHeight (set by GeckoView engine, not CSS).
+    // The only way to change it is to resize the actual GeckoView Android View.
+    // We send the reserved height to Kotlin via native messaging,
+    // Kotlin sets a bottom margin on GeckoView → viewport shrinks →
+    // window.innerHeight changes → VS Code relayouts automatically.
     // ========================================================================
-    let _resizeRAF = 0;
     let _lastReserved = 0;
 
     function updatePadding(overlay, sysKBOffset) {
-        if (overlay.classList.contains('vsc-collapsed')) {
-            if (_lastReserved !== 0) {
-                _lastReserved = 0;
-                document.documentElement.style.height = '';
-                window.dispatchEvent(new Event('resize'));
-            }
-            return;
+        let reserved = 0;
+        if (!overlay.classList.contains('vsc-collapsed')) {
+            const overlayHeight = overlay.getBoundingClientRect().height;
+            const sysKB = sysKBOffset > 0 ? sysKBOffset : 0;
+            reserved = Math.round(overlayHeight + sysKB);
         }
 
-        const overlayHeight = overlay.getBoundingClientRect().height;
-        const sysKB = sysKBOffset > 0 ? sysKBOffset : 0;
-        const reserved = Math.round(overlayHeight + sysKB);
-
-        if (reserved === _lastReserved) return; // avoid layout thrashing
+        if (reserved === _lastReserved) return;
         _lastReserved = reserved;
 
-        // Shrink <html> → body (100% of html) → VS Code layout follows
-        document.documentElement.style.height = (window.innerHeight - reserved) + 'px';
-
-        // Notify VS Code layout engine
-        cancelAnimationFrame(_resizeRAF);
-        _resizeRAF = requestAnimationFrame(() => {
-            window.dispatchEvent(new Event('resize'));
-        });
+        try {
+            browser.runtime.sendNativeMessage('browser', {
+                type: 'resize',
+                height: reserved
+            });
+        } catch (e) {
+            // Messaging not available — ignore silently
+        }
     }
 
     // ========================================================================
@@ -717,8 +711,6 @@
         setupViewportListener(overlay, hiddenInput);
         updateCursor();
 
-        // Mark html for overlay-active styles
-        document.documentElement.classList.add('vsc-overlay-active');
         updateWideLayout(overlay);
         window.addEventListener('resize', () => updateWideLayout(overlay));
     }

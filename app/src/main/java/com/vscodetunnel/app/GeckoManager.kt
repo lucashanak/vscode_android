@@ -35,6 +35,8 @@ object GeckoManager {
         return runtime!!
     }
 
+    fun getOverlayExtension(): WebExtension? = overlayExtension
+
     fun createTunnelSession(): GeckoSession {
         val settings = GeckoSessionSettings.Builder()
             .userAgentOverride(CHROME_USER_AGENT)

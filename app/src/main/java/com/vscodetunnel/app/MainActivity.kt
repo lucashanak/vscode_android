@@ -25,10 +25,13 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import android.widget.FrameLayout
+import org.json.JSONObject
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoView
+import org.mozilla.geckoview.WebExtension
 
 class MainActivity : AppCompatActivity() {
     companion object {
@@ -476,6 +479,9 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Message delegate — overlay extension sends resize requests
+        setupOverlayMessaging(session)
+
         tunnelSession = session
         geckoView.releaseSession()
         geckoView.setSession(session)
@@ -484,6 +490,39 @@ class MainActivity : AppCompatActivity() {
         // Switch to GeckoView
         launcherScroll.visibility = View.GONE
         geckoView.visibility = View.VISIBLE
+    }
+
+    private fun setupOverlayMessaging(session: GeckoSession) {
+        val extension = GeckoManager.getOverlayExtension() ?: run {
+            FileLogger.w(TAG, "Overlay extension not available for messaging")
+            return
+        }
+
+        val messageDelegate = object : WebExtension.MessageDelegate {
+            override fun onMessage(
+                nativeApp: String,
+                message: Any,
+                sender: WebExtension.MessageSender
+            ): GeckoResult<Any>? {
+                if (message is JSONObject && message.optString("type") == "resize") {
+                    val reservedPx = message.optInt("height", 0)
+                    runOnUiThread { resizeGeckoView(reservedPx) }
+                }
+                return null
+            }
+        }
+
+        session.webExtensionController.setMessageDelegate(extension, messageDelegate, "browser")
+    }
+
+    private fun resizeGeckoView(reservedPx: Int) {
+        val params = geckoView.layoutParams as FrameLayout.LayoutParams
+        val newMargin = if (reservedPx > 0) reservedPx else 0
+        if (params.bottomMargin != newMargin) {
+            params.bottomMargin = newMargin
+            geckoView.layoutParams = params
+            FileLogger.d(TAG, "GeckoView bottom margin set to ${newMargin}px")
+        }
     }
 
     private fun openAuthPopup(uri: String): GeckoResult<GeckoSession>? {
@@ -588,6 +627,7 @@ class MainActivity : AppCompatActivity() {
         tunnelSession?.close()
         tunnelSession = null
         currentTunnelUrl = null
+        resizeGeckoView(0)
         geckoView.visibility = View.GONE
         launcherScroll.visibility = View.VISIBLE
     }
