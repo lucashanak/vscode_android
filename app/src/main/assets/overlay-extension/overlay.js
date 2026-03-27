@@ -148,19 +148,6 @@
     // ====================== HELPERS ======================
     function sendToAndroid(msg) { try { browser.runtime.sendNativeMessage('browser', msg); } catch(_){} }
 
-    // ====================== VIEWPORT RESIZE ======================
-    // Send overlay height to Android → Kotlin sets GeckoView bottomMargin
-    // + dark spacer fills the gap below. Viewport actually shrinks.
-    let _lastResize = -1;
-
-    function updateViewportResize(overlay) {
-        const h = overlay.classList.contains('vsc-collapsed') ? 0 :
-                  Math.round(overlay.getBoundingClientRect().height);
-        if (h === _lastResize) return;
-        _lastResize = h;
-        sendToAndroid({ type: 'resize', height: h });
-    }
-
     // ====================== IME SUPPRESSION ======================
     // Set inputmode="none" on all inputs/textareas to prevent GeckoView
     // from requesting the software keyboard. Standard web API, no flicker.
@@ -360,23 +347,10 @@
     // ====================== SHOW / HIDE ======================
     function showOverlay(overlay) {
         state.overlayVisible = true;
-
-        // Measure overlay height BEFORE it becomes visible, then send resize
-        // so GeckoView margin is set at the same time overlay appears
-        overlay.style.visibility = 'hidden';
         overlay.classList.remove('vsc-collapsed');
-        const h = Math.round(overlay.getBoundingClientRect().height);
-        _lastResize = h;
-        sendToAndroid({ type: 'resize', height: h });
-        sendToAndroid({ type: 'overlayVisibility', visible: true });
-        setInputModeNone(true);
-
-        // Make visible after one frame (gives Android time to apply margin)
-        requestAnimationFrame(() => {
-            overlay.style.visibility = '';
-        });
-
         const t = document.getElementById('vsc-float-toggle'); if (t) t.style.display = 'none';
+        setInputModeNone(true);
+        sendToAndroid({ type: 'overlayVisibility', visible: true });
     }
     function hideOverlay(overlay) {
         state.overlayVisible = false;
@@ -396,7 +370,6 @@
             kp.classList.toggle('vsc-active-panel', !show);
             tp.classList.toggle('vsc-active-panel', show);
             e.target.classList.toggle('vsc-active', show);
-            updateViewportResize(overlay);
         });
         overlay.querySelector('#vsc-hide-btn').addEventListener('pointerdown', e => { e.preventDefault(); hideOverlay(overlay); });
     }

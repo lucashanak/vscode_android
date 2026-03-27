@@ -517,10 +517,6 @@ class MainActivity : AppCompatActivity() {
                             val visible = message.optBoolean("visible", false)
                             runOnUiThread { onOverlayVisibilityChanged(visible) }
                         }
-                        "resize" -> {
-                            val height = message.optInt("height", 0)
-                            runOnUiThread { resizeGeckoView(height) }
-                        }
                     }
                 }
                 return null
@@ -537,26 +533,16 @@ class MainActivity : AppCompatActivity() {
         if (visible) {
             val controller = WindowInsetsControllerCompat(window, geckoView)
             controller.hide(WindowInsetsCompat.Type.ime())
-        } else {
-            resizeGeckoView(0)
         }
         // Force insets re-evaluation so IME padding is cleared/applied correctly
         ViewCompat.requestApplyInsets(findViewById(R.id.rootFrame))
     }
 
-    private fun resizeGeckoView(reservedCssPx: Int) {
-        val physPx = if (reservedCssPx > 0) {
-            (reservedCssPx * resources.displayMetrics.density).toInt()
-        } else 0
-
-        // Tell GeckoView the bottom is obscured by our overlay.
-        // This doesn't resize the viewport (no double-counting),
-        // but GeckoView scrolls focused content into the visible area
-        // (terminal prompt, editor cursor stay above overlay).
-        // Works like Android's adjustPan for soft keyboards.
-        geckoView.setVerticalClipping(physPx)
-        FileLogger.d(TAG, "Vertical clipping: ${reservedCssPx}css → ${physPx}px")
-    }
+    // Overlay covers bottom of VS Code like a mobile keyboard.
+    // True viewport resize not possible with content-script overlay
+    // (overlay is inside GeckoView viewport — any resize API either
+    // double-counts or causes visual glitches).
+    // Future: native Android overlay view for actual resize.
 
 
 
@@ -664,7 +650,6 @@ class MainActivity : AppCompatActivity() {
         currentTunnelUrl = null
         sysKBSuppressed = false
         geckoView.suppressIME = false
-        resizeGeckoView(0)
         geckoView.visibility = View.GONE
         launcherScroll.visibility = View.VISIBLE
     }
