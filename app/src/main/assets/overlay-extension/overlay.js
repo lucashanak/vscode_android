@@ -601,16 +601,19 @@
     }
 
     // ========================================================================
-    // PADDING — push VS Code content up instead of covering it
+    // RESIZE — shrink VS Code viewport so overlay + sysKB don't cover it
     // ========================================================================
     function updatePadding(overlay, sysKBOffset) {
         if (overlay.classList.contains('vsc-collapsed')) {
-            document.documentElement.style.paddingBottom = '';
+            document.body.style.height = '';
+            document.body.style.overflow = '';
             return;
         }
         const overlayHeight = overlay.getBoundingClientRect().height;
-        const totalPadding = overlayHeight + (sysKBOffset > 0 ? sysKBOffset : 0);
-        document.documentElement.style.paddingBottom = totalPadding + 'px';
+        const sysKB = sysKBOffset > 0 ? sysKBOffset : 0;
+        // Shrink body so VS Code's 100% height layout fits above overlay + sysKB
+        document.body.style.height = `calc(100vh - ${overlayHeight + sysKB}px)`;
+        document.body.style.overflow = 'hidden';
     }
 
     // ========================================================================
@@ -692,8 +695,8 @@
         setupViewportListener(overlay, hiddenInput);
         updateCursor();
 
-        // Enable padding transition and set initial padding
-        document.documentElement.classList.add('vsc-overlay-active');
+        // Enable body height transition for resize
+        document.body.classList.add('vsc-overlay-active');
         updateWideLayout(overlay);
         window.addEventListener('resize', () => updateWideLayout(overlay));
     }

@@ -234,9 +234,9 @@
     background: rgba(0, 90, 160, 0.9);
 }
 
-/* ---- HTML padding transition (overlay pushes content up) ---- */
-html.vsc-overlay-active {
-    transition: padding-bottom 0.15s ease;
+/* ---- Body height transition (overlay shrinks VS Code viewport) ---- */
+body.vsc-overlay-active {
+    transition: height 0.15s ease;
 }
 
 /* ---- Hidden Input (system keyboard) ---- */
