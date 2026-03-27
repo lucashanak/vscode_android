@@ -71,9 +71,29 @@
         return document.querySelector('.monaco-editor .inputarea') || document.activeElement || document.body;
     }
 
+    // Printable characters: ONLY InputEvent (textarea value + input event).
+    // keydown would cause Monaco to also insert the char → double-typing.
+    function insertChar(ch) {
+        const target = getTarget();
+        if (target && target.focus) target.focus();
+
+        if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
+            const start = target.selectionStart || 0;
+            const end = target.selectionEnd || start;
+            target.value = target.value.substring(0, start) + ch + target.value.substring(end);
+            target.selectionStart = target.selectionEnd = start + ch.length;
+        }
+        target.dispatchEvent(new InputEvent('input', {
+            inputType: 'insertText', data: ch,
+            bubbles: true, isComposing: false
+        }));
+        resetModifiers();
+    }
+
+    // Special keys (Esc, Tab, arrows, Backspace, etc.) and modified keys (Ctrl+C):
+    // ONLY keydown/keyup. No InputEvent — these don't insert text.
     function dispatchKey(keyDef) {
         const target = getTarget();
-        // Ensure Monaco's inputarea is focused (needed for text insertion)
         if (target && target.focus) target.focus();
 
         const opts = {
@@ -83,29 +103,12 @@
             shiftKey:state.modifiers.shift||(keyDef.shift||false), metaKey:state.modifiers.meta,
         };
         target.dispatchEvent(new KeyboardEvent('keydown', opts));
-
-        // Insert text: modify textarea value + fire InputEvent
-        // (execCommand unreliable in GeckoView, especially for space/shifted chars)
-        if (keyDef.key.length === 1 && !opts.ctrlKey && !opts.altKey && !opts.metaKey) {
-            if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
-                const start = target.selectionStart || 0;
-                const end = target.selectionEnd || start;
-                target.value = target.value.substring(0, start) + keyDef.key + target.value.substring(end);
-                target.selectionStart = target.selectionEnd = start + keyDef.key.length;
-            }
-            target.dispatchEvent(new InputEvent('input', {
-                inputType: 'insertText', data: keyDef.key,
-                bubbles: true, isComposing: false
-            }));
-        }
-
         target.dispatchEvent(new KeyboardEvent('keyup', opts));
         resetModifiers();
     }
 
     function dispatchCharKey(ch) {
-        const u = ch.toUpperCase(), l = ch.toLowerCase();
-        dispatchKey({ key:ch, code:'Key'+u, keyCode:u.charCodeAt(0), shift:ch===u&&ch!==l });
+        insertChar(ch);
     }
 
     function resetModifiers() {
@@ -298,7 +301,13 @@
             btn.addEventListener('pointerdown', e => {
                 e.preventDefault(); e.stopPropagation();
                 const kd = KEYS[btn.dataset.key]; if (!kd) return;
-                dispatchKey(kd);
+                // Printable chars (length 1, no modifiers) → insertChar
+                // Special keys → dispatchKey (keydown/keyup only)
+                if (kd.key.length === 1 && !state.modifiers.ctrl && !state.modifiers.alt && !state.modifiers.meta) {
+                    insertChar(kd.key);
+                } else {
+                    dispatchKey(kd);
+                }
                 btn.classList.add('vsc-pressed'); setTimeout(() => btn.classList.remove('vsc-pressed'), 100);
             });
         });
