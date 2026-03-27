@@ -549,12 +549,13 @@ class MainActivity : AppCompatActivity() {
             (reservedCssPx * resources.displayMetrics.density).toInt()
         } else 0
 
-        // Use dynamic toolbar API: reserves space at bottom of GeckoView
-        // without changing GeckoView's actual size. Content viewport (ICB)
-        // shrinks, window.innerHeight changes, VS Code relayouts.
-        // position:fixed;bottom:0 sits at ICB bottom, above the reserved space.
-        geckoView.setDynamicToolbarMaxHeight(physPx)
-        FileLogger.d(TAG, "Dynamic toolbar height: ${reservedCssPx}css → ${physPx}px")
+        // Tell GeckoView the bottom is obscured by our overlay.
+        // This doesn't resize the viewport (no double-counting),
+        // but GeckoView scrolls focused content into the visible area
+        // (terminal prompt, editor cursor stay above overlay).
+        // Works like Android's adjustPan for soft keyboards.
+        geckoView.setVerticalClipping(physPx)
+        FileLogger.d(TAG, "Vertical clipping: ${reservedCssPx}css → ${physPx}px")
     }
 
 
