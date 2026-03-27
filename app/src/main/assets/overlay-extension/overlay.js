@@ -537,7 +537,7 @@
                 row.classList.toggle('vsc-hidden', !state.keyboardExpanded);
             });
             e.target.textContent = state.keyboardExpanded ? 'Less' : 'More';
-            requestAnimationFrame(() => updatePadding(overlay, 0));
+            requestAnimationFrame(() => updatePadding(overlay));
         });
 
         // System keyboard toggle
@@ -551,9 +551,6 @@
             } else {
                 hiddenInput.blur();
                 hiddenInput.style.top = '-9999px';
-                // Reset transform when manually closing sysKB
-                overlay.style.transform = '';
-                updatePadding(overlay, 0);
             }
             e.target.classList.toggle('vsc-active', state.sysKeyboardVisible);
         });
@@ -563,7 +560,7 @@
             e.preventDefault();
             state.overlayVisible = false;
             overlay.classList.add('vsc-collapsed');
-            updatePadding(overlay, 0);
+            updatePadding(overlay);
             showFloatingToggle(overlay);
         });
     }
@@ -580,7 +577,7 @@
                 overlay.classList.remove('vsc-collapsed');
                 toggle.style.display = 'none';
                 // Recalculate padding after overlay is visible again
-                requestAnimationFrame(() => updatePadding(overlay, 0));
+                requestAnimationFrame(() => updatePadding(overlay));
             });
             // Prevent focus stealing
             toggle.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
@@ -605,18 +602,18 @@
     //
     // VS Code reads window.innerHeight (set by GeckoView engine, not CSS).
     // The only way to change it is to resize the actual GeckoView Android View.
-    // We send the reserved height to Kotlin via native messaging,
-    // Kotlin sets a bottom margin on GeckoView → viewport shrinks →
-    // window.innerHeight changes → VS Code relayouts automatically.
+    // We send the overlay height (in CSS px) to Kotlin via native messaging.
+    // Kotlin converts to physical px and sets bottomMargin on GeckoView.
+    //
+    // System keyboard is handled separately by Android IME insets on rootFrame
+    // — we do NOT include sysKB offset here to avoid double-counting.
     // ========================================================================
     let _lastReserved = 0;
 
-    function updatePadding(overlay, sysKBOffset) {
+    function updatePadding(overlay) {
         let reserved = 0;
         if (!overlay.classList.contains('vsc-collapsed')) {
-            const overlayHeight = overlay.getBoundingClientRect().height;
-            const sysKB = sysKBOffset > 0 ? sysKBOffset : 0;
-            reserved = Math.round(overlayHeight + sysKB);
+            reserved = Math.round(overlay.getBoundingClientRect().height);
         }
 
         if (reserved === _lastReserved) return;
@@ -633,39 +630,20 @@
     }
 
     // ========================================================================
-    // VIEWPORT ADJUSTMENT (when system keyboard appears)
+    // SYSTEM KEYBOARD STATE TRACKING (visual only, resize handled by Android)
     // ========================================================================
     function setupViewportListener(overlay, hiddenInput) {
-        const SYSKB_THRESHOLD = 100; // px — viewport shrinks more than this = sysKB visible
+        // Track sysKB state for the toggle button indicator
+        hiddenInput.addEventListener('focus', () => {
+            state.sysKeyboardVisible = true;
+            const btn = document.getElementById('vsc-syskb-btn');
+            if (btn) btn.classList.add('vsc-active');
+        });
 
-        function updateOverlayPosition() {
-            if (!window.visualViewport) return;
-            const vv = window.visualViewport;
-            const offset = window.innerHeight - vv.height - vv.offsetTop;
-            const sysKBNow = offset > SYSKB_THRESHOLD;
-
-            if (sysKBNow !== state.sysKeyboardVisible) {
-                state.sysKeyboardVisible = sysKBNow;
-                const btn = document.getElementById('vsc-syskb-btn');
-                if (btn) btn.classList.toggle('vsc-active', sysKBNow);
-            }
-
-            overlay.style.transform = offset > 0 ? `translateY(-${offset}px)` : '';
-            updatePadding(overlay, offset);
-        }
-
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', updateOverlayPosition);
-            window.visualViewport.addEventListener('scroll', updateOverlayPosition);
-        }
-
-        // When hidden input loses focus, sysKB is gone — reset position
         hiddenInput.addEventListener('focusout', () => {
             state.sysKeyboardVisible = false;
             const btn = document.getElementById('vsc-syskb-btn');
             if (btn) btn.classList.remove('vsc-active');
-            overlay.style.transform = '';
-            updatePadding(overlay, 0);
         });
     }
 
@@ -687,7 +665,7 @@
             overlay.querySelector('.vsc-touchpad-panel').classList.toggle('vsc-active-panel', activeTab === 'touchpad');
         }
 
-        requestAnimationFrame(() => updatePadding(overlay, 0));
+        requestAnimationFrame(() => updatePadding(overlay));
     }
 
     // ========================================================================

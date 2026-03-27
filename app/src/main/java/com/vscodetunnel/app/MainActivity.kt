@@ -515,13 +515,16 @@ class MainActivity : AppCompatActivity() {
         session.webExtensionController.setMessageDelegate(extension, messageDelegate, "browser")
     }
 
-    private fun resizeGeckoView(reservedPx: Int) {
+    private fun resizeGeckoView(reservedCssPx: Int) {
         val params = geckoView.layoutParams as FrameLayout.LayoutParams
-        val newMargin = if (reservedPx > 0) reservedPx else 0
+        // CSS pixels → Android physical pixels (density conversion)
+        val newMargin = if (reservedCssPx > 0) {
+            (reservedCssPx * resources.displayMetrics.density).toInt()
+        } else 0
         if (params.bottomMargin != newMargin) {
             params.bottomMargin = newMargin
             geckoView.layoutParams = params
-            FileLogger.d(TAG, "GeckoView bottom margin set to ${newMargin}px")
+            FileLogger.d(TAG, "GeckoView bottom margin: ${reservedCssPx}css → ${newMargin}px (density=${resources.displayMetrics.density})")
         }
     }
 
