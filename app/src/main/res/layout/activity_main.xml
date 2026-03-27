@@ -12,15 +12,6 @@
         android:layout_height="match_parent"
         android:visibility="gone" />
 
-    <!-- Dark spacer below GeckoView when overlay is visible.
-         Fills the margin gap so there's no empty/white space. -->
-    <View
-        android:id="@+id/overlaySpacer"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_gravity="bottom"
-        android:background="#1E1E1E"
-        android:visibility="gone" />
 
     <!-- Launcher UI -->
     <ScrollView

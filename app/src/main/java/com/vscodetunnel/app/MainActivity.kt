@@ -26,7 +26,6 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import android.widget.FrameLayout
 import org.json.JSONObject
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
@@ -54,7 +53,6 @@ class MainActivity : AppCompatActivity() {
     private var authDialog: Dialog? = null
     private var currentTunnelUrl: String? = null
     private var sysKBSuppressed = false
-    private lateinit var overlaySpacer: View
 
     // UI references
     private lateinit var btnGitHubLogin: Button
@@ -105,7 +103,6 @@ class MainActivity : AppCompatActivity() {
         GeckoManager.installOverlayExtension(runtime)
 
         geckoView = findViewById(R.id.geckoView)
-        overlaySpacer = findViewById(R.id.overlaySpacer)
 
         // Restore state
         val token = authPrefs.getString(KEY_TOKEN, null)
@@ -552,23 +549,12 @@ class MainActivity : AppCompatActivity() {
             (reservedCssPx * resources.displayMetrics.density).toInt()
         } else 0
 
-        // Shrink GeckoView with bottom margin
-        val gvParams = geckoView.layoutParams as FrameLayout.LayoutParams
-        if (gvParams.bottomMargin != physPx) {
-            gvParams.bottomMargin = physPx
-            geckoView.layoutParams = gvParams
-        }
-
-        // Fill the gap with dark spacer
-        if (physPx > 0) {
-            overlaySpacer.visibility = View.VISIBLE
-            val spParams = overlaySpacer.layoutParams
-            spParams.height = physPx
-            overlaySpacer.layoutParams = spParams
-        } else {
-            overlaySpacer.visibility = View.GONE
-        }
-        FileLogger.d(TAG, "GeckoView resize: ${reservedCssPx}css → ${physPx}px")
+        // Use dynamic toolbar API: reserves space at bottom of GeckoView
+        // without changing GeckoView's actual size. Content viewport (ICB)
+        // shrinks, window.innerHeight changes, VS Code relayouts.
+        // position:fixed;bottom:0 sits at ICB bottom, above the reserved space.
+        geckoView.setDynamicToolbarMaxHeight(physPx)
+        FileLogger.d(TAG, "Dynamic toolbar height: ${reservedCssPx}css → ${physPx}px")
     }
 
 
