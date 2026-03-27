@@ -603,17 +603,40 @@
     // ========================================================================
     // RESIZE — shrink VS Code viewport so overlay + sysKB don't cover it
     // ========================================================================
+    function getWorkbenchEl() {
+        // VS Code workbench uses position:absolute with bottom:0
+        // We need to push its bottom edge up above the overlay
+        return document.querySelector('.monaco-workbench') ||
+               document.querySelector('#workbench\\.parts\\.editor') ||
+               document.body;
+    }
+
     function updatePadding(overlay, sysKBOffset) {
+        const wb = getWorkbenchEl();
+        const isFallback = (wb === document.body);
+
         if (overlay.classList.contains('vsc-collapsed')) {
-            document.body.style.height = '';
-            document.body.style.overflow = '';
+            if (isFallback) {
+                wb.style.height = '';
+                wb.style.overflow = '';
+            } else {
+                wb.style.bottom = '';
+            }
             return;
         }
+
         const overlayHeight = overlay.getBoundingClientRect().height;
         const sysKB = sysKBOffset > 0 ? sysKBOffset : 0;
-        // Shrink body so VS Code's 100% height layout fits above overlay + sysKB
-        document.body.style.height = `calc(100vh - ${overlayHeight + sysKB}px)`;
-        document.body.style.overflow = 'hidden';
+        const reserved = overlayHeight + sysKB;
+
+        if (isFallback) {
+            // No VS Code workbench found — fall back to body height
+            wb.style.height = (window.innerHeight - reserved) + 'px';
+            wb.style.overflow = 'hidden';
+        } else {
+            // Push workbench bottom edge above overlay + sysKB
+            wb.style.bottom = reserved + 'px';
+        }
     }
 
     // ========================================================================
