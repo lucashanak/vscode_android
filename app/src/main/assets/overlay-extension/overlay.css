@@ -70,11 +70,12 @@
 /* ---- Keyboard ---- */
 .vsc-row {
     display: flex;
-    gap: 3px;
-    padding: 2px 2px;
+    gap: 2px;
+    padding: 1px 2px;
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
+    justify-content: center;
 }
 
 .vsc-row::-webkit-scrollbar {
@@ -86,10 +87,10 @@
 }
 
 .vsc-key {
-    flex: 0 0 auto;
-    min-width: 36px;
-    height: 36px;
-    padding: 0 6px;
+    flex: 1 1 0;
+    min-width: 0;
+    height: 34px;
+    padding: 0 2px;
     font-size: 12px;
     font-weight: 500;
     font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
@@ -117,22 +118,41 @@
     border-color: #007acc;
 }
 
-/* Modifier keys - wider */
+/* Character keys — uppercase when shifted */
+.vsc-shifted .vsc-char-key {
+    text-transform: uppercase;
+}
+
+/* Wider keys (Shift, Backspace) */
+.vsc-wide-key {
+    flex: 1.5 1 0;
+}
+
+/* Space bar */
+.vsc-space-key {
+    flex: 2.5 1 0;
+}
+
+/* Modifier keys */
 .vsc-mod-btn {
-    min-width: 44px;
     font-size: 11px;
 }
 
 /* Arrow keys */
 .vsc-arrow {
-    min-width: 32px;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 /* F-keys - compact */
 .vsc-fkey {
-    min-width: 34px;
-    font-size: 11px;
+    font-size: 10px;
+}
+
+/* Expandable row keys (symbols, F-keys, nav) — fixed width for scrollable rows */
+.vsc-row-extra .vsc-key {
+    flex: 0 0 auto;
+    min-width: 32px;
+    padding: 0 5px;
 }
 
 /* ---- Touchpad ---- */
@@ -234,36 +254,24 @@
     background: rgba(0, 90, 160, 0.9);
 }
 
-/* ---- Hidden Input (system keyboard) ---- */
-#vsc-hidden-input {
-    position: fixed;
-    top: -9999px;
-    left: -9999px;
-    opacity: 0;
-    width: 1px;
-    height: 1px;
-    border: none;
-    outline: none;
-}
-
 /* ---- Landscape optimization ---- */
 @media (orientation: landscape) {
     .vsc-touchpad-area {
-        height: 120px;
+        height: 100px;
     }
 
     .vsc-key {
-        min-width: 32px;
-        height: 32px;
+        height: 28px;
         font-size: 11px;
     }
 
-    .vsc-mod-btn {
-        min-width: 40px;
+    .vsc-row {
+        gap: 1px;
+        padding: 1px 1px;
     }
 
     .vsc-tp-btn {
-        height: 34px;
+        height: 30px;
         font-size: 12px;
     }
 
@@ -272,7 +280,7 @@
     }
 
     .vsc-tool-btn {
-        padding: 4px 8px;
+        padding: 3px 6px;
         font-size: 11px;
     }
 }
@@ -308,18 +316,15 @@
 /* ---- Small screens ---- */
 @media (max-width: 400px) {
     .vsc-key {
-        min-width: 30px;
-        height: 32px;
+        height: 30px;
         font-size: 10px;
-        padding: 0 3px;
     }
 
     .vsc-mod-btn {
-        min-width: 36px;
         font-size: 9px;
     }
 
     .vsc-touchpad-area {
-        height: 140px;
+        height: 120px;
     }
 }

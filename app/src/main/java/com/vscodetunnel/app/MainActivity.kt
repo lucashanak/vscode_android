@@ -19,8 +19,11 @@ import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import android.view.inputmethod.InputMethodManager
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -52,6 +55,7 @@ class MainActivity : AppCompatActivity() {
     private var pollJob: Job? = null
     private var authDialog: Dialog? = null
     private var currentTunnelUrl: String? = null
+    private var sysKBSuppressed = false
 
     // UI references
     private lateinit var btnGitHubLogin: Button
@@ -80,10 +84,19 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.rootFrame)) { view, windowInsets ->
-            val insets = windowInsets.getInsets(
-                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime()
-            )
-            view.setPadding(insets.left, insets.top, insets.right, insets.bottom)
+            if (sysKBSuppressed && windowInsets.isVisible(WindowInsetsCompat.Type.ime())) {
+                // IME is trying to show but we're suppressing it — hide immediately
+                val controller = WindowInsetsControllerCompat(window, view)
+                controller.hide(WindowInsetsCompat.Type.ime())
+                // Only apply system bar insets
+                val sysBarInsets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
+                view.setPadding(sysBarInsets.left, sysBarInsets.top, sysBarInsets.right, sysBarInsets.bottom)
+            } else {
+                val insets = windowInsets.getInsets(
+                    WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime()
+                )
+                view.setPadding(insets.left, insets.top, insets.right, insets.bottom)
+            }
             WindowInsetsCompat.CONSUMED
         }
 
@@ -504,15 +517,33 @@ class MainActivity : AppCompatActivity() {
                 message: Any,
                 sender: WebExtension.MessageSender
             ): GeckoResult<Any>? {
-                if (message is JSONObject && message.optString("type") == "resize") {
-                    val reservedPx = message.optInt("height", 0)
-                    runOnUiThread { resizeGeckoView(reservedPx) }
+                if (message is JSONObject) {
+                    when (message.optString("type")) {
+                        "resize" -> {
+                            val reservedPx = message.optInt("height", 0)
+                            runOnUiThread { resizeGeckoView(reservedPx) }
+                        }
+                        "setSysKBSuppressed" -> {
+                            val suppressed = message.optBoolean("suppressed", false)
+                            runOnUiThread { setSysKBSuppressed(suppressed) }
+                        }
+                    }
                 }
                 return null
             }
         }
 
         session.webExtensionController.setMessageDelegate(extension, messageDelegate, "browser")
+    }
+
+    private fun setSysKBSuppressed(suppressed: Boolean) {
+        sysKBSuppressed = suppressed
+        FileLogger.d(TAG, "SysKB suppressed: $suppressed")
+        if (suppressed) {
+            // Immediately hide the keyboard
+            val controller = WindowInsetsControllerCompat(window, geckoView)
+            controller.hide(WindowInsetsCompat.Type.ime())
+        }
     }
 
     private fun resizeGeckoView(reservedCssPx: Int) {
@@ -630,6 +661,7 @@ class MainActivity : AppCompatActivity() {
         tunnelSession?.close()
         tunnelSession = null
         currentTunnelUrl = null
+        sysKBSuppressed = false
         resizeGeckoView(0)
         geckoView.visibility = View.GONE
         launcherScroll.visibility = View.VISIBLE

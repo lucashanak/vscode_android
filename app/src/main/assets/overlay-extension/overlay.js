@@ -19,7 +19,7 @@
         tapStart: 0,
         tapTimeout: null,
         lastTap: 0,
-        sysKeyboardVisible: false
+        sysKBSuppressed: false
     };
 
     // ========================================================================
@@ -77,6 +77,15 @@
     for (let i = 1; i <= 12; i++) {
         KEYS['F' + i] = { key: 'F' + i, code: 'F' + i, keyCode: 111 + i };
     }
+
+    // Digit keys
+    for (let i = 0; i <= 9; i++) {
+        KEYS[String(i)] = { key: String(i), code: 'Digit' + i, keyCode: 48 + i };
+    }
+
+    // '<' and '>' (not yet in map)
+    KEYS['<'] = { key: '<', code: 'Comma',  keyCode: 188, shift: true };
+    KEYS['>'] = { key: '>', code: 'Period', keyCode: 190, shift: true };
 
     // ========================================================================
     // KEY DISPATCH
@@ -138,6 +147,8 @@
         state.modifiers.shift = false;
         state.modifiers.meta = false;
         updateModifierButtons();
+        const kbPanel = document.querySelector('.vsc-keyboard-panel');
+        if (kbPanel) kbPanel.classList.remove('vsc-shifted');
     }
 
     function toggleModifier(mod) {
@@ -260,21 +271,70 @@
 
             <div class="vsc-panels-container">
                 <div class="vsc-panel vsc-keyboard-panel vsc-active-panel">
-                    <!-- Row 1: Essential keys -->
+                    <!-- Number row -->
                     <div class="vsc-row vsc-row-main">
-                        <button class="vsc-key" data-key="Esc">Esc</button>
-                        <button class="vsc-key" data-key="Tab">Tab</button>
+                        <button class="vsc-key" data-key="1">1</button>
+                        <button class="vsc-key" data-key="2">2</button>
+                        <button class="vsc-key" data-key="3">3</button>
+                        <button class="vsc-key" data-key="4">4</button>
+                        <button class="vsc-key" data-key="5">5</button>
+                        <button class="vsc-key" data-key="6">6</button>
+                        <button class="vsc-key" data-key="7">7</button>
+                        <button class="vsc-key" data-key="8">8</button>
+                        <button class="vsc-key" data-key="9">9</button>
+                        <button class="vsc-key" data-key="0">0</button>
+                    </div>
+                    <!-- QWERTY row -->
+                    <div class="vsc-row vsc-row-main">
+                        <button class="vsc-key vsc-char-key" data-char="q">q</button>
+                        <button class="vsc-key vsc-char-key" data-char="w">w</button>
+                        <button class="vsc-key vsc-char-key" data-char="e">e</button>
+                        <button class="vsc-key vsc-char-key" data-char="r">r</button>
+                        <button class="vsc-key vsc-char-key" data-char="t">t</button>
+                        <button class="vsc-key vsc-char-key" data-char="y">y</button>
+                        <button class="vsc-key vsc-char-key" data-char="u">u</button>
+                        <button class="vsc-key vsc-char-key" data-char="i">i</button>
+                        <button class="vsc-key vsc-char-key" data-char="o">o</button>
+                        <button class="vsc-key vsc-char-key" data-char="p">p</button>
+                    </div>
+                    <!-- Home row -->
+                    <div class="vsc-row vsc-row-main">
+                        <button class="vsc-key vsc-char-key" data-char="a">a</button>
+                        <button class="vsc-key vsc-char-key" data-char="s">s</button>
+                        <button class="vsc-key vsc-char-key" data-char="d">d</button>
+                        <button class="vsc-key vsc-char-key" data-char="f">f</button>
+                        <button class="vsc-key vsc-char-key" data-char="g">g</button>
+                        <button class="vsc-key vsc-char-key" data-char="h">h</button>
+                        <button class="vsc-key vsc-char-key" data-char="j">j</button>
+                        <button class="vsc-key vsc-char-key" data-char="k">k</button>
+                        <button class="vsc-key vsc-char-key" data-char="l">l</button>
+                    </div>
+                    <!-- Bottom letter row -->
+                    <div class="vsc-row vsc-row-main">
+                        <button class="vsc-key vsc-mod-btn vsc-wide-key" data-mod="shift">\u21E7</button>
+                        <button class="vsc-key vsc-char-key" data-char="z">z</button>
+                        <button class="vsc-key vsc-char-key" data-char="x">x</button>
+                        <button class="vsc-key vsc-char-key" data-char="c">c</button>
+                        <button class="vsc-key vsc-char-key" data-char="v">v</button>
+                        <button class="vsc-key vsc-char-key" data-char="b">b</button>
+                        <button class="vsc-key vsc-char-key" data-char="n">n</button>
+                        <button class="vsc-key vsc-char-key" data-char="m">m</button>
+                        <button class="vsc-key vsc-wide-key" data-key="Bksp">\u232B</button>
+                    </div>
+                    <!-- Modifier + space + arrows row -->
+                    <div class="vsc-row vsc-row-main">
                         <button class="vsc-key vsc-mod-btn" data-mod="ctrl">Ctrl</button>
                         <button class="vsc-key vsc-mod-btn" data-mod="alt">Alt</button>
-                        <button class="vsc-key vsc-mod-btn" data-mod="shift">Shift</button>
-                        <button class="vsc-key vsc-mod-btn" data-mod="meta">Meta</button>
-                        <button class="vsc-key vsc-arrow" data-key="Up">\u25B2</button>
-                        <button class="vsc-key vsc-arrow" data-key="Down">\u25BC</button>
+                        <button class="vsc-key" data-key="Esc">Esc</button>
+                        <button class="vsc-key vsc-space-key" data-key="Space">&nbsp;</button>
+                        <button class="vsc-key" data-key="Enter">\u21B5</button>
                         <button class="vsc-key vsc-arrow" data-key="Left">\u25C0</button>
+                        <button class="vsc-key vsc-arrow" data-key="Down">\u25BC</button>
+                        <button class="vsc-key vsc-arrow" data-key="Up">\u25B2</button>
                         <button class="vsc-key vsc-arrow" data-key="Right">\u25B6</button>
                     </div>
 
-                    <!-- Row 2: F-keys (expandable) -->
+                    <!-- EXPANDABLE: F-keys -->
                     <div class="vsc-row vsc-row-extra vsc-hidden">
                         <button class="vsc-key vsc-fkey" data-key="F1">F1</button>
                         <button class="vsc-key vsc-fkey" data-key="F2">F2</button>
@@ -289,50 +349,57 @@
                         <button class="vsc-key vsc-fkey" data-key="F11">F11</button>
                         <button class="vsc-key vsc-fkey" data-key="F12">F12</button>
                     </div>
-
-                    <!-- Row 3: Symbols -->
+                    <!-- EXPANDABLE: Symbols 1 -->
                     <div class="vsc-row vsc-row-extra vsc-hidden">
                         <button class="vsc-key" data-key="\`">\`</button>
-                        <button class="vsc-key" data-key="~">~</button>
-                        <button class="vsc-key" data-key="|">|</button>
-                        <button class="vsc-key" data-key="\\">\\</button>
-                        <button class="vsc-key" data-key="{">{</button>
-                        <button class="vsc-key" data-key="}">}</button>
-                        <button class="vsc-key" data-key="[">[</button>
-                        <button class="vsc-key" data-key="]">]</button>
-                        <button class="vsc-key" data-key="(">(</button>
-                        <button class="vsc-key" data-key=")">)</button>
-                        <button class="vsc-key" data-key=";">;</button>
-                        <button class="vsc-key" data-key=":">:</button>
-                    </div>
-
-                    <!-- Row 4: More symbols -->
-                    <div class="vsc-row vsc-row-extra vsc-hidden">
-                        <button class="vsc-key" data-key="'">'</button>
-                        <button class="vsc-key" data-key='"'>"</button>
                         <button class="vsc-key" data-key="-">-</button>
                         <button class="vsc-key" data-key="=">=</button>
-                        <button class="vsc-key" data-key="_">_</button>
-                        <button class="vsc-key" data-key="+">+</button>
-                        <button class="vsc-key" data-key="&">&amp;</button>
-                        <button class="vsc-key" data-key="*">*</button>
-                        <button class="vsc-key" data-key="#">#</button>
-                        <button class="vsc-key" data-key="@">@</button>
-                        <button class="vsc-key" data-key="!">!</button>
+                        <button class="vsc-key" data-key="[">[</button>
+                        <button class="vsc-key" data-key="]">]</button>
+                        <button class="vsc-key" data-key="\\">\\</button>
+                        <button class="vsc-key" data-key=";">;</button>
+                        <button class="vsc-key" data-key="'">'</button>
+                        <button class="vsc-key" data-key=",">,</button>
+                        <button class="vsc-key" data-key=".">.</button>
                         <button class="vsc-key" data-key="/">/</button>
                     </div>
-
-                    <!-- Row 5: Navigation keys -->
+                    <!-- EXPANDABLE: Symbols 2 (shifted) -->
                     <div class="vsc-row vsc-row-extra vsc-hidden">
+                        <button class="vsc-key" data-key="~">~</button>
+                        <button class="vsc-key" data-key="!">!</button>
+                        <button class="vsc-key" data-key="@">@</button>
+                        <button class="vsc-key" data-key="#">#</button>
+                        <button class="vsc-key" data-key="$">$</button>
+                        <button class="vsc-key" data-key="%">%</button>
+                        <button class="vsc-key" data-key="^">^</button>
+                        <button class="vsc-key" data-key="&">&amp;</button>
+                        <button class="vsc-key" data-key="*">*</button>
+                        <button class="vsc-key" data-key="(">(</button>
+                        <button class="vsc-key" data-key=")">)</button>
+                    </div>
+                    <!-- EXPANDABLE: Symbols 3 + brackets -->
+                    <div class="vsc-row vsc-row-extra vsc-hidden">
+                        <button class="vsc-key" data-key="{">{</button>
+                        <button class="vsc-key" data-key="}">}</button>
+                        <button class="vsc-key" data-key="|">|</button>
+                        <button class="vsc-key" data-key=":">:</button>
+                        <button class="vsc-key" data-key='"'>"</button>
+                        <button class="vsc-key" data-key="<">&lt;</button>
+                        <button class="vsc-key" data-key=">">&gt;</button>
+                        <button class="vsc-key" data-key="?">?</button>
+                        <button class="vsc-key" data-key="_">_</button>
+                        <button class="vsc-key" data-key="+">+</button>
+                    </div>
+                    <!-- EXPANDABLE: Navigation -->
+                    <div class="vsc-row vsc-row-extra vsc-hidden">
+                        <button class="vsc-key" data-key="Tab">Tab</button>
                         <button class="vsc-key" data-key="Home">Home</button>
                         <button class="vsc-key" data-key="End">End</button>
                         <button class="vsc-key" data-key="PgUp">PgUp</button>
                         <button class="vsc-key" data-key="PgDn">PgDn</button>
                         <button class="vsc-key" data-key="Ins">Ins</button>
                         <button class="vsc-key" data-key="Del">Del</button>
-                        <button class="vsc-key" data-key="Enter">Enter</button>
-                        <button class="vsc-key" data-key="Bksp">Bksp</button>
-                        <button class="vsc-key" data-key="Space">Space</button>
+                        <button class="vsc-key vsc-mod-btn" data-mod="meta">Meta</button>
                     </div>
                 </div>
 
@@ -359,49 +426,27 @@
         return overlay;
     }
 
-    // ========================================================================
-    // SYSTEM KEYBOARD (hidden input trick)
-    // ========================================================================
-    function setupSysKeyboard() {
-        const input = document.createElement('input');
-        input.id = 'vsc-hidden-input';
-        input.setAttribute('autocapitalize', 'none');
-        input.setAttribute('autocomplete', 'off');
-        input.setAttribute('autocorrect', 'off');
-        input.setAttribute('spellcheck', 'false');
-        input.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0;width:1px;height:1px;';
-        document.body.appendChild(input);
-
-        input.addEventListener('input', (e) => {
-            const data = e.data;
-            if (data) {
-                const target = getTarget();
-                if (target) target.focus();
-                for (const ch of data) {
-                    dispatchCharKey(ch);
-                }
-            }
-            input.value = '';
-        });
-
-        input.addEventListener('keydown', (e) => {
-            // Forward special keys from system keyboard
-            if (['Enter', 'Backspace', 'Tab', 'Escape'].includes(e.key)) {
-                e.preventDefault();
-                const keyDef = KEYS[e.key === 'Backspace' ? 'Bksp' : e.key] || KEYS[e.key];
-                if (keyDef) dispatchKey(keyDef);
-            }
-        });
-
-        return input;
-    }
+    // (System keyboard input is no longer proxied — full overlay keyboard handles all input)
 
     // ========================================================================
     // EVENT HANDLERS
     // ========================================================================
     function setupKeyboardEvents(overlay) {
-        // Key buttons
-        overlay.querySelectorAll('.vsc-key:not(.vsc-mod-btn)').forEach(btn => {
+        // Character keys (letters via data-char)
+        overlay.querySelectorAll('.vsc-char-key').forEach(btn => {
+            btn.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const ch = btn.dataset.char;
+                const sendChar = state.modifiers.shift ? ch.toUpperCase() : ch;
+                dispatchCharKey(sendChar);
+                btn.classList.add('vsc-pressed');
+                setTimeout(() => btn.classList.remove('vsc-pressed'), 100);
+            });
+        });
+
+        // Special/symbol keys (via data-key + KEYS map)
+        overlay.querySelectorAll('.vsc-key[data-key]:not(.vsc-mod-btn)').forEach(btn => {
             btn.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -421,6 +466,10 @@
                 e.preventDefault();
                 e.stopPropagation();
                 toggleModifier(btn.dataset.mod);
+                // Visual shift feedback on letter keys
+                if (btn.dataset.mod === 'shift') {
+                    overlay.querySelector('.vsc-keyboard-panel').classList.toggle('vsc-shifted', state.modifiers.shift);
+                }
             });
         });
     }
@@ -513,7 +562,7 @@
         });
     }
 
-    function setupToolbar(overlay, hiddenInput) {
+    function setupToolbar(overlay) {
         // Tab switching
         overlay.querySelectorAll('.vsc-tab-btn').forEach(btn => {
             btn.addEventListener('pointerdown', (e) => {
@@ -540,19 +589,17 @@
             requestAnimationFrame(() => updatePadding(overlay));
         });
 
-        // System keyboard toggle
+        // System keyboard suppression toggle
         overlay.querySelector('#vsc-syskb-btn').addEventListener('pointerdown', (e) => {
             e.preventDefault();
-            state.sysKeyboardVisible = !state.sysKeyboardVisible;
-            if (state.sysKeyboardVisible) {
-                hiddenInput.style.top = '0px';
-                hiddenInput.style.opacity = '0';
-                hiddenInput.focus();
-            } else {
-                hiddenInput.blur();
-                hiddenInput.style.top = '-9999px';
-            }
-            e.target.classList.toggle('vsc-active', state.sysKeyboardVisible);
+            state.sysKBSuppressed = !state.sysKBSuppressed;
+            e.target.classList.toggle('vsc-active', state.sysKBSuppressed);
+            try {
+                browser.runtime.sendNativeMessage('browser', {
+                    type: 'setSysKBSuppressed',
+                    suppressed: state.sysKBSuppressed
+                });
+            } catch (ex) { /* ignore */ }
         });
 
         // Hide overlay
@@ -629,23 +676,7 @@
         }
     }
 
-    // ========================================================================
-    // SYSTEM KEYBOARD STATE TRACKING (visual only, resize handled by Android)
-    // ========================================================================
-    function setupViewportListener(overlay, hiddenInput) {
-        // Track sysKB state for the toggle button indicator
-        hiddenInput.addEventListener('focus', () => {
-            state.sysKeyboardVisible = true;
-            const btn = document.getElementById('vsc-syskb-btn');
-            if (btn) btn.classList.add('vsc-active');
-        });
-
-        hiddenInput.addEventListener('focusout', () => {
-            state.sysKeyboardVisible = false;
-            const btn = document.getElementById('vsc-syskb-btn');
-            if (btn) btn.classList.remove('vsc-active');
-        });
-    }
+    // (System keyboard resize is handled entirely by Android IME insets)
 
     // ========================================================================
     // WIDE DISPLAY — side-by-side KB + TP
@@ -675,18 +706,16 @@
         if (!document.body) return;
 
         // Clean up any stale elements (from previous injection that lost event handlers)
-        for (const id of ['vsc-overlay', 'vsc-cursor', 'vsc-hidden-input', 'vsc-float-toggle']) {
+        for (const id of ['vsc-overlay', 'vsc-cursor', 'vsc-float-toggle']) {
             const el = document.getElementById(id);
             if (el) el.remove();
         }
 
         const overlay = buildOverlay();
-        const hiddenInput = setupSysKeyboard();
 
         setupKeyboardEvents(overlay);
         setupTouchpad(overlay);
-        setupToolbar(overlay, hiddenInput);
-        setupViewportListener(overlay, hiddenInput);
+        setupToolbar(overlay);
         updateCursor();
 
         updateWideLayout(overlay);
