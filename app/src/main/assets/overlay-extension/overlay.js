@@ -602,41 +602,40 @@
 
     // ========================================================================
     // RESIZE — shrink VS Code viewport so overlay + sysKB don't cover it
+    //
+    // VS Code web: body { height: 100% } of <html>.
+    // VS Code reads body dimensions in JS and lays out a grid.
+    // Strategy: set <html> height to (viewport - reserved) px,
+    // then fire a resize event so VS Code recalculates its layout.
     // ========================================================================
-    function getWorkbenchEl() {
-        // VS Code workbench uses position:absolute with bottom:0
-        // We need to push its bottom edge up above the overlay
-        return document.querySelector('.monaco-workbench') ||
-               document.querySelector('#workbench\\.parts\\.editor') ||
-               document.body;
-    }
+    let _resizeRAF = 0;
+    let _lastReserved = 0;
 
     function updatePadding(overlay, sysKBOffset) {
-        const wb = getWorkbenchEl();
-        const isFallback = (wb === document.body);
-
         if (overlay.classList.contains('vsc-collapsed')) {
-            if (isFallback) {
-                wb.style.height = '';
-                wb.style.overflow = '';
-            } else {
-                wb.style.bottom = '';
+            if (_lastReserved !== 0) {
+                _lastReserved = 0;
+                document.documentElement.style.height = '';
+                window.dispatchEvent(new Event('resize'));
             }
             return;
         }
 
         const overlayHeight = overlay.getBoundingClientRect().height;
         const sysKB = sysKBOffset > 0 ? sysKBOffset : 0;
-        const reserved = overlayHeight + sysKB;
+        const reserved = Math.round(overlayHeight + sysKB);
 
-        if (isFallback) {
-            // No VS Code workbench found — fall back to body height
-            wb.style.height = (window.innerHeight - reserved) + 'px';
-            wb.style.overflow = 'hidden';
-        } else {
-            // Push workbench bottom edge above overlay + sysKB
-            wb.style.bottom = reserved + 'px';
-        }
+        if (reserved === _lastReserved) return; // avoid layout thrashing
+        _lastReserved = reserved;
+
+        // Shrink <html> → body (100% of html) → VS Code layout follows
+        document.documentElement.style.height = (window.innerHeight - reserved) + 'px';
+
+        // Notify VS Code layout engine
+        cancelAnimationFrame(_resizeRAF);
+        _resizeRAF = requestAnimationFrame(() => {
+            window.dispatchEvent(new Event('resize'));
+        });
     }
 
     // ========================================================================
@@ -718,8 +717,8 @@
         setupViewportListener(overlay, hiddenInput);
         updateCursor();
 
-        // Enable body height transition for resize
-        document.body.classList.add('vsc-overlay-active');
+        // Mark html for overlay-active styles
+        document.documentElement.classList.add('vsc-overlay-active');
         updateWideLayout(overlay);
         window.addEventListener('resize', () => updateWideLayout(overlay));
     }

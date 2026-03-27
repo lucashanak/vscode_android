@@ -234,12 +234,9 @@
     background: rgba(0, 90, 160, 0.9);
 }
 
-/* ---- Workbench resize transition ---- */
-body.vsc-overlay-active {
-    transition: height 0.15s ease;
-}
-body.vsc-overlay-active .monaco-workbench {
-    transition: bottom 0.15s ease;
+/* ---- Viewport resize (shrink html so body + VS Code follow) ---- */
+html.vsc-overlay-active {
+    overflow: hidden !important;
 }
 
 /* ---- Hidden Input (system keyboard) ---- */
