@@ -19,9 +19,7 @@ import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import android.view.inputmethod.InputMethodManager
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
@@ -48,7 +46,7 @@ class MainActivity : AppCompatActivity() {
         private val APP_VERSION: String get() = BuildConfig.VERSION_NAME
     }
 
-    private lateinit var geckoView: GeckoView
+    private lateinit var geckoView: SuppressableGeckoView
     private lateinit var launcherScroll: View
     private var tunnelSession: GeckoSession? = null
     private var pollJob: Job? = null
@@ -533,9 +531,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun onOverlayVisibilityChanged(visible: Boolean) {
         sysKBSuppressed = visible
+        geckoView.suppressIME = visible
         FileLogger.d(TAG, "Overlay visible: $visible, sysKB suppressed: $visible")
         if (visible) {
-            // Overlay shown — suppress system keyboard
+            // Immediately hide any visible keyboard
             val controller = WindowInsetsControllerCompat(window, geckoView)
             controller.hide(WindowInsetsCompat.Type.ime())
         }
@@ -646,6 +645,7 @@ class MainActivity : AppCompatActivity() {
         tunnelSession = null
         currentTunnelUrl = null
         sysKBSuppressed = false
+        geckoView.suppressIME = false
         geckoView.visibility = View.GONE
         launcherScroll.visibility = View.VISIBLE
     }

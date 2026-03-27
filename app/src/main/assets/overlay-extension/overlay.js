@@ -131,6 +131,41 @@
     // ====================== HELPERS ======================
     function sendToAndroid(msg) { try { browser.runtime.sendNativeMessage('browser', msg); } catch(_){} }
 
+    // ====================== VIEWPORT RESIZE ======================
+    // Monkey-patch window.innerHeight so VS Code thinks viewport is smaller.
+    // Overlay stays at real bottom (position:fixed uses actual viewport).
+    // GeckoView stays full size — no margin, no empty space.
+    const _origInnerHeight = Object.getOwnPropertyDescriptor(Window.prototype, 'innerHeight');
+    let _overlayReserved = 0;
+
+    function getRealInnerHeight() {
+        if (_origInnerHeight && _origInnerHeight.get) return _origInnerHeight.get.call(window);
+        return screen.availHeight;
+    }
+
+    function patchViewport(reservedPx) {
+        if (reservedPx === _overlayReserved) return;
+        _overlayReserved = reservedPx;
+
+        Object.defineProperty(window, 'innerHeight', {
+            get() { return Math.max(0, getRealInnerHeight() - _overlayReserved); },
+            configurable: true,
+            enumerable: true
+        });
+
+        window.dispatchEvent(new Event('resize'));
+    }
+
+    function updateViewportResize(overlay) {
+        if (overlay.classList.contains('vsc-collapsed')) {
+            patchViewport(0);
+        } else {
+            requestAnimationFrame(() => {
+                patchViewport(Math.round(overlay.getBoundingClientRect().height));
+            });
+        }
+    }
+
     function K(key, label) { return `<button class="vsc-key" data-key="${key}">${label||key}</button>`; }
     function C(ch) { return `<button class="vsc-key vsc-char-key" data-char="${ch}">${ch}</button>`; }
     function M(mod, label) { return `<button class="vsc-key vsc-mod-btn" data-mod="${mod}">${label}</button>`; }
@@ -298,11 +333,13 @@
         overlay.classList.remove('vsc-collapsed');
         const t = document.getElementById('vsc-float-toggle'); if (t) t.style.display = 'none';
         sendToAndroid({ type: 'overlayVisibility', visible: true });
+        updateViewportResize(overlay);
     }
     function hideOverlay(overlay) {
         state.overlayVisible = false;
         overlay.classList.add('vsc-collapsed');
         sendToAndroid({ type: 'overlayVisibility', visible: false });
+        updateViewportResize(overlay);
         showFloatingToggle(overlay);
     }
 
@@ -315,6 +352,7 @@
             kp.classList.toggle('vsc-active-panel', !show);
             tp.classList.toggle('vsc-active-panel', show);
             e.target.classList.toggle('vsc-active', show);
+            updateViewportResize(overlay);
         });
         overlay.querySelector('#vsc-hide-btn').addEventListener('pointerdown', e => { e.preventDefault(); hideOverlay(overlay); });
     }
@@ -355,6 +393,7 @@
             overlay.querySelector('.vsc-keyboard-panel').classList.add('vsc-active-panel');
             overlay.querySelector('.vsc-touchpad-panel').classList.add('vsc-active-panel');
         }
+        if (state.overlayVisible) updateViewportResize(overlay);
     }
 
     // ====================== INIT ======================
