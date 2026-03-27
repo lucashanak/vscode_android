@@ -73,6 +73,9 @@
 
     function dispatchKey(keyDef) {
         const target = getTarget();
+        // Ensure Monaco's inputarea is focused (needed for text insertion)
+        if (target && target.focus) target.focus();
+
         const opts = {
             key:keyDef.key, code:keyDef.code, keyCode:keyDef.keyCode, which:keyDef.keyCode,
             bubbles:true, cancelable:true,
@@ -80,8 +83,22 @@
             shiftKey:state.modifiers.shift||(keyDef.shift||false), metaKey:state.modifiers.meta,
         };
         target.dispatchEvent(new KeyboardEvent('keydown', opts));
-        if (keyDef.key.length === 1 && !opts.ctrlKey && !opts.altKey && !opts.metaKey)
-            document.execCommand('insertText', false, keyDef.key);
+
+        // Insert text: modify textarea value + fire InputEvent
+        // (execCommand unreliable in GeckoView, especially for space/shifted chars)
+        if (keyDef.key.length === 1 && !opts.ctrlKey && !opts.altKey && !opts.metaKey) {
+            if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
+                const start = target.selectionStart || 0;
+                const end = target.selectionEnd || start;
+                target.value = target.value.substring(0, start) + keyDef.key + target.value.substring(end);
+                target.selectionStart = target.selectionEnd = start + keyDef.key.length;
+            }
+            target.dispatchEvent(new InputEvent('input', {
+                inputType: 'insertText', data: keyDef.key,
+                bubbles: true, isComposing: false
+            }));
+        }
+
         target.dispatchEvent(new KeyboardEvent('keyup', opts));
         resetModifiers();
     }
@@ -343,12 +360,23 @@
     // ====================== SHOW / HIDE ======================
     function showOverlay(overlay) {
         state.overlayVisible = true;
+
+        // Measure overlay height BEFORE it becomes visible, then send resize
+        // so GeckoView margin is set at the same time overlay appears
+        overlay.style.visibility = 'hidden';
         overlay.classList.remove('vsc-collapsed');
-        const t = document.getElementById('vsc-float-toggle'); if (t) t.style.display = 'none';
-        setInputModeNone(true);
+        const h = Math.round(overlay.getBoundingClientRect().height);
+        _lastResize = h;
+        sendToAndroid({ type: 'resize', height: h });
         sendToAndroid({ type: 'overlayVisibility', visible: true });
-        // Wait for CSS transition to finish before measuring height
-        setTimeout(() => updateViewportResize(overlay), 250);
+        setInputModeNone(true);
+
+        // Make visible after one frame (gives Android time to apply margin)
+        requestAnimationFrame(() => {
+            overlay.style.visibility = '';
+        });
+
+        const t = document.getElementById('vsc-float-toggle'); if (t) t.style.display = 'none';
     }
     function hideOverlay(overlay) {
         state.overlayVisible = false;

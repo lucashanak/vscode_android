@@ -10,7 +10,7 @@
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
-    transition: transform 0.2s ease, opacity 0.2s ease;
+    /* No transition — instant show/hide to sync with GeckoView resize */
     touch-action: none;
     user-select: none;
     -webkit-user-select: none;
