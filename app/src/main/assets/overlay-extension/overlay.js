@@ -132,37 +132,50 @@
     function sendToAndroid(msg) { try { browser.runtime.sendNativeMessage('browser', msg); } catch(_){} }
 
     // ====================== VIEWPORT RESIZE ======================
-    // Monkey-patch window.innerHeight so VS Code thinks viewport is smaller.
-    // Overlay stays at real bottom (position:fixed uses actual viewport).
-    // GeckoView stays full size — no margin, no empty space.
-    const _origInnerHeight = Object.getOwnPropertyDescriptor(Window.prototype, 'innerHeight');
-    let _overlayReserved = 0;
-
-    function getRealInnerHeight() {
-        if (_origInnerHeight && _origInnerHeight.get) return _origInnerHeight.get.call(window);
-        return screen.availHeight;
-    }
-
-    function patchViewport(reservedPx) {
-        if (reservedPx === _overlayReserved) return;
-        _overlayReserved = reservedPx;
-
-        Object.defineProperty(window, 'innerHeight', {
-            get() { return Math.max(0, getRealInnerHeight() - _overlayReserved); },
-            configurable: true,
-            enumerable: true
-        });
-
-        window.dispatchEvent(new Event('resize'));
-    }
+    // Send overlay height to Android → Kotlin sets GeckoView bottomMargin
+    // + dark spacer fills the gap below. Viewport actually shrinks.
+    let _lastResize = -1;
 
     function updateViewportResize(overlay) {
-        if (overlay.classList.contains('vsc-collapsed')) {
-            patchViewport(0);
-        } else {
-            requestAnimationFrame(() => {
-                patchViewport(Math.round(overlay.getBoundingClientRect().height));
+        const h = overlay.classList.contains('vsc-collapsed') ? 0 :
+                  Math.round(overlay.getBoundingClientRect().height);
+        if (h === _lastResize) return;
+        _lastResize = h;
+        sendToAndroid({ type: 'resize', height: h });
+    }
+
+    // ====================== IME SUPPRESSION ======================
+    // Set inputmode="none" on all inputs/textareas to prevent GeckoView
+    // from requesting the software keyboard. Standard web API, no flicker.
+    let _imeObserver = null;
+
+    function setInputModeNone(enable) {
+        const val = enable ? 'none' : '';
+        document.querySelectorAll('input, textarea, [contenteditable]').forEach(el => {
+            if (enable) el.setAttribute('inputmode', 'none');
+            else el.removeAttribute('inputmode');
+        });
+
+        if (enable && !_imeObserver) {
+            _imeObserver = new MutationObserver(mutations => {
+                for (const m of mutations) {
+                    for (const node of m.addedNodes) {
+                        if (node.nodeType !== 1) continue;
+                        if (node.matches && node.matches('input, textarea, [contenteditable]')) {
+                            node.setAttribute('inputmode', 'none');
+                        }
+                        if (node.querySelectorAll) {
+                            node.querySelectorAll('input, textarea, [contenteditable]').forEach(el => {
+                                el.setAttribute('inputmode', 'none');
+                            });
+                        }
+                    }
+                }
             });
+            _imeObserver.observe(document.body, { childList: true, subtree: true });
+        } else if (!enable && _imeObserver) {
+            _imeObserver.disconnect();
+            _imeObserver = null;
         }
     }
 
@@ -332,12 +345,15 @@
         state.overlayVisible = true;
         overlay.classList.remove('vsc-collapsed');
         const t = document.getElementById('vsc-float-toggle'); if (t) t.style.display = 'none';
+        setInputModeNone(true);
         sendToAndroid({ type: 'overlayVisibility', visible: true });
-        updateViewportResize(overlay);
+        // Wait for CSS transition to finish before measuring height
+        setTimeout(() => updateViewportResize(overlay), 250);
     }
     function hideOverlay(overlay) {
         state.overlayVisible = false;
         overlay.classList.add('vsc-collapsed');
+        setInputModeNone(false);
         sendToAndroid({ type: 'overlayVisibility', visible: false });
         updateViewportResize(overlay);
         showFloatingToggle(overlay);
