@@ -106,32 +106,16 @@ class OverlayManager(
 
     private fun injectTerminalMouse(type: String, x: Float, y: Float, button: Int = 0) {
         val wv = sshTerminalWebView ?: return
-        val btnMask = when (button) { 0 -> 1; 1 -> 4; 2 -> 2; else -> 0 }
+        val btnMask = if (type == "mouseup") 0 else when (button) { 0 -> 1; 1 -> 4; 2 -> 2; else -> 0 }
         wv.post {
-            wv.evaluateJavascript("""
-                (function(){
-                    var el = document.elementFromPoint($x,$y) || document.querySelector('.xterm-screen');
-                    if(el) el.dispatchEvent(new MouseEvent('$type',{
-                        clientX:$x, clientY:$y, button:$button, buttons:${if (type == "mouseup") 0 else btnMask},
-                        bubbles:true, cancelable:true, view:window
-                    }));
-                })()
-            """.trimIndent(), null)
+            wv.evaluateJavascript("injectMouse('$type',$x,$y,$button,$btnMask)", null)
         }
     }
 
     private fun injectTerminalWheel(x: Float, y: Float, deltaY: Float) {
         val wv = sshTerminalWebView ?: return
         wv.post {
-            wv.evaluateJavascript("""
-                (function(){
-                    var el = document.elementFromPoint($x,$y) || document.querySelector('.xterm-screen');
-                    if(el) el.dispatchEvent(new WheelEvent('wheel',{
-                        deltaY:$deltaY, clientX:$x, clientY:$y,
-                        bubbles:true, cancelable:true, view:window
-                    }));
-                })()
-            """.trimIndent(), null)
+            wv.evaluateJavascript("injectWheel($x,$y,$deltaY)", null)
         }
     }
 

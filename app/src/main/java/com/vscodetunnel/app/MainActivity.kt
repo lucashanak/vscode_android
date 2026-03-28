@@ -234,6 +234,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.btnAddSsh).setOnClickListener { showSshServerDialog(null) }
         findViewById<View>(R.id.btnQuickSsh).setOnClickListener { showQuickConnectDialog() }
         findViewById<View>(R.id.btnSettings).setOnClickListener { showSettingsDialog() }
+        findViewById<View>(R.id.btnCheckUpdate).setOnClickListener { checkForUpdate() }
 
         findViewById<Button>(R.id.btnConnect).setOnClickListener {
             connectTo(urlInput.text.toString().trim())

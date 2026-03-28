@@ -131,6 +131,15 @@
                 android:layout_marginBottom="16dp">
 
                 <TextView
+                    android:id="@+id/btnCheckUpdate"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Check Update"
+                    android:textColor="@color/primary"
+                    android:textSize="14sp"
+                    android:padding="8dp" />
+
+                <TextView
                     android:id="@+id/btnSettings"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"

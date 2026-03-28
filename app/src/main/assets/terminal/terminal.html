@@ -21,12 +21,18 @@ html, body { background:#1E1E1E; overflow:hidden; width:100%; height:100%; displ
 .ctx-item { display:block; width:100%; padding:10px 16px; font-size:14px; font-family:-apple-system,sans-serif; color:#ddd; background:none; border:none; text-align:left; cursor:pointer; }
 .ctx-item:active { background:rgba(0,122,204,0.3); }
 .ctx-sep { height:1px; background:rgba(255,255,255,0.1); margin:4px 0; }
+/* Selection handles (Android-style teardrops) */
+.sel-handle { position:fixed; width:28px; height:28px; z-index:150; display:none; touch-action:none; }
+.sel-handle svg { width:100%; height:100%; filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5)); }
 </style>
 </head>
 <body>
 <div id="snippetBar"></div>
 <div id="terminal"></div>
 <div id="toast"></div>
+<!-- Selection handles (Android teardrop style) -->
+<div class="sel-handle" id="handleLeft"><svg viewBox="0 0 28 28"><circle cx="14" cy="6" r="6" fill="#007acc"/><rect x="12" y="6" width="4" height="16" rx="2" fill="#007acc"/></svg></div>
+<div class="sel-handle" id="handleRight"><svg viewBox="0 0 28 28"><circle cx="14" cy="6" r="6" fill="#007acc"/><rect x="12" y="6" width="4" height="16" rx="2" fill="#007acc"/></svg></div>
 <div id="ctxMenu">
     <button class="ctx-item" id="ctxCopy">Copy</button>
     <button class="ctx-item" id="ctxPaste">Paste</button>
@@ -189,6 +195,138 @@ document.getElementById('ctxExport').addEventListener('click', () => {
     exportScrollback();
     showToast('Exporting...');
 });
+
+// ======================== SELECTION HANDLES ========================
+const handleLeft = document.getElementById('handleLeft');
+const handleRight = document.getElementById('handleRight');
+let draggingHandle = null;
+
+function getCellSize() {
+    // xterm.js internal cell dimensions
+    try {
+        const dims = term._core._renderService.dimensions;
+        return { w: dims.css.cell.width, h: dims.css.cell.height };
+    } catch(_) {
+        // Fallback: measure from DOM
+        const screen = document.querySelector('.xterm-screen');
+        if (!screen) return { w:8, h:16 };
+        return { w: screen.clientWidth / term.cols, h: screen.clientHeight / term.rows };
+    }
+}
+
+function getScreenRect() {
+    const screen = document.querySelector('.xterm-screen');
+    return screen ? screen.getBoundingClientRect() : {left:0,top:0,width:0,height:0};
+}
+
+function posToCell(px, py) {
+    const rect = getScreenRect();
+    const cell = getCellSize();
+    const col = Math.round((px - rect.left) / cell.w);
+    const row = Math.round((py - rect.top) / cell.h);
+    return { col: Math.max(0, Math.min(col, term.cols - 1)), row: Math.max(0, row) };
+}
+
+function updateHandles() {
+    const pos = term.getSelectionPosition();
+    if (!pos || !term.hasSelection()) {
+        handleLeft.style.display = 'none';
+        handleRight.style.display = 'none';
+        return;
+    }
+    const rect = getScreenRect();
+    const cell = getCellSize();
+    const viewportRow = term.buffer.active.viewportY;
+
+    // Start handle (left edge of selection)
+    const sx = rect.left + pos.start.x * cell.w;
+    const sy = rect.top + (pos.start.y - viewportRow) * cell.h;
+    handleLeft.style.left = (sx - 14) + 'px';
+    handleLeft.style.top = (sy + cell.h) + 'px';
+    handleLeft.style.display = 'block';
+
+    // End handle (right edge of selection)
+    const ex = rect.left + pos.end.x * cell.w;
+    const ey = rect.top + (pos.end.y - viewportRow) * cell.h;
+    handleRight.style.left = (ex - 14) + 'px';
+    handleRight.style.top = (ey + cell.h) + 'px';
+    handleRight.style.display = 'block';
+}
+
+term.onSelectionChange(() => {
+    const sel = term.getSelection();
+    if (sel && A) { A.copyToClipboard(sel); showToast('Copied'); }
+    updateHandles();
+});
+
+// Handle dragging
+function handleDrag(e, handle) {
+    e.preventDefault();
+    draggingHandle = handle;
+}
+
+handleLeft.addEventListener('touchstart', e => { e.preventDefault(); draggingHandle = 'left'; }, {passive:false});
+handleRight.addEventListener('touchstart', e => { e.preventDefault(); draggingHandle = 'right'; }, {passive:false});
+
+document.addEventListener('touchmove', e => {
+    if (!draggingHandle) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const cell = posToCell(touch.clientX, touch.clientY);
+    const pos = term.getSelectionPosition();
+    if (!pos) return;
+    const viewportRow = term.buffer.active.viewportY;
+
+    if (draggingHandle === 'left') {
+        // Move start of selection
+        const startRow = cell.row + viewportRow;
+        const endRow = pos.end.y;
+        const endCol = pos.end.x;
+        if (startRow < endRow || (startRow === endRow && cell.col < endCol)) {
+            const len = (endRow - startRow) * term.cols + (endCol - cell.col);
+            term.select(cell.col, startRow, len);
+        }
+    } else {
+        // Move end of selection
+        const startRow = pos.start.y;
+        const startCol = pos.start.x;
+        const endRow = cell.row + viewportRow;
+        if (endRow > startRow || (endRow === startRow && cell.col > startCol)) {
+            const len = (endRow - startRow) * term.cols + (cell.col - startCol);
+            term.select(startCol, startRow, len);
+        }
+    }
+    updateHandles();
+}, {passive:false});
+
+document.addEventListener('touchend', () => {
+    draggingHandle = null;
+}, {passive:true});
+
+// ======================== MOUSE INJECTION FOR TOUCHPAD ========================
+// Called from Android OverlayManager to dispatch mouse events
+function injectMouse(type, x, y, button, buttons) {
+    var xtermEl = document.querySelector('.xterm');
+    if (!xtermEl) return;
+    var evt = new MouseEvent(type, {
+        clientX: x, clientY: y, button: button || 0, buttons: buttons || 0,
+        bubbles: true, cancelable: true, view: window
+    });
+    if (type === 'mouseup') {
+        document.dispatchEvent(evt);
+    } else {
+        xtermEl.dispatchEvent(evt);
+    }
+}
+
+function injectWheel(x, y, deltaY) {
+    var xtermEl = document.querySelector('.xterm');
+    if (!xtermEl) return;
+    xtermEl.dispatchEvent(new WheelEvent('wheel', {
+        deltaY: deltaY, clientX: x, clientY: y,
+        bubbles: true, cancelable: true, view: window
+    }));
+}
 
 // ======================== RESIZE ========================
 const ro = new ResizeObserver(() => {
