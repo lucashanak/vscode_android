@@ -106,16 +106,22 @@ class OverlayManager(
 
     private fun injectTerminalMouse(type: String, x: Float, y: Float, button: Int = 0) {
         val wv = sshTerminalWebView ?: return
-        val btnMask = if (type == "mouseup") 0 else when (button) { 0 -> 1; 1 -> 4; 2 -> 2; else -> 0 }
         wv.post {
-            wv.evaluateJavascript("injectMouse('$type',$x,$y,$button,$btnMask)", null)
+            wv.evaluateJavascript("if(typeof injectMouse==='function')injectMouse('$type',$x,$y,$button,0)", null)
+        }
+    }
+
+    private fun injectTerminalDragSelect(x: Float, y: Float) {
+        val wv = sshTerminalWebView ?: return
+        wv.post {
+            wv.evaluateJavascript("if(typeof injectDragSelect==='function')injectDragSelect($x,$y)", null)
         }
     }
 
     private fun injectTerminalWheel(x: Float, y: Float, deltaY: Float) {
         val wv = sshTerminalWebView ?: return
         wv.post {
-            wv.evaluateJavascript("injectWheel($x,$y,$deltaY)", null)
+            wv.evaluateJavascript("if(typeof injectWheel==='function')injectWheel($x,$y,$deltaY)", null)
         }
     }
 

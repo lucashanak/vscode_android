@@ -303,29 +303,61 @@ document.addEventListener('touchend', () => {
     draggingHandle = null;
 }, {passive:true});
 
-// ======================== MOUSE INJECTION FOR TOUCHPAD ========================
-// Called from Android OverlayManager to dispatch mouse events
-function injectMouse(type, x, y, button, buttons) {
-    var xtermEl = document.querySelector('.xterm');
-    if (!xtermEl) return;
-    var evt = new MouseEvent(type, {
-        clientX: x, clientY: y, button: button || 0, buttons: buttons || 0,
-        bubbles: true, cancelable: true, view: window
-    });
-    if (type === 'mouseup') {
-        document.dispatchEvent(evt);
-    } else {
-        xtermEl.dispatchEvent(evt);
-    }
+// ======================== TOUCHPAD CURSOR (called from Android) ========================
+// xterm.js ignores synthetic MouseEvents in plain shell (no mouse protocol active).
+// Use xterm.js APIs directly for cursor positioning, selection, and scroll.
+
+let tpCursorCol = -1, tpCursorRow = -1;
+
+function pxToCell(x, y) {
+    const rect = getScreenRect();
+    const cell = getCellSize();
+    return {
+        col: Math.max(0, Math.min(Math.floor((x - rect.left) / cell.w), term.cols - 1)),
+        row: Math.max(0, Math.min(Math.floor((y - rect.top) / cell.h), term.rows - 1))
+    };
 }
 
+// Called from Android: move virtual cursor
+function injectMouse(type, x, y, button, buttons) {
+    const c = pxToCell(x, y);
+    tpCursorCol = c.col;
+    tpCursorRow = c.row;
+
+    if (type === 'mousedown') {
+        // Start selection at cursor position
+        const absRow = c.row + term.buffer.active.viewportY;
+        term.select(c.col, absRow, 0);
+        term.focus();
+    } else if (type === 'click') {
+        // Clear selection and focus at position
+        term.clearSelection();
+        term.focus();
+    } else if (type === 'dblclick') {
+        // Select word at cursor
+        const absRow = c.row + term.buffer.active.viewportY;
+        term.select(c.col, absRow, 1); // minimal select, xterm will expand to word
+    }
+    // mousemove: just track position (used for drag-select via Android)
+}
+
+// Called from Android: scroll terminal
 function injectWheel(x, y, deltaY) {
-    var xtermEl = document.querySelector('.xterm');
-    if (!xtermEl) return;
-    xtermEl.dispatchEvent(new WheelEvent('wheel', {
-        deltaY: deltaY, clientX: x, clientY: y,
-        bubbles: true, cancelable: true, view: window
-    }));
+    const lines = Math.round(deltaY / 30);
+    if (lines !== 0) term.scrollLines(lines);
+}
+
+// Called from Android: drag-select from current cursor to new position
+function injectDragSelect(x, y) {
+    const c = pxToCell(x, y);
+    if (tpCursorCol < 0) return;
+    const vp = term.buffer.active.viewportY;
+    const startCol = tpCursorCol, startRow = tpCursorRow + vp;
+    const endCol = c.col, endRow = c.row + vp;
+    const len = (endRow - startRow) * term.cols + (endCol - startCol);
+    if (len > 0) term.select(startCol, startRow, len);
+    else if (len < 0) term.select(endCol, endRow, -len);
+    updateHandles();
 }
 
 // ======================== RESIZE ========================

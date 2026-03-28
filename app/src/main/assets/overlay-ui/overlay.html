@@ -69,7 +69,7 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 
 /* ============ TOUCHPAD ============ */
 .tp-panel.active { display:flex; flex-direction:column; }
-.tp-area { flex:1; min-height:340px; margin:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; display:flex; align-items:center; justify-content:center; touch-action:none; }
+.tp-area { flex:1; margin:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; display:flex; align-items:center; justify-content:center; touch-action:none; }
 .tp-hint { color:rgba(255,255,255,0.15); font-size:14px; pointer-events:none; font-family:-apple-system,sans-serif; }
 .tp-buttons { display:flex; gap:5px; padding:6px; }
 .tp-btn { flex:1; height:44px; font-size:14px; font-weight:500; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.08); color:#bbb; border:none; border-radius:8px; cursor:pointer; touch-action:manipulation; }
@@ -107,9 +107,9 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 <body>
 
 <div class="toolbar">
-    <button class="tool-btn tab-btn" id="tpToggle">TP</button>
     <div class="spacer"></div>
     <button class="tool-btn" id="menuBtn">Menu</button>
+    <button class="tool-btn tab-btn" id="tpToggle">TP</button>
     <button class="tool-btn" id="hideBtn">Hide</button>
 </div>
 
@@ -430,9 +430,24 @@ document.getElementById('hideBtn').addEventListener('pointerdown', e => {
 document.addEventListener('touchstart', e => e.preventDefault(), {passive:false});
 document.addEventListener('mousedown', e => e.preventDefault());
 
+// ======================== SYNC TP HEIGHT TO KB HEIGHT ========================
+function syncTpHeight() {
+    // Match touchpad panel height to keyboard panel height
+    if (window.innerWidth > 900) return; // wide mode: TP fills via flex
+    const kbH = kbPanel.offsetHeight;
+    if (kbH > 0) {
+        // TP panel = tp-area + tp-buttons. Set tp-area min-height so total matches KB.
+        const btnH = document.querySelector('.tp-buttons')?.offsetHeight || 56;
+        const margin = 12; // tp-area margins
+        tpArea.style.minHeight = Math.max(100, kbH - btnH - margin) + 'px';
+    }
+}
+
 // ======================== INIT ========================
 updateLayout();
-window.addEventListener('resize', updateLayout);
+// Sync TP height after layout settles
+setTimeout(syncTpHeight, 100);
+window.addEventListener('resize', () => { updateLayout(); setTimeout(syncTpHeight, 50); });
 </script>
 </body>
 </html>
