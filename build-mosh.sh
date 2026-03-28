@@ -29,6 +29,7 @@ export AR="llvm-ar"
 export RANLIB="llvm-ranlib"
 export STRIP="llvm-strip"
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WORKDIR="$(pwd)/build-mosh-tmp"
 PREFIX="$WORKDIR/install"
 mkdir -p "$WORKDIR" "$PREFIX"
@@ -111,7 +112,7 @@ make -j$(nproc)
 
 echo "=== Installing ==="
 
-OUTPUT="$(dirname "$0")/app/src/main/assets/bin"
+OUTPUT="$SCRIPT_DIR/app/src/main/assets/bin"
 mkdir -p "$OUTPUT"
 $STRIP src/frontend/mosh-client -o "$OUTPUT/mosh-client"
 
