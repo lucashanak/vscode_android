@@ -73,11 +73,14 @@
     }
 
     // ====================== POINTER / MOUSE ======================
+    // buttons bitmask: 1=left, 2=right, 4=middle
+    function btnMask(button) { return button===0?1:button===1?4:button===2?2:0; }
+
     function dispatchPointer(type, button) {
         const t = document.elementFromPoint(cursorX, cursorY); if (!t) return;
         t.dispatchEvent(new PointerEvent(type, {
             clientX:cursorX, clientY:cursorY,
-            button:button||0, buttons:button===2?2:button===0?1:0,
+            button:button||0, buttons:btnMask(button),
             bubbles:true, cancelable:true, composed:true, view:window,
             pointerId:1, pointerType:'mouse', isPrimary:true,
             width:1, height:1, pressure:type==='pointerdown'?0.5:0
@@ -87,7 +90,7 @@
         const t = document.elementFromPoint(cursorX, cursorY); if (!t) return;
         t.dispatchEvent(new MouseEvent(type, {
             clientX:cursorX, clientY:cursorY,
-            button:button||0, buttons:button===2?2:button===0?1:0,
+            button:button||0, buttons:btnMask(button),
             bubbles:true, cancelable:true, view:window
         }));
     }
@@ -96,6 +99,15 @@
         dispatchPointer('pointerdown',button); dispatchMouse('mousedown',button);
         dispatchPointer('pointerup',button); dispatchMouse('mouseup',button);
         dispatchMouse('click',button);
+        // Right-click: dispatch contextmenu (browser does this natively for button=2)
+        if (button === 2) {
+            const t = document.elementFromPoint(cursorX, cursorY);
+            if (t) t.dispatchEvent(new MouseEvent('contextmenu', {
+                clientX:cursorX, clientY:cursorY,
+                button:2, buttons:0,
+                bubbles:true, cancelable:true, view:window
+            }));
+        }
     }
     function doubleClickAt() {
         clickAt(0); clickAt(0);
