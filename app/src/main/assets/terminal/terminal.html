@@ -304,8 +304,8 @@ document.addEventListener('touchend', () => {
 }, {passive:true});
 
 // ======================== TOUCHPAD CURSOR (called from Android) ========================
-// xterm.js ignores synthetic MouseEvents in plain shell (no mouse protocol active).
-// Use xterm.js APIs directly for cursor positioning, selection, and scroll.
+// Hybrid: dispatch real MouseEvent on .xterm (for mouse-aware apps like mc/vim)
+// AND use xterm.js API (for selection in plain shell).
 
 let tpCursorCol = -1, tpCursorRow = -1;
 
@@ -318,36 +318,60 @@ function pxToCell(x, y) {
     };
 }
 
-// Called from Android: move virtual cursor
+// Convert cell coordinates to clientX/clientY for MouseEvent
+function cellToPx(col, row) {
+    const rect = getScreenRect();
+    const cell = getCellSize();
+    return { x: rect.left + col * cell.w + cell.w / 2, y: rect.top + row * cell.h + cell.h / 2 };
+}
+
+function dispatchRealMouse(type, x, y, button) {
+    // Dispatch on .xterm for mouse-aware programs, mouseup on document
+    const target = (type === 'mouseup') ? document : document.querySelector('.xterm');
+    if (!target) return;
+    const btnMask = (type === 'mouseup') ? 0 : (button === 0 ? 1 : button === 2 ? 2 : 4);
+    target.dispatchEvent(new MouseEvent(type, {
+        clientX: x, clientY: y, button: button || 0, buttons: btnMask,
+        bubbles: true, cancelable: true, view: window
+    }));
+}
+
 function injectMouse(type, x, y, button, buttons) {
     const c = pxToCell(x, y);
+    const px = cellToPx(c.col, c.row);
     tpCursorCol = c.col;
     tpCursorRow = c.row;
 
-    if (type === 'mousedown') {
-        // Start selection at cursor position
-        const absRow = c.row + term.buffer.active.viewportY;
-        term.select(c.col, absRow, 0);
-        term.focus();
-    } else if (type === 'click') {
-        // Clear selection and focus at position
+    // Always dispatch real MouseEvent (works for mc, vim, htop)
+    dispatchRealMouse(type, px.x, px.y, button);
+
+    // Also use xterm API for plain shell selection/focus
+    if (type === 'click') {
         term.clearSelection();
         term.focus();
     } else if (type === 'dblclick') {
-        // Select word at cursor
-        const absRow = c.row + term.buffer.active.viewportY;
-        term.select(c.col, absRow, 1); // minimal select, xterm will expand to word
+        dispatchRealMouse('mousedown', px.x, px.y, 0);
+        dispatchRealMouse('mouseup', px.x, px.y, 0);
+        dispatchRealMouse('mousedown', px.x, px.y, 0);
+        dispatchRealMouse('mouseup', px.x, px.y, 0);
+        const el = document.querySelector('.xterm');
+        if (el) el.dispatchEvent(new MouseEvent('dblclick', {
+            clientX: px.x, clientY: px.y, bubbles: true, view: window
+        }));
     }
-    // mousemove: just track position (used for drag-select via Android)
 }
 
-// Called from Android: scroll terminal
 function injectWheel(x, y, deltaY) {
+    // Direct API scroll (always works) + real WheelEvent for mouse-aware apps
     const lines = Math.round(deltaY / 30);
     if (lines !== 0) term.scrollLines(lines);
+    const el = document.querySelector('.xterm');
+    if (el) el.dispatchEvent(new WheelEvent('wheel', {
+        deltaY: deltaY, clientX: x, clientY: y,
+        bubbles: true, cancelable: true, view: window
+    }));
 }
 
-// Called from Android: drag-select from current cursor to new position
 function injectDragSelect(x, y) {
     const c = pxToCell(x, y);
     if (tpCursorCol < 0) return;
@@ -358,6 +382,9 @@ function injectDragSelect(x, y) {
     if (len > 0) term.select(startCol, startRow, len);
     else if (len < 0) term.select(endCol, endRow, -len);
     updateHandles();
+    // Also dispatch real mousemove for mouse-aware apps
+    const px = cellToPx(c.col, c.row);
+    dispatchRealMouse('mousemove', px.x, px.y, 0);
 }
 
 // ======================== RESIZE ========================

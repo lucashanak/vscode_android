@@ -107,8 +107,8 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 <body>
 
 <div class="toolbar">
-    <div class="spacer"></div>
     <button class="tool-btn" id="menuBtn">Menu</button>
+    <div class="spacer"></div>
     <button class="tool-btn tab-btn" id="tpToggle">TP</button>
     <button class="tool-btn" id="hideBtn">Hide</button>
 </div>
@@ -432,14 +432,14 @@ document.addEventListener('mousedown', e => e.preventDefault());
 
 // ======================== SYNC TP HEIGHT TO KB HEIGHT ========================
 function syncTpHeight() {
-    // Match touchpad panel height to keyboard panel height
-    if (window.innerWidth > 900) return; // wide mode: TP fills via flex
+    if (window.innerWidth > 900) return; // wide mode: flex handles it
+    // Measure KB height (must be visible to measure)
+    const wasActive = kbPanel.classList.contains('active');
+    if (!wasActive) kbPanel.classList.add('active');
     const kbH = kbPanel.offsetHeight;
+    if (!wasActive) kbPanel.classList.remove('active');
     if (kbH > 0) {
-        // TP panel = tp-area + tp-buttons. Set tp-area min-height so total matches KB.
-        const btnH = document.querySelector('.tp-buttons')?.offsetHeight || 56;
-        const margin = 12; // tp-area margins
-        tpArea.style.minHeight = Math.max(100, kbH - btnH - margin) + 'px';
+        tpPanel.style.minHeight = kbH + 'px';
     }
 }
 
