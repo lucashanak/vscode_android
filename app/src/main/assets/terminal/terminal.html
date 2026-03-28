@@ -7,34 +7,34 @@
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 html, body { background:#1E1E1E; overflow:hidden; width:100%; height:100%; display:flex; flex-direction:column; }
-#toolbar { display:flex; align-items:center; gap:4px; padding:4px 8px; background:#181818; border-bottom:1px solid rgba(255,255,255,0.06); flex-shrink:0; overflow-x:auto; }
-#toolbar::-webkit-scrollbar { display:none; }
-.tbtn { padding:5px 10px; font-size:12px; font-weight:500; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.08); color:#aaa; border:none; border-radius:4px; cursor:pointer; white-space:nowrap; touch-action:manipulation; }
-.tbtn:active { background:rgba(0,122,204,0.4); }
-.tbtn.accent { background:#007acc; color:#fff; }
-.sep { width:1px; height:20px; background:rgba(255,255,255,0.1); flex-shrink:0; }
 #snippetBar { display:none; gap:4px; padding:3px 8px; background:#1a1a1a; overflow-x:auto; flex-shrink:0; }
 #snippetBar::-webkit-scrollbar { display:none; }
 .snip-btn { padding:4px 8px; font-size:11px; font-family:'Droid Sans Mono',monospace; background:rgba(255,255,255,0.06); color:#bbb; border:1px solid rgba(255,255,255,0.1); border-radius:3px; cursor:pointer; white-space:nowrap; touch-action:manipulation; }
 .snip-btn:active { background:rgba(0,122,204,0.3); }
 #terminal { flex:1; min-height:0; }
 .xterm { height:100%; }
+/* Toast notification */
+#toast { position:fixed; bottom:60px; left:50%; transform:translateX(-50%); padding:6px 16px; background:rgba(0,122,204,0.85); color:#fff; font-size:12px; font-family:-apple-system,sans-serif; border-radius:16px; pointer-events:none; opacity:0; transition:opacity 0.2s; z-index:100; }
+#toast.show { opacity:1; }
 </style>
 </head>
 <body>
-<div id="toolbar">
-    <button class="tbtn" id="btnPaste">Paste</button>
-    <button class="tbtn" id="btnCopy">Copy</button>
-    <button class="tbtn" id="btnExport">Export</button>
-</div>
 <div id="snippetBar"></div>
 <div id="terminal"></div>
+<div id="toast"></div>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
 <script>
 'use strict';
 
 const A = window.Android;
+
+function showToast(msg, ms) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), ms || 1200);
+}
 
 // ======================== COLOR SCHEMES ========================
 const SCHEMES = {
@@ -74,7 +74,6 @@ const SCHEMES = {
         brightBlue:'#5555FF', brightMagenta:'#FF55FF', brightCyan:'#55FFFF', brightWhite:'#FFFFFF'
     }
 };
-
 let currentSchemeIdx = 0;
 const schemeNames = Object.keys(SCHEMES);
 
@@ -97,22 +96,45 @@ fitAddon.fit();
 // Send user input to Android
 term.onData(data => { if (A) A.onTerminalInput(data); });
 
-// Selection → auto copy
+// ======================== COPY ON SELECT ========================
 term.onSelectionChange(() => {
     const sel = term.getSelection();
-    if (sel && A) A.copyToClipboard(sel);
+    if (sel && A) {
+        A.copyToClipboard(sel);
+        showToast('Copied');
+    }
 });
 
-// Resize
+// ======================== DOUBLE-TAP TO PASTE ========================
+let lastTapTime = 0;
+const termEl = document.getElementById('terminal');
+termEl.addEventListener('touchend', e => {
+    if (e.changedTouches.length !== 1) return;
+    const now = Date.now();
+    if (now - lastTapTime < 300) {
+        // Double-tap → paste
+        if (A) {
+            const text = A.getClipboard();
+            if (text) {
+                A.onTerminalInput(text);
+                showToast('Pasted');
+            }
+        }
+        lastTapTime = 0;
+    } else {
+        lastTapTime = now;
+    }
+}, {passive:true});
+
+// ======================== RESIZE ========================
 const ro = new ResizeObserver(() => {
     fitAddon.fit();
     if (A) A.onTerminalResize(term.cols, term.rows);
 });
-ro.observe(document.getElementById('terminal'));
+ro.observe(termEl);
 
 // ======================== PINCH TO ZOOM ========================
 let pinchStartDist = 0, pinchStartSize = 0;
-const termEl = document.getElementById('terminal');
 termEl.addEventListener('touchstart', e => {
     if (e.touches.length === 2) {
         const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -136,33 +158,6 @@ termEl.addEventListener('touchmove', e => {
     }
 }, {passive:true});
 termEl.addEventListener('touchend', () => { pinchStartDist = 0; }, {passive:true});
-
-// ======================== TOOLBAR ========================
-document.getElementById('btnPaste').addEventListener('click', () => {
-    if (A) {
-        const text = A.getClipboard();
-        if (text) { if (A) A.onTerminalInput(text); }
-    }
-});
-
-document.getElementById('btnCopy').addEventListener('click', () => {
-    const sel = term.getSelection();
-    if (sel && A) A.copyToClipboard(sel);
-});
-
-document.getElementById('btnExport').addEventListener('click', () => {
-    // Serialize full scrollback buffer
-    const lines = [];
-    const buf = term.buffer.active;
-    for (let i = 0; i < buf.length; i++) {
-        const line = buf.getLine(i);
-        if (line) lines.push(line.translateToString(true));
-    }
-    if (A) A.exportScrollback(lines.join('\n'));
-});
-
-// Zoom and theme controls moved to app Settings dialog
-// Functions still available via Android JS bridge: setFontSize(), applyColorScheme()
 
 // ======================== SNIPPETS ========================
 function setSnippets(snippets) {
@@ -190,26 +185,34 @@ function setFontSize(size) {
     fitAddon.fit();
 }
 
+function setScrollback(lines) {
+    term.options.scrollback = lines;
+}
+
 function applyColorScheme(name) {
     const scheme = SCHEMES[name];
     if (!scheme) return;
     term.options.theme = scheme;
     document.body.style.background = scheme.background;
-    document.getElementById('toolbar').style.background = scheme.background;
     currentSchemeIdx = schemeNames.indexOf(name);
-    document.getElementById('btnScheme').textContent = name;
+}
+
+function exportScrollback() {
+    const lines = [];
+    const buf = term.buffer.active;
+    for (let i = 0; i < buf.length; i++) {
+        const line = buf.getLine(i);
+        if (line) lines.push(line.translateToString(true));
+    }
+    if (A) A.exportScrollback(lines.join('\n'));
 }
 
 // ======================== SUPPRESS ANDROID KEYBOARD ========================
-// xterm.js creates a hidden textarea for input — set inputmode="none" to prevent
-// Android system keyboard from showing (we use the overlay keyboard instead).
 function suppressKeyboard() {
     document.querySelectorAll('.xterm-helper-textarea, textarea, input').forEach(el => {
         el.setAttribute('inputmode', 'none');
     });
 }
-
-// Watch for xterm's textarea creation and suppress immediately
 const imeObserver = new MutationObserver(mutations => {
     for (const m of mutations) for (const node of m.addedNodes) {
         if (node.nodeType !== 1) continue;
