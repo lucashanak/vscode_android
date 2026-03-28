@@ -101,6 +101,12 @@ class MainActivity : AppCompatActivity() {
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.rootFrame)) { view, windowInsets ->
             if (sysKBSuppressed) {
+                // Reactively hide IME whenever it tries to show
+                val imeVisible = windowInsets.isVisible(WindowInsetsCompat.Type.ime())
+                if (imeVisible) {
+                    val controller = WindowInsetsControllerCompat(window, view)
+                    controller.hide(WindowInsetsCompat.Type.ime())
+                }
                 val sysBarInsets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
                 view.setPadding(sysBarInsets.left, sysBarInsets.top, sysBarInsets.right, sysBarInsets.bottom)
             } else {
