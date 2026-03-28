@@ -223,10 +223,33 @@ function applyColorScheme(name) {
     document.getElementById('btnScheme').textContent = name;
 }
 
+// ======================== SUPPRESS ANDROID KEYBOARD ========================
+// xterm.js creates a hidden textarea for input — set inputmode="none" to prevent
+// Android system keyboard from showing (we use the overlay keyboard instead).
+function suppressKeyboard() {
+    document.querySelectorAll('.xterm-helper-textarea, textarea, input').forEach(el => {
+        el.setAttribute('inputmode', 'none');
+    });
+}
+
+// Watch for xterm's textarea creation and suppress immediately
+const imeObserver = new MutationObserver(mutations => {
+    for (const m of mutations) for (const node of m.addedNodes) {
+        if (node.nodeType !== 1) continue;
+        if (node.matches && node.matches('textarea,input,.xterm-helper-textarea'))
+            node.setAttribute('inputmode', 'none');
+        if (node.querySelectorAll)
+            node.querySelectorAll('textarea,input,.xterm-helper-textarea').forEach(
+                el => el.setAttribute('inputmode', 'none'));
+    }
+});
+imeObserver.observe(document.body, { childList: true, subtree: true });
+
 // ======================== INIT ========================
 if (A) {
     setTimeout(() => {
         fitAddon.fit();
+        suppressKeyboard();
         A.onTerminalReady(term.cols, term.rows);
     }, 100);
 }
