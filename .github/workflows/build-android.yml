@@ -41,7 +41,8 @@ jobs:
         run: |
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
           bash build-mosh.sh "$ANDROID_NDK_HOME"
-          ls -la app/src/main/assets/bin/mosh-client
+          ls -la ./app/src/main/assets/bin/mosh-client
+          file ./app/src/main/assets/bin/mosh-client
 
       - name: Upload mosh binary
         uses: actions/upload-artifact@v4
