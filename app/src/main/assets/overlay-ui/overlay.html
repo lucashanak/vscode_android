@@ -105,7 +105,7 @@ html, body { background:#1E1E1E; overflow:hidden; touch-action:none; user-select
 
 // ======================== STATE ========================
 const mods = { ctrl:false, alt:false, shift:false, meta:false };
-const tp = { tracking:false, lastX:0, lastY:0, fingers:0, scrollLastY:0, tapStart:0, lastTap:0, tapTimeout:null };
+const tp = { tracking:false, lastX:0, lastY:0, startX:0, startY:0, totalMove:0, fingers:0, scrollLastY:0, tapStart:0, lastTap:0, tapTimeout:null };
 const SENSITIVITY = 1.5, SCROLL_SENS = 3;
 let compactPage = 'abc'; // 'abc' or 'sym'
 
@@ -301,12 +301,15 @@ function attachKeyEvents() {
 }
 
 // ======================== TOUCHPAD ========================
+const TAP_MOVE_THRESHOLD = 10; // px — movement below this still counts as a tap
 const tpArea = document.getElementById('tpArea');
 tpArea.addEventListener('touchstart', e => {
     e.preventDefault();
     const t = e.touches;
     tp.tracking = true; tp.fingers = t.length;
     tp.lastX = t[0].clientX; tp.lastY = t[0].clientY;
+    tp.startX = t[0].clientX; tp.startY = t[0].clientY;
+    tp.totalMove = 0;
     if (t.length >= 2) tp.scrollLastY = t[0].clientY;
     tp.tapStart = Date.now();
 }, {passive:false});
@@ -317,20 +320,21 @@ tpArea.addEventListener('touchmove', e => {
     const t = e.touches[0];
     const dx = t.clientX - tp.lastX, dy = t.clientY - tp.lastY;
     tp.lastX = t.clientX; tp.lastY = t.clientY;
+    tp.totalMove += Math.abs(dx) + Math.abs(dy);
     if (e.touches.length >= 2) {
         const sd = t.clientY - tp.scrollLastY; tp.scrollLastY = t.clientY;
         A.scroll(sd * SCROLL_SENS);
     } else {
         A.pointerMove(dx * SENSITIVITY, dy * SENSITIVITY);
     }
-    tp.tapStart = 0;
 }, {passive:false});
 
 tpArea.addEventListener('touchend', e => {
     e.preventDefault();
     tp.tracking = false;
     const el = Date.now() - tp.tapStart;
-    if (tp.tapStart > 0 && el < 200) {
+    const isTap = tp.tapStart > 0 && el < 300 && tp.totalMove < TAP_MOVE_THRESHOLD;
+    if (isTap) {
         const now = Date.now();
         if (tp.fingers >= 2) { A.click(2); }
         else if (now - tp.lastTap < 300) { A.doubleClick(); tp.lastTap = 0; }
