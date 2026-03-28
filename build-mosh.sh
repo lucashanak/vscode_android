@@ -59,14 +59,9 @@ fi
 cd openssl
 if [ ! -f "$PREFIX/lib/libcrypto.a" ]; then
     export ANDROID_NDK_ROOT="$NDK"
-    ./Configure android-arm64 --prefix="$PREFIX" no-shared no-tests \
-        -D__ANDROID_API__=$API \
-        --cross-compile-prefix="" \
-        CC="${TARGET}${API}-clang" \
-        CXX="${TARGET}${API}-clang++" \
-        AR="llvm-ar" \
-        RANLIB="llvm-ranlib"
-    make -j$(nproc) install_sw
+    ./Configure android-arm64 --prefix="$PREFIX" no-shared no-tests no-apps
+    # Single-threaded: OpenSSL parallel make has race conditions with .d.tmp files
+    make -j1 install_sw
 fi
 
 echo "=== Building mosh ==="
