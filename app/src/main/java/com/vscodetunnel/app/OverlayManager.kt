@@ -311,6 +311,10 @@ class OverlayManager(
         @JavascriptInterface
         fun haptic() {
             val ctx = geckoView.context
+            // Check setting
+            val prefs = ctx.getSharedPreferences("app_settings", android.content.Context.MODE_PRIVATE)
+            if (!prefs.getBoolean("haptic_feedback", false)) return
+
             val vibrator = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                 val vm = ctx.getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as android.os.VibratorManager
                 vm.defaultVibrator
