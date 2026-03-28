@@ -7,6 +7,7 @@ object AppSettings {
     private const val PREFS_NAME = "app_settings"
 
     // Keys
+    private const val KEY_SUPPRESS_SYSKB = "suppress_system_keyboard"
     private const val KEY_KEEPALIVE = "keepalive_enabled"
     private const val KEY_HAPTIC = "haptic_feedback"
     private const val KEY_FONT_SIZE = "terminal_font_size"
@@ -15,6 +16,10 @@ object AppSettings {
 
     private fun prefs(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    var Context.suppressSystemKeyboard: Boolean
+        get() = prefs(this).getBoolean(KEY_SUPPRESS_SYSKB, true)
+        set(value) = prefs(this).edit().putBoolean(KEY_SUPPRESS_SYSKB, value).apply()
 
     var Context.keepAliveEnabled: Boolean
         get() = prefs(this).getBoolean(KEY_KEEPALIVE, true)

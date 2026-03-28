@@ -255,6 +255,10 @@ function updateLayout() {
         kbPanel.classList.add('active');
         tpPanel.classList.add('active');
     } else {
+        // Compact: only keyboard visible, hide touchpad
+        tpPanel.classList.remove('active');
+        kbPanel.classList.add('active');
+        document.getElementById('tpToggle').classList.remove('active');
         renderCompact();
     }
 }
@@ -277,28 +281,46 @@ const SPECIAL_KEYS = new Set(['Esc','Tab','Enter','Bksp','Del','Home','End',
     'PgUp','PgDn','Ins','Up','Down','Left','Right',
     'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12']);
 
+// ======================== KEY REPEAT ========================
+let repeatTimer = null, repeatInterval = null;
+function startRepeat(action) {
+    stopRepeat();
+    repeatTimer = setTimeout(() => {
+        action();
+        repeatInterval = setInterval(action, 50);
+    }, 400); // 400ms delay before repeat starts, then 50ms interval (20 chars/s)
+}
+function stopRepeat() {
+    clearTimeout(repeatTimer); clearInterval(repeatInterval);
+    repeatTimer = null; repeatInterval = null;
+}
+
 function attachKeyEvents() {
     // Character keys (a-z)
     kbPanel.querySelectorAll('.char-key').forEach(btn => {
-        btn.addEventListener('pointerdown', e => {
-            e.preventDefault(); e.stopPropagation();
+        const fire = () => {
             const ch = mods.shift ? btn.dataset.char.toUpperCase() : btn.dataset.char;
             if (mods.ctrl || mods.alt || mods.meta) {
                 A.sendKey(JSON.stringify({key:ch, ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
             } else {
                 A.sendChar(ch);
             }
-            resetMods();
-            btn.classList.add('pressed'); setTimeout(() => btn.classList.remove('pressed'), 100);
+        };
+        btn.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            fire();
+            startRepeat(fire);
+            btn.classList.add('pressed');
         });
+        btn.addEventListener('pointerup', e => { stopRepeat(); resetMods(); btn.classList.remove('pressed'); });
+        btn.addEventListener('pointerleave', () => { stopRepeat(); btn.classList.remove('pressed'); });
+        btn.addEventListener('pointercancel', () => { stopRepeat(); btn.classList.remove('pressed'); });
     });
 
     // Special + symbol keys (data-key)
     kbPanel.querySelectorAll('.key[data-key]:not(.key-mod)').forEach(btn => {
-        btn.addEventListener('pointerdown', e => {
-            e.preventDefault(); e.stopPropagation();
+        const fire = () => {
             const key = btn.dataset.key;
-
             if (key === 'Space' && !mods.ctrl && !mods.alt && !mods.meta) {
                 A.sendChar(' ');
             } else if (SPECIAL_KEYS.has(key) || key === 'Space' || mods.ctrl || mods.alt || mods.meta) {
@@ -306,12 +328,19 @@ function attachKeyEvents() {
             } else {
                 A.sendChar(key);
             }
-            resetMods();
-            btn.classList.add('pressed'); setTimeout(() => btn.classList.remove('pressed'), 100);
+        };
+        btn.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            fire();
+            startRepeat(fire);
+            btn.classList.add('pressed');
         });
+        btn.addEventListener('pointerup', e => { stopRepeat(); resetMods(); btn.classList.remove('pressed'); });
+        btn.addEventListener('pointerleave', () => { stopRepeat(); btn.classList.remove('pressed'); });
+        btn.addEventListener('pointercancel', () => { stopRepeat(); btn.classList.remove('pressed'); });
     });
 
-    // Modifiers
+    // Modifiers (no repeat)
     kbPanel.querySelectorAll('.key-mod').forEach(btn => {
         btn.addEventListener('pointerdown', e => {
             e.preventDefault(); e.stopPropagation();

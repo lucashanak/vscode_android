@@ -39,6 +39,7 @@ import com.vscodetunnel.app.AppSettings.hapticFeedback
 import com.vscodetunnel.app.AppSettings.terminalFontSize
 import com.vscodetunnel.app.AppSettings.defaultSshPort
 import com.vscodetunnel.app.AppSettings.defaultSshUser
+import com.vscodetunnel.app.AppSettings.suppressSystemKeyboard
 
 class MainActivity : AppCompatActivity() {
     companion object {
@@ -601,6 +602,17 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(24), dp(16), dp(24), dp(8))
         }
 
+        val suppressKbCheck = CheckBox(this).apply {
+            text = "Suppress system keyboard"
+            isChecked = suppressSystemKeyboard
+            setTextColor(resources.getColor(R.color.text_primary, theme))
+            textSize = 14f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(12) }
+        }
+
         val keepAliveCheck = CheckBox(this).apply {
             text = "Keep alive in background"
             isChecked = keepAliveEnabled
@@ -665,6 +677,7 @@ class MainActivity : AppCompatActivity() {
             ).apply { bottomMargin = dp(12) }
         }
 
+        layout.addView(suppressKbCheck)
         layout.addView(keepAliveCheck)
         layout.addView(fontLabel)
         layout.addView(fontField)
@@ -677,6 +690,15 @@ class MainActivity : AppCompatActivity() {
             .setTitle("Settings")
             .setView(layout)
             .setPositiveButton("Save") { _, _ ->
+                suppressSystemKeyboard = suppressKbCheck.isChecked
+                // Apply immediately if in session
+                if (sessionWrapper.visibility == View.VISIBLE && suppressSystemKeyboard) {
+                    geckoView.suppressIME = true
+                    val controller = WindowInsetsControllerCompat(window, geckoView)
+                    controller.hide(WindowInsetsCompat.Type.ime())
+                } else if (!suppressSystemKeyboard && !overlayManager.isVisible) {
+                    geckoView.suppressIME = false
+                }
                 keepAliveEnabled = keepAliveCheck.isChecked
                 terminalFontSize = fontField.text.toString().toIntOrNull() ?: 14
                 defaultSshPort = portField.text.toString().toIntOrNull() ?: 22
@@ -813,6 +835,15 @@ class MainActivity : AppCompatActivity() {
         geckoContainer.visibility = View.VISIBLE
         findViewById<Button>(R.id.floatingToggle).visibility = View.VISIBLE
 
+        // Suppress system keyboard if setting is on
+        if (suppressSystemKeyboard) {
+            sysKBSuppressed = true
+            geckoView.suppressIME = true
+            val controller = WindowInsetsControllerCompat(window, geckoView)
+            controller.hide(WindowInsetsCompat.Type.ime())
+            ViewCompat.requestApplyInsets(findViewById(R.id.rootFrame))
+        }
+
         // Start keepalive
         if (keepAliveEnabled) {
             KeepAliveService.start(this, "VS Code: $url")
@@ -836,10 +867,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun onOverlayVisibilityChanged(visible: Boolean) {
-        sysKBSuppressed = visible
-        geckoView.suppressIME = visible
-        FileLogger.d(TAG, "Overlay visible: $visible, sysKB suppressed: $visible")
-        if (visible) {
+        // Suppress system keyboard: always when setting is on, or when overlay is visible
+        val suppress = visible || suppressSystemKeyboard
+        sysKBSuppressed = suppress
+        geckoView.suppressIME = suppress
+        FileLogger.d(TAG, "Overlay visible: $visible, sysKB suppressed: $suppress")
+        if (suppress) {
             val controller = WindowInsetsControllerCompat(window, geckoView)
             controller.hide(WindowInsetsCompat.Type.ime())
         }
