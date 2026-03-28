@@ -26,11 +26,6 @@ html, body { background:#1E1E1E; overflow:hidden; width:100%; height:100%; displ
     <button class="tbtn" id="btnPaste">Paste</button>
     <button class="tbtn" id="btnCopy">Copy</button>
     <button class="tbtn" id="btnExport">Export</button>
-    <div class="sep"></div>
-    <button class="tbtn" id="btnZoomIn">A+</button>
-    <button class="tbtn" id="btnZoomOut">A-</button>
-    <div class="sep"></div>
-    <button class="tbtn" id="btnScheme">Theme</button>
 </div>
 <div id="snippetBar"></div>
 <div id="terminal"></div>
@@ -166,26 +161,8 @@ document.getElementById('btnExport').addEventListener('click', () => {
     if (A) A.exportScrollback(lines.join('\n'));
 });
 
-document.getElementById('btnZoomIn').addEventListener('click', () => {
-    const s = Math.min(32, term.options.fontSize + 2);
-    term.options.fontSize = s;
-    fitAddon.fit();
-});
-
-document.getElementById('btnZoomOut').addEventListener('click', () => {
-    const s = Math.max(8, term.options.fontSize - 2);
-    term.options.fontSize = s;
-    fitAddon.fit();
-});
-
-document.getElementById('btnScheme').addEventListener('click', () => {
-    currentSchemeIdx = (currentSchemeIdx + 1) % schemeNames.length;
-    const name = schemeNames[currentSchemeIdx];
-    term.options.theme = SCHEMES[name];
-    document.body.style.background = SCHEMES[name].background;
-    document.getElementById('toolbar').style.background = SCHEMES[name].background;
-    document.getElementById('btnScheme').textContent = name;
-});
+// Zoom and theme controls moved to app Settings dialog
+// Functions still available via Android JS bridge: setFontSize(), applyColorScheme()
 
 // ======================== SNIPPETS ========================
 function setSnippets(snippets) {

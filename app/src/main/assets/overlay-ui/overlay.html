@@ -284,16 +284,22 @@ const SPECIAL_KEYS = new Set(['Esc','Tab','Enter','Bksp','Del','Home','End',
 
 // ======================== KEY REPEAT ========================
 let repeatTimer = null, repeatInterval = null;
+let REPEAT_DELAY = 400, REPEAT_RATE = 50;
 function startRepeat(action) {
     stopRepeat();
     repeatTimer = setTimeout(() => {
         action();
-        repeatInterval = setInterval(action, 50);
-    }, 400); // 400ms delay before repeat starts, then 50ms interval (20 chars/s)
+        repeatInterval = setInterval(action, REPEAT_RATE);
+    }, REPEAT_DELAY);
 }
 function stopRepeat() {
     clearTimeout(repeatTimer); clearInterval(repeatInterval);
     repeatTimer = null; repeatInterval = null;
+}
+// Called from Android when settings change
+function updateRepeatSettings(delay, rate) {
+    REPEAT_DELAY = delay || 400;
+    REPEAT_RATE = rate || 50;
 }
 
 function attachKeyEvents() {

@@ -6,33 +6,55 @@ import android.content.SharedPreferences
 object AppSettings {
     private const val PREFS_NAME = "app_settings"
 
-    // Keys
     private const val KEY_SUPPRESS_SYSKB = "suppress_system_keyboard"
     private const val KEY_KEEPALIVE = "keepalive_enabled"
     private const val KEY_HAPTIC = "haptic_feedback"
     private const val KEY_FONT_SIZE = "terminal_font_size"
+    private const val KEY_COLOR_SCHEME = "terminal_color_scheme"
+    private const val KEY_SCROLLBACK = "terminal_scrollback"
+    private const val KEY_REPEAT_DELAY = "key_repeat_delay"
+    private const val KEY_REPEAT_RATE = "key_repeat_rate"
     private const val KEY_DEFAULT_SSH_PORT = "default_ssh_port"
     private const val KEY_DEFAULT_SSH_USER = "default_ssh_user"
+    private const val KEY_DEFAULT_STARTUP_CMD = "default_startup_cmd"
+    private const val KEY_AUTO_RECONNECT = "ssh_auto_reconnect"
+    private const val KEY_RECONNECT_ATTEMPTS = "ssh_reconnect_attempts"
+    private const val KEY_CONNECT_TIMEOUT = "ssh_connect_timeout"
 
     private fun prefs(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    // --- Keyboard ---
     var Context.suppressSystemKeyboard: Boolean
         get() = prefs(this).getBoolean(KEY_SUPPRESS_SYSKB, true)
         set(value) = prefs(this).edit().putBoolean(KEY_SUPPRESS_SYSKB, value).apply()
 
-    var Context.keepAliveEnabled: Boolean
-        get() = prefs(this).getBoolean(KEY_KEEPALIVE, true)
-        set(value) = prefs(this).edit().putBoolean(KEY_KEEPALIVE, value).apply()
-
     var Context.hapticFeedback: Boolean
-        get() = prefs(this).getBoolean(KEY_HAPTIC, true)
+        get() = prefs(this).getBoolean(KEY_HAPTIC, false)
         set(value) = prefs(this).edit().putBoolean(KEY_HAPTIC, value).apply()
 
+    var Context.keyRepeatDelay: Int
+        get() = prefs(this).getInt(KEY_REPEAT_DELAY, 400)
+        set(value) = prefs(this).edit().putInt(KEY_REPEAT_DELAY, value).apply()
+
+    var Context.keyRepeatRate: Int
+        get() = prefs(this).getInt(KEY_REPEAT_RATE, 50)
+        set(value) = prefs(this).edit().putInt(KEY_REPEAT_RATE, value).apply()
+
+    // --- Appearance ---
     var Context.terminalFontSize: Int
         get() = prefs(this).getInt(KEY_FONT_SIZE, 14)
         set(value) = prefs(this).edit().putInt(KEY_FONT_SIZE, value).apply()
 
+    var Context.terminalColorScheme: String
+        get() = prefs(this).getString(KEY_COLOR_SCHEME, "default") ?: "default"
+        set(value) = prefs(this).edit().putString(KEY_COLOR_SCHEME, value).apply()
+
+    var Context.terminalScrollback: Int
+        get() = prefs(this).getInt(KEY_SCROLLBACK, 10000)
+        set(value) = prefs(this).edit().putInt(KEY_SCROLLBACK, value).apply()
+
+    // --- SSH Defaults ---
     var Context.defaultSshPort: Int
         get() = prefs(this).getInt(KEY_DEFAULT_SSH_PORT, 22)
         set(value) = prefs(this).edit().putInt(KEY_DEFAULT_SSH_PORT, value).apply()
@@ -40,4 +62,25 @@ object AppSettings {
     var Context.defaultSshUser: String
         get() = prefs(this).getString(KEY_DEFAULT_SSH_USER, "") ?: ""
         set(value) = prefs(this).edit().putString(KEY_DEFAULT_SSH_USER, value).apply()
+
+    var Context.defaultStartupCmd: String
+        get() = prefs(this).getString(KEY_DEFAULT_STARTUP_CMD, "") ?: ""
+        set(value) = prefs(this).edit().putString(KEY_DEFAULT_STARTUP_CMD, value).apply()
+
+    var Context.sshAutoReconnect: Boolean
+        get() = prefs(this).getBoolean(KEY_AUTO_RECONNECT, true)
+        set(value) = prefs(this).edit().putBoolean(KEY_AUTO_RECONNECT, value).apply()
+
+    var Context.sshReconnectAttempts: Int
+        get() = prefs(this).getInt(KEY_RECONNECT_ATTEMPTS, 3)
+        set(value) = prefs(this).edit().putInt(KEY_RECONNECT_ATTEMPTS, value).apply()
+
+    var Context.sshConnectTimeout: Int
+        get() = prefs(this).getInt(KEY_CONNECT_TIMEOUT, 15)
+        set(value) = prefs(this).edit().putInt(KEY_CONNECT_TIMEOUT, value).apply()
+
+    // --- Background ---
+    var Context.keepAliveEnabled: Boolean
+        get() = prefs(this).getBoolean(KEY_KEEPALIVE, true)
+        set(value) = prefs(this).edit().putBoolean(KEY_KEEPALIVE, value).apply()
 }

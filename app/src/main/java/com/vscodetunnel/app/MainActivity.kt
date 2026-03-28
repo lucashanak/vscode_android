@@ -38,8 +38,16 @@ import org.mozilla.geckoview.WebExtension
 import com.vscodetunnel.app.AppSettings.keepAliveEnabled
 import com.vscodetunnel.app.AppSettings.hapticFeedback
 import com.vscodetunnel.app.AppSettings.terminalFontSize
+import com.vscodetunnel.app.AppSettings.terminalColorScheme
+import com.vscodetunnel.app.AppSettings.terminalScrollback
+import com.vscodetunnel.app.AppSettings.keyRepeatDelay
+import com.vscodetunnel.app.AppSettings.keyRepeatRate
 import com.vscodetunnel.app.AppSettings.defaultSshPort
 import com.vscodetunnel.app.AppSettings.defaultSshUser
+import com.vscodetunnel.app.AppSettings.defaultStartupCmd
+import com.vscodetunnel.app.AppSettings.sshAutoReconnect
+import com.vscodetunnel.app.AppSettings.sshReconnectAttempts
+import com.vscodetunnel.app.AppSettings.sshConnectTimeout
 import com.vscodetunnel.app.AppSettings.suppressSystemKeyboard
 
 class MainActivity : AppCompatActivity() {
@@ -781,118 +789,162 @@ class MainActivity : AppCompatActivity() {
     // --- Settings ---
 
     private fun showSettingsDialog() {
+        val scroll = ScrollView(this)
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(16), dp(24), dp(8))
+            setPadding(dp(24), dp(12), dp(24), dp(8))
+        }
+        scroll.addView(layout)
+
+        val colorWhite = resources.getColor(R.color.text_white, theme)
+        val colorSec = resources.getColor(R.color.text_secondary, theme)
+        val colorPrim = resources.getColor(R.color.text_primary, theme)
+
+        fun section(title: String) {
+            layout.addView(TextView(this).apply {
+                text = title
+                setTextColor(resources.getColor(R.color.primary, theme))
+                textSize = 13f; textStyle = android.graphics.Typeface.BOLD
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(16); bottomMargin = dp(6) }
+            })
+            layout.addView(View(this).apply {
+                setBackgroundColor(resources.getColor(R.color.divider, theme))
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)).apply { bottomMargin = dp(8) }
+            })
         }
 
-        val suppressKbCheck = CheckBox(this).apply {
-            text = "Suppress system keyboard"
-            isChecked = suppressSystemKeyboard
-            setTextColor(resources.getColor(R.color.text_primary, theme))
-            textSize = 14f
+        fun check(label: String, checked: Boolean): CheckBox {
+            return CheckBox(this).apply {
+                text = label; isChecked = checked
+                setTextColor(colorPrim); textSize = 14f
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(6) }
+            }
+        }
+
+        fun field(hint: String, value: String, inputType: Int = android.text.InputType.TYPE_CLASS_TEXT): EditText {
+            return EditText(this).apply {
+                this.hint = hint; setText(value); this.inputType = inputType
+                setTextColor(colorPrim); setHintTextColor(colorSec); textSize = 14f
+                background = resources.getDrawable(R.drawable.bg_input, theme)
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(6) }
+            }
+        }
+
+        fun label(text: String) {
+            layout.addView(TextView(this).apply {
+                this.text = text; setTextColor(colorSec); textSize = 11f
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(2) }
+            })
+        }
+
+        // === APPEARANCE ===
+        section("Appearance")
+        label("Terminal color scheme")
+        val schemes = arrayOf("default", "solarized-dark", "dracula", "monokai", "linux")
+        val schemeSpinner = android.widget.Spinner(this).apply {
+            adapter = android.widget.ArrayAdapter(this@MainActivity,
+                android.R.layout.simple_spinner_dropdown_item, schemes)
+            setSelection(schemes.indexOf(terminalColorScheme).coerceAtLeast(0))
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(12) }
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(6) }
         }
-
-        val keepAliveCheck = CheckBox(this).apply {
-            text = "Keep alive in background"
-            isChecked = keepAliveEnabled
-            setTextColor(resources.getColor(R.color.text_primary, theme))
-            textSize = 14f
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(12) }
-        }
-
-        val fontLabel = TextView(this).apply {
-            text = "Terminal font size"
-            setTextColor(resources.getColor(R.color.text_secondary, theme))
-            textSize = 12f
-        }
-        val fontField = EditText(this).apply {
-            setText(terminalFontSize.toString())
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
-            setTextColor(resources.getColor(R.color.text_primary, theme))
-            textSize = 14f
-            background = resources.getDrawable(R.drawable.bg_input, theme)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(12) }
-        }
-
-        val portLabel = TextView(this).apply {
-            text = "Default SSH port"
-            setTextColor(resources.getColor(R.color.text_secondary, theme))
-            textSize = 12f
-        }
-        val portField = EditText(this).apply {
-            setText(defaultSshPort.toString())
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
-            setTextColor(resources.getColor(R.color.text_primary, theme))
-            textSize = 14f
-            background = resources.getDrawable(R.drawable.bg_input, theme)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(12) }
-        }
-
-        val userLabel = TextView(this).apply {
-            text = "Default SSH username"
-            setTextColor(resources.getColor(R.color.text_secondary, theme))
-            textSize = 12f
-        }
-        val userField = EditText(this).apply {
-            setText(defaultSshUser)
-            setTextColor(resources.getColor(R.color.text_primary, theme))
-            textSize = 14f
-            background = resources.getDrawable(R.drawable.bg_input, theme)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(12) }
-        }
-
-        layout.addView(suppressKbCheck)
-        layout.addView(keepAliveCheck)
-        layout.addView(fontLabel)
+        layout.addView(schemeSpinner)
+        label("Font size")
+        val fontField = field("14", terminalFontSize.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
         layout.addView(fontField)
-        layout.addView(portLabel)
+        label("Scrollback lines")
+        val scrollbackField = field("10000", terminalScrollback.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
+        layout.addView(scrollbackField)
+
+        // === KEYBOARD ===
+        section("Keyboard")
+        val suppressCheck = check("Suppress system keyboard in sessions", suppressSystemKeyboard)
+        layout.addView(suppressCheck)
+        val hapticCheck = check("Haptic feedback", hapticFeedback)
+        layout.addView(hapticCheck)
+        label("Key repeat delay (ms)")
+        val repeatDelayField = field("400", keyRepeatDelay.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
+        layout.addView(repeatDelayField)
+        label("Key repeat rate (ms)")
+        val repeatRateField = field("50", keyRepeatRate.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
+        layout.addView(repeatRateField)
+
+        // === SSH DEFAULTS ===
+        section("SSH Defaults")
+        label("Default port")
+        val portField = field("22", defaultSshPort.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
         layout.addView(portField)
-        layout.addView(userLabel)
+        label("Default username")
+        val userField = field("", defaultSshUser)
         layout.addView(userField)
+        label("Default startup command")
+        val startupField = field("e.g. cd /app && tmux attach", defaultStartupCmd)
+        layout.addView(startupField)
+        val autoReconnectCheck = check("Auto-reconnect on disconnect", sshAutoReconnect)
+        layout.addView(autoReconnectCheck)
+        label("Reconnect attempts")
+        val attemptsField = field("3", sshReconnectAttempts.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
+        layout.addView(attemptsField)
+        label("Connection timeout (seconds)")
+        val timeoutField = field("15", sshConnectTimeout.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
+        layout.addView(timeoutField)
+
+        // === BACKGROUND ===
+        section("Background")
+        val keepAliveCheck = check("Keep alive in background (foreground service)", keepAliveEnabled)
+        layout.addView(keepAliveCheck)
 
         AlertDialog.Builder(this, R.style.AppDialogTheme)
             .setTitle("Settings")
-            .setView(layout)
+            .setView(scroll)
             .setPositiveButton("Save") { _, _ ->
-                suppressSystemKeyboard = suppressKbCheck.isChecked
-                overlayManager.alwaysSuppressInput = suppressSystemKeyboard
-                // Apply immediately if in session
-                if (sessionWrapper.visibility == View.VISIBLE && suppressSystemKeyboard) {
-                    geckoView.suppressIME = true
-                    sysKBSuppressed = true
-                    val controller = WindowInsetsControllerCompat(window, geckoView)
-                    controller.hide(WindowInsetsCompat.Type.ime())
-                } else if (!suppressSystemKeyboard && !overlayManager.isVisible) {
-                    geckoView.suppressIME = false
-                    sysKBSuppressed = false
-                }
-                keepAliveEnabled = keepAliveCheck.isChecked
+                // Appearance
+                terminalColorScheme = schemes[schemeSpinner.selectedItemPosition]
                 terminalFontSize = fontField.text.toString().toIntOrNull() ?: 14
+                terminalScrollback = scrollbackField.text.toString().toIntOrNull() ?: 10000
+                // Keyboard
+                suppressSystemKeyboard = suppressCheck.isChecked
+                overlayManager.alwaysSuppressInput = suppressSystemKeyboard
+                if (sessionWrapper.visibility == View.VISIBLE && suppressSystemKeyboard) {
+                    geckoView.suppressIME = true; sysKBSuppressed = true
+                    WindowInsetsControllerCompat(window, geckoView).hide(WindowInsetsCompat.Type.ime())
+                } else if (!suppressSystemKeyboard && !overlayManager.isVisible) {
+                    geckoView.suppressIME = false; sysKBSuppressed = false
+                }
+                hapticFeedback = hapticCheck.isChecked
+                keyRepeatDelay = repeatDelayField.text.toString().toIntOrNull() ?: 400
+                keyRepeatRate = repeatRateField.text.toString().toIntOrNull() ?: 50
+                // SSH
                 defaultSshPort = portField.text.toString().toIntOrNull() ?: 22
                 defaultSshUser = userField.text.toString().trim()
+                defaultStartupCmd = startupField.text.toString().trim()
+                sshAutoReconnect = autoReconnectCheck.isChecked
+                sshReconnectAttempts = attemptsField.text.toString().toIntOrNull() ?: 3
+                sshConnectTimeout = timeoutField.text.toString().toIntOrNull() ?: 15
+                // Background
+                keepAliveEnabled = keepAliveCheck.isChecked
+                // Push repeat settings to overlay keyboard
+                updateOverlaySettings()
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun updateOverlaySettings() {
+        // Push key repeat settings to overlay WebView
+        val overlayWebView = findViewById<WebView>(R.id.overlayWebView)
+        overlayWebView.evaluateJavascript(
+            "if(typeof updateRepeatSettings==='function')updateRepeatSettings($keyRepeatDelay,$keyRepeatRate)", null)
     }
 
     // --- Navigation ---
