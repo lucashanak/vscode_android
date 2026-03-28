@@ -57,13 +57,19 @@ class MainActivity : AppCompatActivity() {
         private val APP_VERSION: String get() = BuildConfig.VERSION_NAME
     }
 
+    data class TunnelSessionInfo(
+        val url: String,
+        val session: GeckoSession,
+        val label: String
+    )
+
     private lateinit var geckoView: SuppressableGeckoView
     private lateinit var sessionWrapper: View
     private lateinit var geckoContainer: View
     private lateinit var launcherScroll: View
     private lateinit var overlayManager: OverlayManager
-    private var tunnelSession: GeckoSession? = null
-    private var suspendedTunnelUrl: String? = null  // URL of suspended session
+    private val tunnelSessions = mutableListOf<TunnelSessionInfo>()
+    private var currentSessionIdx = -1
     private var pollJob: Job? = null
     private var authDialog: Dialog? = null
     private var currentTunnelUrl: String? = null
@@ -94,9 +100,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var updateBanner: View
     private lateinit var updateText: TextView
     private lateinit var updateLink: TextView
-    private lateinit var activeSessionBanner: View
-    private lateinit var activeSessionLabel: TextView
-    private lateinit var activeSessionUrl: TextView
+    private lateinit var activeSessionsSection: View
+    private lateinit var activeSessionList: LinearLayout
 
     private val authPrefs: SharedPreferences by lazy { getSharedPreferences(PREFS_AUTH, MODE_PRIVATE) }
     private val recentPrefs: SharedPreferences by lazy { getSharedPreferences(PREFS_RECENT, MODE_PRIVATE) }
@@ -192,9 +197,8 @@ class MainActivity : AppCompatActivity() {
         updateBanner = findViewById(R.id.updateBanner)
         updateText = findViewById(R.id.updateText)
         updateLink = findViewById(R.id.updateLink)
-        activeSessionBanner = findViewById(R.id.activeSessionBanner)
-        activeSessionLabel = findViewById(R.id.activeSessionLabel)
-        activeSessionUrl = findViewById(R.id.activeSessionUrl)
+        activeSessionsSection = findViewById(R.id.activeSessionsSection)
+        activeSessionList = findViewById(R.id.activeSessionList)
         sshServerList = findViewById(R.id.sshServerList)
         sshEmptyText = findViewById(R.id.sshEmptyText)
     }
@@ -205,8 +209,6 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.btnRefreshTunnels).setOnClickListener { loadTunnels() }
         findViewById<View>(R.id.btnAddSsh).setOnClickListener { showSshServerDialog(null) }
         findViewById<View>(R.id.btnSettings).setOnClickListener { showSettingsDialog() }
-        findViewById<View>(R.id.btnResumeSession).setOnClickListener { resumeSession() }
-        findViewById<View>(R.id.btnCloseSession).setOnClickListener { closeSession() }
 
         findViewById<Button>(R.id.btnConnect).setOnClickListener {
             connectTo(urlInput.text.toString().trim())
@@ -769,7 +771,11 @@ class MainActivity : AppCompatActivity() {
 
         FileLogger.d(TAG, "Opening tunnel: $url")
 
-        tunnelSession?.close()
+        // Suspend current session if any (don't close — keep in background)
+        if (currentSessionIdx >= 0 && currentSessionIdx < tunnelSessions.size) {
+            tunnelSessions[currentSessionIdx].session.setActive(false)
+            geckoView.releaseSession()
+        }
 
         val session = GeckoManager.createTunnelSession()
         val runtime = GeckoManager.getRuntime(this)
@@ -851,7 +857,13 @@ class MainActivity : AppCompatActivity() {
         overlayManager.inputTarget = OverlayManager.InputTarget.VSCODE
         overlayManager.sshSessionManager = null
 
-        tunnelSession = session
+        // Extract label from URL (tunnel name + folder)
+        val label = url.removePrefix("https://vscode.dev/tunnel/")
+            .removePrefix("https://insiders.vscode.dev/tunnel/")
+            .ifBlank { url }
+        val info = TunnelSessionInfo(url, session, label)
+        tunnelSessions.add(info)
+        currentSessionIdx = tunnelSessions.size - 1
 
         // Suppress BEFORE setSession so onCreateInputConnection returns null immediately
         if (suppressSystemKeyboard) {
@@ -859,12 +871,11 @@ class MainActivity : AppCompatActivity() {
             geckoView.suppressIME = true
         }
 
-        geckoView.releaseSession()
         geckoView.setSession(session)
         session.loadUri(url)
 
         // Save for auto-reconnect after app restart
-        sessionPrefs.edit().putString(KEY_LAST_URL, url).apply()
+        saveOpenSessionUrls()
 
         launcherScroll.visibility = View.GONE
         sessionWrapper.visibility = View.VISIBLE
@@ -1007,12 +1018,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun showLauncher() {
         overlayManager.hide()
+        // Close ALL sessions
         geckoView.releaseSession()
-        tunnelSession?.close()
-        tunnelSession = null
-        suspendedTunnelUrl = null
+        for (s in tunnelSessions) { s.session.close() }
+        tunnelSessions.clear()
+        currentSessionIdx = -1
         currentTunnelUrl = null
-        // Keep suppressIME if setting is on
         if (!suppressSystemKeyboard) {
             sysKBSuppressed = false
             geckoView.suppressIME = false
@@ -1023,27 +1034,26 @@ class MainActivity : AppCompatActivity() {
         sshContainer.visibility = View.GONE
         findViewById<Button>(R.id.floatingToggle).visibility = View.GONE
         launcherScroll.visibility = View.VISIBLE
-        updateActiveSessionBanner()
+        saveOpenSessionUrls()
+        renderSessionList()
     }
 
     // --- Session Suspend / Resume ---
 
     private fun suspendSession() {
         overlayManager.hide()
-        if (currentTunnelUrl != null && tunnelSession != null) {
-            // Suspend VS Code tunnel session (keep in background)
-            suspendedTunnelUrl = currentTunnelUrl
-            tunnelSession?.setActive(false)
+        // Suspend current tunnel session (keep alive in background)
+        if (currentSessionIdx >= 0 && currentSessionIdx < tunnelSessions.size) {
+            tunnelSessions[currentSessionIdx].session.setActive(false)
             geckoView.releaseSession()
-            FileLogger.d(TAG, "Session suspended: $suspendedTunnelUrl")
-        } else if (currentSshServer != null) {
-            // SSH: just go to menu, keep SSH alive
-            suspendedTunnelUrl = "ssh://${currentSshServer?.username}@${currentSshServer?.host}"
+            FileLogger.d(TAG, "Session suspended: ${tunnelSessions[currentSessionIdx].url}")
         }
-        // Save for auto-reconnect
-        sessionPrefs.edit().putString(KEY_LAST_URL, currentTunnelUrl ?: "").apply()
+        // SSH: keep alive too
+        if (currentSshServer != null && sshSessionManager?.isConnected == true) {
+            // Already running in background
+        }
 
-        // Keep suppressIME if setting is on (never reset it)
+        currentSessionIdx = -1
         if (!suppressSystemKeyboard) {
             sysKBSuppressed = false
             geckoView.suppressIME = false
@@ -1053,71 +1063,182 @@ class MainActivity : AppCompatActivity() {
         sshContainer.visibility = View.GONE
         findViewById<Button>(R.id.floatingToggle).visibility = View.GONE
         launcherScroll.visibility = View.VISIBLE
-        updateActiveSessionBanner()
+        saveOpenSessionUrls()
+        renderSessionList()
     }
 
-    private fun resumeSession() {
-        if (suspendedTunnelUrl?.startsWith("ssh://") == true && sshSessionManager?.isConnected == true) {
-            // Resume SSH
-            launcherScroll.visibility = View.GONE
-            sessionWrapper.visibility = View.VISIBLE
-            geckoContainer.visibility = View.GONE
-            sshContainer.visibility = View.VISIBLE
-            findViewById<Button>(R.id.floatingToggle).visibility = View.VISIBLE
-            activeSessionBanner.visibility = View.GONE
-        } else if (tunnelSession != null && suspendedTunnelUrl != null) {
-            // Resume VS Code tunnel — suppress BEFORE setSession
-            if (suppressSystemKeyboard) {
-                sysKBSuppressed = true
-                geckoView.suppressIME = true
-            }
+    private fun resumeTunnelSession(idx: Int) {
+        if (idx < 0 || idx >= tunnelSessions.size) return
+        val info = tunnelSessions[idx]
 
-            tunnelSession?.setActive(true)
-            geckoView.setSession(tunnelSession!!)
-            currentTunnelUrl = suspendedTunnelUrl
-            suspendedTunnelUrl = null
+        // Suspend current if different
+        if (currentSessionIdx >= 0 && currentSessionIdx < tunnelSessions.size && currentSessionIdx != idx) {
+            tunnelSessions[currentSessionIdx].session.setActive(false)
+            geckoView.releaseSession()
+        }
 
-            launcherScroll.visibility = View.GONE
-            sessionWrapper.visibility = View.VISIBLE
-            sshContainer.visibility = View.GONE
-            geckoContainer.visibility = View.VISIBLE
-            findViewById<Button>(R.id.floatingToggle).visibility = View.VISIBLE
-            activeSessionBanner.visibility = View.GONE
+        currentSessionIdx = idx
+        currentTunnelUrl = info.url
 
-            if (suppressSystemKeyboard) {
-                val controller = WindowInsetsControllerCompat(window, geckoView)
-                controller.hide(WindowInsetsCompat.Type.ime())
-                ViewCompat.requestApplyInsets(findViewById(R.id.rootFrame))
-            }
-            FileLogger.d(TAG, "Session resumed: $currentTunnelUrl")
+        if (suppressSystemKeyboard) {
+            sysKBSuppressed = true
+            geckoView.suppressIME = true
+        }
+
+        info.session.setActive(true)
+        geckoView.setSession(info.session)
+
+        overlayManager.inputTarget = OverlayManager.InputTarget.VSCODE
+        overlayManager.sshSessionManager = null
+
+        launcherScroll.visibility = View.GONE
+        sessionWrapper.visibility = View.VISIBLE
+        sshContainer.visibility = View.GONE
+        geckoContainer.visibility = View.VISIBLE
+        findViewById<Button>(R.id.floatingToggle).visibility = View.VISIBLE
+
+        if (suppressSystemKeyboard) {
+            val controller = WindowInsetsControllerCompat(window, geckoView)
+            controller.hide(WindowInsetsCompat.Type.ime())
+            ViewCompat.requestApplyInsets(findViewById(R.id.rootFrame))
+        }
+        FileLogger.d(TAG, "Session resumed: ${info.url}")
+    }
+
+    private fun resumeSshSession() {
+        if (sshSessionManager?.isConnected != true) return
+        overlayManager.inputTarget = OverlayManager.InputTarget.SSH_TERMINAL
+        overlayManager.sshSessionManager = sshSessionManager
+
+        launcherScroll.visibility = View.GONE
+        sessionWrapper.visibility = View.VISIBLE
+        geckoContainer.visibility = View.GONE
+        sshContainer.visibility = View.VISIBLE
+        findViewById<Button>(R.id.floatingToggle).visibility = View.VISIBLE
+    }
+
+    private fun closeTunnelSession(idx: Int) {
+        if (idx < 0 || idx >= tunnelSessions.size) return
+        val info = tunnelSessions[idx]
+        if (currentSessionIdx == idx) {
+            geckoView.releaseSession()
+        }
+        info.session.close()
+        tunnelSessions.removeAt(idx)
+        if (currentSessionIdx == idx) currentSessionIdx = -1
+        else if (currentSessionIdx > idx) currentSessionIdx--
+        saveOpenSessionUrls()
+        renderSessionList()
+        if (tunnelSessions.isEmpty() && sshSessionManager?.isConnected != true) {
+            if (keepAliveEnabled) KeepAliveService.stop(this)
         }
     }
 
-    private fun closeSession() {
-        // Fully close suspended session
-        tunnelSession?.close()
-        tunnelSession = null
-        suspendedTunnelUrl = null
-        currentTunnelUrl = null
-        disconnectSsh()
-        if (keepAliveEnabled) {
-            KeepAliveService.stop(this)
-        }
-        sessionPrefs.edit().remove(KEY_LAST_URL).apply()
-        updateActiveSessionBanner()
-    }
-
-    private fun updateActiveSessionBanner() {
-        val hasSuspended = suspendedTunnelUrl != null ||
+    private fun renderSessionList() {
+        activeSessionList.removeAllViews()
+        val hasSessions = tunnelSessions.isNotEmpty() ||
             (sshSessionManager?.isConnected == true && sshContainer.visibility != View.VISIBLE)
-        if (hasSuspended) {
-            val url = suspendedTunnelUrl ?: ""
-            activeSessionLabel.text = if (url.startsWith("ssh://")) "SSH Session (background)" else "VS Code (background)"
-            activeSessionUrl.text = url
-            activeSessionBanner.visibility = View.VISIBLE
-        } else {
-            activeSessionBanner.visibility = View.GONE
+
+        if (!hasSessions) {
+            activeSessionsSection.visibility = View.GONE
+            return
         }
+        activeSessionsSection.visibility = View.VISIBLE
+
+        // Tunnel sessions
+        for ((idx, info) in tunnelSessions.withIndex()) {
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setBackgroundResource(R.drawable.bg_tunnel_item)
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(4) }
+            }
+
+            val label = TextView(this).apply {
+                text = info.label
+                setTextColor(resources.getColor(R.color.text_white, theme))
+                textSize = 13f
+                isSingleLine = true
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+
+            val resumeBtn = TextView(this).apply {
+                text = "Resume"
+                setTextColor(resources.getColor(R.color.primary, theme))
+                textSize = 13f
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+                setOnClickListener { resumeTunnelSession(idx) }
+            }
+
+            val closeBtn = TextView(this).apply {
+                text = "Close"
+                setTextColor(resources.getColor(R.color.error, theme))
+                textSize = 13f
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+                setOnClickListener { closeTunnelSession(idx) }
+            }
+
+            item.addView(label)
+            item.addView(resumeBtn)
+            item.addView(closeBtn)
+            item.setOnClickListener { resumeTunnelSession(idx) }
+            activeSessionList.addView(item)
+        }
+
+        // SSH session
+        if (sshSessionManager?.isConnected == true && sshContainer.visibility != View.VISIBLE) {
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setBackgroundResource(R.drawable.bg_tunnel_item)
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(4) }
+            }
+
+            val label = TextView(this).apply {
+                val s = currentSshServer
+                text = "SSH: ${s?.username ?: ""}@${s?.host ?: ""}"
+                setTextColor(resources.getColor(R.color.text_white, theme))
+                textSize = 13f
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+
+            val resumeBtn = TextView(this).apply {
+                text = "Resume"
+                setTextColor(resources.getColor(R.color.primary, theme))
+                textSize = 13f
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+                setOnClickListener { resumeSshSession() }
+            }
+
+            val closeBtn = TextView(this).apply {
+                text = "Close"
+                setTextColor(resources.getColor(R.color.error, theme))
+                textSize = 13f
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+                setOnClickListener { disconnectSsh(); renderSessionList() }
+            }
+
+            item.addView(label)
+            item.addView(resumeBtn)
+            item.addView(closeBtn)
+            item.setOnClickListener { resumeSshSession() }
+            activeSessionList.addView(item)
+        }
+    }
+
+    private fun saveOpenSessionUrls() {
+        val urls = tunnelSessions.map { it.url }
+        sessionPrefs.edit().putString(KEY_LAST_URL,
+            if (urls.isNotEmpty()) org.json.JSONArray(urls).toString() else ""
+        ).apply()
     }
 
     // --- Recent URLs ---
@@ -1377,8 +1498,8 @@ class MainActivity : AppCompatActivity() {
         authDialog?.dismiss()
         authDialog = null
         geckoView.releaseSession()
-        tunnelSession?.close()
-        tunnelSession = null
+        for (s in tunnelSessions) { s.session.close() }
+        tunnelSessions.clear()
         sshSessionManager?.destroy()
         sshSessionManager = null
     }
@@ -1386,21 +1507,82 @@ class MainActivity : AppCompatActivity() {
     // --- Auto Reconnect ---
 
     private fun checkAutoReconnect() {
-        val lastUrl = sessionPrefs.getString(KEY_LAST_URL, null)
-        if (!lastUrl.isNullOrBlank()) {
-            // Show banner offering to reconnect
-            activeSessionLabel.text = "Last session"
-            activeSessionUrl.text = lastUrl
-            activeSessionBanner.visibility = View.VISIBLE
-            findViewById<View>(R.id.btnResumeSession).setOnClickListener {
-                activeSessionBanner.visibility = View.GONE
-                sessionPrefs.edit().remove(KEY_LAST_URL).apply()
-                connectTo(lastUrl)
+        val saved = sessionPrefs.getString(KEY_LAST_URL, null)
+        if (saved.isNullOrBlank()) return
+
+        // Parse saved URLs (JSON array or single URL)
+        val urls = try {
+            val arr = org.json.JSONArray(saved)
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (_: Exception) {
+            listOf(saved) // legacy single URL
+        }
+
+        if (urls.isEmpty() || urls.all { it.isBlank() }) return
+
+        // Show reconnect section
+        activeSessionsSection.visibility = View.VISIBLE
+        activeSessionList.removeAllViews()
+
+        for (url in urls) {
+            if (url.isBlank()) continue
+            val label = url.removePrefix("https://vscode.dev/tunnel/")
+                .removePrefix("https://insiders.vscode.dev/tunnel/")
+                .ifBlank { url }
+
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setBackgroundResource(R.drawable.bg_tunnel_item)
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(4) }
             }
-            findViewById<View>(R.id.btnCloseSession).setOnClickListener {
-                activeSessionBanner.visibility = View.GONE
-                sessionPrefs.edit().remove(KEY_LAST_URL).apply()
+
+            val tv = TextView(this).apply {
+                text = "Reopen: $label"
+                setTextColor(resources.getColor(R.color.text_white, theme))
+                textSize = 13f
+                isSingleLine = true
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
+
+            val openBtn = TextView(this).apply {
+                text = "Open"
+                setTextColor(resources.getColor(R.color.primary, theme))
+                textSize = 13f
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+            }
+
+            val dismissBtn = TextView(this).apply {
+                text = "Dismiss"
+                setTextColor(resources.getColor(R.color.text_secondary, theme))
+                textSize = 13f
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+            }
+
+            val capturedUrl = url
+            openBtn.setOnClickListener {
+                sessionPrefs.edit().remove(KEY_LAST_URL).apply()
+                activeSessionsSection.visibility = View.GONE
+                connectTo(capturedUrl)
+            }
+            dismissBtn.setOnClickListener {
+                sessionPrefs.edit().remove(KEY_LAST_URL).apply()
+                activeSessionsSection.visibility = View.GONE
+            }
+            item.setOnClickListener {
+                sessionPrefs.edit().remove(KEY_LAST_URL).apply()
+                activeSessionsSection.visibility = View.GONE
+                connectTo(capturedUrl)
+            }
+
+            item.addView(tv)
+            item.addView(openBtn)
+            item.addView(dismissBtn)
+            activeSessionList.addView(item)
         }
     }
 
