@@ -92,6 +92,13 @@ class OverlayManager(
         }
     }
 
+    /** Sync inputmode suppression state to content script (call after changing alwaysSuppressInput) */
+    fun syncInputSuppression() {
+        if (inputTarget != InputTarget.VSCODE) return
+        val active = isVisible || alwaysSuppressInput
+        sendToContentScript("overlayActive", JSONObject().put("active", active))
+    }
+
     private fun sendToContentScript(type: String, data: JSONObject) {
         try {
             data.put("type", type)

@@ -915,6 +915,7 @@ class MainActivity : AppCompatActivity() {
                 // Keyboard
                 suppressSystemKeyboard = suppressCheck.isChecked
                 overlayManager.alwaysSuppressInput = suppressSystemKeyboard
+                overlayManager.syncInputSuppression() // tell content script to add/remove inputmode="none"
                 if (sessionWrapper.visibility == View.VISIBLE && suppressSystemKeyboard) {
                     geckoView.suppressIME = true; sysKBSuppressed = true
                     WindowInsetsControllerCompat(window, geckoView).hide(WindowInsetsCompat.Type.ime())
