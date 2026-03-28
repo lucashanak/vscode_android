@@ -16,7 +16,7 @@ if [ -z "$NDK" ]; then
     exit 1
 fi
 
-API=26
+API=28  # getrandom() requires API 28+
 ARCH=aarch64
 TARGET=aarch64-linux-android
 TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
