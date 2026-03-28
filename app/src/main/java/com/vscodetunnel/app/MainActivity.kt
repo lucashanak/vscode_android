@@ -49,6 +49,9 @@ import com.vscodetunnel.app.AppSettings.sshAutoReconnect
 import com.vscodetunnel.app.AppSettings.sshReconnectAttempts
 import com.vscodetunnel.app.AppSettings.sshConnectTimeout
 import com.vscodetunnel.app.AppSettings.suppressSystemKeyboard
+import com.vscodetunnel.app.AppSettings.biometricLockEnabled
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 
 class MainActivity : AppCompatActivity() {
     companion object {
@@ -134,6 +137,15 @@ class MainActivity : AppCompatActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // Biometric lock
+        if (biometricLockEnabled) {
+            val rootFrame = findViewById<View>(R.id.rootFrame)
+            rootFrame.visibility = View.INVISIBLE
+            showBiometricPrompt {
+                rootFrame.visibility = View.VISIBLE
+            }
+        }
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.rootFrame)) { view, windowInsets ->
             if (sysKBSuppressed) {
@@ -233,6 +245,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.btnRefreshTunnels).setOnClickListener { loadTunnels() }
         findViewById<View>(R.id.btnAddSsh).setOnClickListener { showSshServerDialog(null) }
         findViewById<View>(R.id.btnQuickSsh).setOnClickListener { showQuickConnectDialog() }
+        findViewById<View>(R.id.btnKeyGen).setOnClickListener { showKeyGenDialog() }
         findViewById<View>(R.id.btnSettings).setOnClickListener { showSettingsDialog() }
         findViewById<View>(R.id.btnCheckUpdate).setOnClickListener { checkForUpdate() }
 
@@ -529,6 +542,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        val filesBtn = TextView(this).apply {
+            text = "Files"
+            setTextColor(resources.getColor(R.color.primary, theme))
+            textSize = 13f
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            setOnClickListener { openSftp(server) }
+        }
+
+        actions.addView(filesBtn)
         actions.addView(editBtn)
         actions.addView(deleteBtn)
 
@@ -668,6 +690,127 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun showKeyGenDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(16), dp(24), dp(8))
+        }
+        val types = arrayOf("ED25519", "RSA (4096)")
+        val typeSpinner = android.widget.Spinner(this).apply {
+            adapter = android.widget.ArrayAdapter(this@MainActivity,
+                android.R.layout.simple_spinner_dropdown_item, types)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(12) }
+        }
+        val commentField = EditText(this).apply {
+            hint = "Comment (e.g. android@phone)"
+            setTextColor(resources.getColor(R.color.text_primary, theme))
+            setHintTextColor(resources.getColor(R.color.text_secondary, theme))
+            textSize = 14f
+            background = resources.getDrawable(R.drawable.bg_input, theme)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        layout.addView(TextView(this).apply {
+            text = "Key type"
+            setTextColor(resources.getColor(R.color.text_secondary, theme))
+            textSize = 12f
+        })
+        layout.addView(typeSpinner)
+        layout.addView(commentField)
+
+        AlertDialog.Builder(this, R.style.AppDialogTheme)
+            .setTitle("Generate SSH Key")
+            .setView(layout)
+            .setPositiveButton("Generate") { _, _ ->
+                val isEd = typeSpinner.selectedItemPosition == 0
+                val comment = commentField.text.toString().trim().ifBlank { "android" }
+                generateSshKey(isEd, comment)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun generateSshKey(ed25519: Boolean, comment: String) {
+        lifecycleScope.launch {
+            try {
+                val kpg = if (ed25519) {
+                    java.security.KeyPairGenerator.getInstance("Ed25519")
+                } else {
+                    java.security.KeyPairGenerator.getInstance("RSA").apply { initialize(4096) }
+                }
+                val kp = kpg.generateKeyPair()
+
+                // Encode to PEM
+                val privBytes = kp.private.encoded
+                val pubBytes = kp.public.encoded
+                val privPem = "-----BEGIN PRIVATE KEY-----\n" +
+                    android.util.Base64.encodeToString(privBytes, android.util.Base64.DEFAULT) +
+                    "-----END PRIVATE KEY-----"
+
+                val pubB64 = android.util.Base64.encodeToString(pubBytes, android.util.Base64.NO_WRAP)
+                val keyType = if (ed25519) "ssh-ed25519" else "ssh-rsa"
+
+                // Show result
+                runOnUiThread {
+                    val resultLayout = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(dp(16), dp(8), dp(16), dp(8))
+                    }
+                    val pubText = TextView(this@MainActivity).apply {
+                        text = "Public key (add to ~/.ssh/authorized_keys):"
+                        setTextColor(resources.getColor(R.color.text_secondary, theme))
+                        textSize = 12f
+                    }
+                    val pubField = EditText(this@MainActivity).apply {
+                        setText("$keyType $pubB64 $comment")
+                        setTextColor(resources.getColor(R.color.text_primary, theme))
+                        textSize = 11f
+                        setTextIsSelectable(true)
+                        maxLines = 4
+                    }
+                    val privText = TextView(this@MainActivity).apply {
+                        text = "\nPrivate key (paste into server SSH key field):"
+                        setTextColor(resources.getColor(R.color.text_secondary, theme))
+                        textSize = 12f
+                    }
+                    val privField = EditText(this@MainActivity).apply {
+                        setText(privPem)
+                        setTextColor(resources.getColor(R.color.text_primary, theme))
+                        textSize = 11f
+                        setTextIsSelectable(true)
+                        maxLines = 6
+                    }
+                    resultLayout.addView(pubText)
+                    resultLayout.addView(pubField)
+                    resultLayout.addView(privText)
+                    resultLayout.addView(privField)
+
+                    val scroll = ScrollView(this@MainActivity)
+                    scroll.addView(resultLayout)
+
+                    AlertDialog.Builder(this@MainActivity, R.style.AppDialogTheme)
+                        .setTitle("SSH Key Generated")
+                        .setView(scroll)
+                        .setPositiveButton("Copy Public Key") { _, _ ->
+                            val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText("pub_key", "$keyType $pubB64 $comment"))
+                            showError("Public key copied to clipboard")
+                        }
+                        .setNeutralButton("Copy Private Key") { _, _ ->
+                            val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText("priv_key", privPem))
+                            showError("Private key copied to clipboard")
+                        }
+                        .setNegativeButton("Close", null)
+                        .show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread { showError("Key generation failed: ${e.message}") }
+            }
+        }
+    }
+
     private fun showQuickConnectDialog() {
         val input = EditText(this).apply {
             hint = "user@host:port"
@@ -784,9 +927,58 @@ class MainActivity : AppCompatActivity() {
         overlayManager.inputTarget = OverlayManager.InputTarget.VSCODE
         overlayManager.sshSessionManager = null
         overlayManager.sshTerminalWebView = null
+        sftpManager?.destroy()
+        sftpManager = null
         if (keepAliveEnabled) {
             KeepAliveService.stop(this)
         }
+    }
+
+    // --- SFTP ---
+    private var sftpManager: SftpManager? = null
+    private var pendingSftpUploadPath: String? = null
+    private val sftpUploadLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null && pendingSftpUploadPath != null) {
+            val name = uri.lastPathSegment?.substringAfterLast('/') ?: "file"
+            sftpManager?.uploadFileFromUri(pendingSftpUploadPath!!, uri, name)
+        }
+        pendingSftpUploadPath = null
+    }
+
+    fun launchSftpUpload(remotePath: String) {
+        pendingSftpUploadPath = remotePath
+        sftpUploadLauncher.launch(arrayOf("*/*"))
+    }
+
+    @android.annotation.SuppressLint("SetJavaScriptEnabled")
+    private fun openSftp(server: SshServer) {
+        val sftpWebView = findViewById<WebView>(R.id.sftpWebView)
+        val sftpContainer = findViewById<View>(R.id.sftpContainer)
+
+        val mgr = SftpManager(this, sftpWebView)
+        sftpManager?.destroy()
+        sftpManager = mgr
+
+        sftpWebView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            setSupportZoom(false)
+        }
+        sftpWebView.setBackgroundColor(0xFF1E1E1E.toInt())
+        sftpWebView.addJavascriptInterface(mgr.SftpBridge(), "Android")
+        sftpWebView.loadUrl("file:///android_asset/sftp/sftp.html")
+
+        mgr.connect(server)
+
+        launcherScroll.visibility = View.GONE
+        sessionWrapper.visibility = View.VISIBLE
+        geckoContainer.visibility = View.GONE
+        sshContainer.visibility = View.GONE
+        findViewById<View>(R.id.sftpContainer).visibility = View.GONE
+        sftpContainer.visibility = View.VISIBLE
+        findViewById<Button>(R.id.floatingToggle).visibility = View.GONE
     }
 
     // --- Settings ---
@@ -902,6 +1094,11 @@ class MainActivity : AppCompatActivity() {
         val timeoutField = field("15", sshConnectTimeout.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
         layout.addView(timeoutField)
 
+        // === SECURITY ===
+        section("Security")
+        val biometricCheck = check("Biometric lock on app start", biometricLockEnabled)
+        layout.addView(biometricCheck)
+
         // === BACKGROUND ===
         section("Background")
         val keepAliveCheck = check("Keep alive in background (foreground service)", keepAliveEnabled)
@@ -936,6 +1133,8 @@ class MainActivity : AppCompatActivity() {
                 sshReconnectAttempts = attemptsField.text.toString().toIntOrNull() ?: 3
                 sshConnectTimeout = timeoutField.text.toString().toIntOrNull() ?: 15
                 // Background
+                // Security
+                biometricLockEnabled = biometricCheck.isChecked
                 keepAliveEnabled = keepAliveCheck.isChecked
                 // Push repeat settings to overlay keyboard
                 updateOverlaySettings()
@@ -1105,6 +1304,7 @@ class MainActivity : AppCompatActivity() {
         launcherScroll.visibility = View.GONE
         sessionWrapper.visibility = View.VISIBLE
         sshContainer.visibility = View.GONE
+        findViewById<View>(R.id.sftpContainer).visibility = View.GONE
         geckoContainer.visibility = View.VISIBLE
         findViewById<Button>(R.id.floatingToggle).visibility = View.VISIBLE
 
@@ -1256,6 +1456,7 @@ class MainActivity : AppCompatActivity() {
         sessionWrapper.visibility = View.GONE
         geckoContainer.visibility = View.GONE
         sshContainer.visibility = View.GONE
+        findViewById<View>(R.id.sftpContainer).visibility = View.GONE
         findViewById<Button>(R.id.floatingToggle).visibility = View.GONE
         launcherScroll.visibility = View.VISIBLE
         saveOpenSessionUrls()
@@ -1284,6 +1485,7 @@ class MainActivity : AppCompatActivity() {
         sessionWrapper.visibility = View.GONE
         geckoContainer.visibility = View.GONE
         sshContainer.visibility = View.GONE
+        findViewById<View>(R.id.sftpContainer).visibility = View.GONE
         findViewById<Button>(R.id.floatingToggle).visibility = View.GONE
         launcherScroll.visibility = View.VISIBLE
         saveOpenSessionUrls()
@@ -1318,6 +1520,7 @@ class MainActivity : AppCompatActivity() {
         launcherScroll.visibility = View.GONE
         sessionWrapper.visibility = View.VISIBLE
         sshContainer.visibility = View.GONE
+        findViewById<View>(R.id.sftpContainer).visibility = View.GONE
         geckoContainer.visibility = View.VISIBLE
         findViewById<Button>(R.id.floatingToggle).visibility = View.VISIBLE
 
@@ -1822,6 +2025,33 @@ class MainActivity : AppCompatActivity() {
             item.addView(dismissBtn)
             activeSessionList.addView(item)
         }
+    }
+
+    // --- Biometric ---
+
+    private fun showBiometricPrompt(onSuccess: () -> Unit) {
+        val executor = androidx.core.content.ContextCompat.getMainExecutor(this)
+        val prompt = BiometricPrompt(this, executor, object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                onSuccess()
+            }
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                if (errorCode == BiometricPrompt.ERROR_USER_CANCELED ||
+                    errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
+                    finish()
+                }
+            }
+            override fun onAuthenticationFailed() {}
+        })
+        val info = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("VS Code Tunnel")
+            .setSubtitle("Authenticate to access the app")
+            .setAllowedAuthenticators(
+                BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                BiometricManager.Authenticators.DEVICE_CREDENTIAL
+            )
+            .build()
+        prompt.authenticate(info)
     }
 
     // --- Utils ---

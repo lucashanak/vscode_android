@@ -53,6 +53,19 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent" />
             </FrameLayout>
+
+            <!-- SFTP file browser (hidden by default) -->
+            <FrameLayout
+                android:id="@+id/sftpContainer"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:visibility="gone">
+
+                <WebView
+                    android:id="@+id/sftpWebView"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+            </FrameLayout>
         </FrameLayout>
 
         <!-- Overlay keyboard WebView (shared between VS Code and SSH) -->
@@ -386,6 +399,15 @@
                         android:textColor="@color/text_white"
                         android:textSize="16sp"
                         android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/btnKeyGen"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Key Gen"
+                        android:textColor="@color/primary"
+                        android:textSize="14sp"
+                        android:padding="8dp" />
 
                     <TextView
                         android:id="@+id/btnQuickSsh"

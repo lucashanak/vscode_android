@@ -304,5 +304,16 @@ class SshSessionManager(
                 FileLogger.e(TAG, "Export failed: $e")
             }
         }
+
+        @JavascriptInterface
+        fun openUrl(url: String) {
+            try {
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "Failed to open URL: $url")
+            }
+        }
     }
 }

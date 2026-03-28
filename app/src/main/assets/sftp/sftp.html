@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { background:#1E1E1E; color:#ccc; font-family:-apple-system,sans-serif; height:100%; overflow:hidden; display:flex; flex-direction:column; }
+#toolbar { display:flex; align-items:center; gap:6px; padding:8px 12px; background:#252526; border-bottom:1px solid rgba(255,255,255,0.08); flex-shrink:0; }
+#pathInput { flex:1; padding:6px 10px; font-size:13px; background:rgba(255,255,255,0.08); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:4px; font-family:monospace; }
+.tb { padding:6px 12px; font-size:12px; background:rgba(255,255,255,0.08); color:#aaa; border:none; border-radius:4px; cursor:pointer; }
+.tb:active { background:rgba(0,122,204,0.4); }
+#status { padding:4px 12px; font-size:11px; color:#888; background:#1a1a1a; flex-shrink:0; }
+#fileList { flex:1; overflow-y:auto; padding:4px 0; }
+.file-item { display:flex; align-items:center; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.04); cursor:pointer; gap:10px; }
+.file-item:active { background:rgba(0,122,204,0.15); }
+.fi-icon { font-size:18px; width:24px; text-align:center; flex-shrink:0; }
+.fi-name { flex:1; font-size:14px; color:#ddd; word-break:break-all; }
+.fi-dir .fi-name { color:#6cb6ff; }
+.fi-info { font-size:11px; color:#666; white-space:nowrap; }
+.fi-actions { display:flex; gap:4px; }
+.fi-btn { padding:4px 8px; font-size:11px; background:rgba(255,255,255,0.06); color:#aaa; border:none; border-radius:3px; cursor:pointer; }
+.fi-btn:active { background:rgba(0,122,204,0.3); }
+.fi-btn.del { color:#f85149; }
+</style>
+</head>
+<body>
+<div id="toolbar">
+    <button class="tb" id="btnUp">Up</button>
+    <input id="pathInput" type="text" value="/">
+    <button class="tb" id="btnGo">Go</button>
+    <button class="tb" id="btnUpload">Upload</button>
+    <button class="tb" id="btnMkdir">Mkdir</button>
+</div>
+<div id="status">Connecting...</div>
+<div id="fileList"></div>
+<script>
+'use strict';
+const A = window.Android;
+let currentPath = '/';
+
+function showStatus(msg) { document.getElementById('status').textContent = msg; }
+function setPath(p) { currentPath = p; document.getElementById('pathInput').value = p; }
+
+function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+    if (bytes < 1073741824) return (bytes/1048576).toFixed(1) + ' MB';
+    return (bytes/1073741824).toFixed(1) + ' GB';
+}
+
+function renderDir(items) {
+    const list = document.getElementById('fileList');
+    list.innerHTML = '';
+    // Sort: dirs first, then by name
+    const arr = [];
+    for (let i = 0; i < items.length(); i++) arr.push(items.get ? items.get(i) : items[i]);
+    // Handle both JSONArray (from Android) and JS array
+    const parsed = typeof arr[0] === 'string' ? arr.map(JSON.parse) : arr;
+    parsed.sort((a,b) => {
+        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+        return a.name.localeCompare(b.name);
+    });
+
+    for (const f of parsed) {
+        const item = document.createElement('div');
+        item.className = 'file-item' + (f.isDir ? ' fi-dir' : '');
+
+        const icon = document.createElement('span');
+        icon.className = 'fi-icon';
+        icon.textContent = f.isDir ? '\uD83D\uDCC1' : '\uD83D\uDCC4';
+
+        const name = document.createElement('span');
+        name.className = 'fi-name';
+        name.textContent = f.name;
+
+        const info = document.createElement('span');
+        info.className = 'fi-info';
+        info.textContent = f.isDir ? f.perms : formatSize(f.size);
+
+        item.appendChild(icon);
+        item.appendChild(name);
+        item.appendChild(info);
+
+        if (!f.isDir) {
+            const dl = document.createElement('button');
+            dl.className = 'fi-btn';
+            dl.textContent = 'DL';
+            dl.addEventListener('click', ev => {
+                ev.stopPropagation();
+                const fullPath = currentPath + (currentPath.endsWith('/') ? '' : '/') + f.name;
+                if (A) A.downloadFile(fullPath, f.name);
+            });
+            item.appendChild(dl);
+        }
+
+        const del = document.createElement('button');
+        del.className = 'fi-btn del';
+        del.textContent = 'Del';
+        del.addEventListener('click', ev => {
+            ev.stopPropagation();
+            if (confirm('Delete ' + f.name + '?')) {
+                const fullPath = currentPath + (currentPath.endsWith('/') ? '' : '/') + f.name;
+                if (A) A.deleteFile(fullPath);
+            }
+        });
+        item.appendChild(del);
+
+        item.addEventListener('click', () => {
+            if (f.isDir) {
+                let newPath;
+                if (f.name === '..') {
+                    newPath = currentPath.replace(/\/[^/]+\/?$/, '') || '/';
+                } else {
+                    newPath = currentPath + (currentPath.endsWith('/') ? '' : '/') + f.name;
+                }
+                setPath(newPath);
+                if (A) A.navigate(newPath);
+            }
+        });
+
+        list.appendChild(item);
+    }
+}
+
+function refreshDir() { if (A) A.navigate(currentPath); }
+
+document.getElementById('btnUp').addEventListener('click', () => {
+    const parent = currentPath.replace(/\/[^/]+\/?$/, '') || '/';
+    setPath(parent);
+    if (A) A.navigate(parent);
+});
+document.getElementById('btnGo').addEventListener('click', () => {
+    const p = document.getElementById('pathInput').value.trim();
+    if (p) { setPath(p); if (A) A.navigate(p); }
+});
+document.getElementById('btnUpload').addEventListener('click', () => {
+    if (A) A.uploadFile(currentPath);
+});
+document.getElementById('btnMkdir').addEventListener('click', () => {
+    const name = prompt('Directory name:');
+    if (name) {
+        const full = currentPath + (currentPath.endsWith('/') ? '' : '/') + name;
+        if (A) A.mkdir(full);
+    }
+});
+</script>
+</body>
+</html>

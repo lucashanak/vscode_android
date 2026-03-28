@@ -301,5 +301,11 @@ class OverlayManager(
         fun backToMenu() {
             geckoView.post { hide(); onBackToMenu() }
         }
+
+        @JavascriptInterface
+        fun getClipboard(): String {
+            val cm = geckoView.context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            return cm.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+        }
     }
 }

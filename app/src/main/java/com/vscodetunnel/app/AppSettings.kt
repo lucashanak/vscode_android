@@ -79,6 +79,13 @@ object AppSettings {
         get() = prefs(this).getInt(KEY_CONNECT_TIMEOUT, 15)
         set(value) = prefs(this).edit().putInt(KEY_CONNECT_TIMEOUT, value).apply()
 
+    // --- Security ---
+    private const val KEY_BIOMETRIC = "biometric_lock"
+
+    var Context.biometricLockEnabled: Boolean
+        get() = prefs(this).getBoolean(KEY_BIOMETRIC, false)
+        set(value) = prefs(this).edit().putBoolean(KEY_BIOMETRIC, value).apply()
+
     // --- Background ---
     var Context.keepAliveEnabled: Boolean
         get() = prefs(this).getBoolean(KEY_KEEPALIVE, true)

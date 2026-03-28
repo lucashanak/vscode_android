@@ -75,6 +75,23 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 .tp-btn { flex:1; height:44px; font-size:14px; font-weight:500; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.08); color:#bbb; border:none; border-radius:8px; cursor:pointer; touch-action:manipulation; }
 .tp-btn:active { background:rgba(0,122,204,0.4); }
 
+/* Quick action bar above keyboard */
+.action-bar { display:flex; gap:3px; padding:2px 3px; overflow-x:auto; scrollbar-width:none; }
+.action-bar::-webkit-scrollbar { display:none; }
+.action-btn { flex:0 0 auto; padding:5px 10px; font-size:11px; font-weight:600; font-family:-apple-system,sans-serif; background:rgba(0,122,204,0.2); color:#6cb6ff; border:none; border-radius:4px; cursor:pointer; white-space:nowrap; touch-action:manipulation; }
+.action-btn:active { background:rgba(0,122,204,0.5); }
+
+/* Diacritics popup */
+#diacPopup { position:fixed; display:none; background:#3a3a3a; border:1px solid rgba(255,255,255,0.2); border-radius:8px; padding:4px; z-index:300; box-shadow:0 4px 16px rgba(0,0,0,0.6); }
+#diacPopup .diac-row { display:flex; gap:3px; }
+.diac-key { width:40px; height:44px; font-size:20px; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.1); color:#e8e8e8; border:none; border-radius:5px; cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation; }
+.diac-key:active { background:#007acc; }
+
+/* Clipboard history popup */
+#clipPopup { position:fixed; display:none; background:#2d2d2d; border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:4px 0; z-index:300; box-shadow:0 4px 16px rgba(0,0,0,0.5); max-width:280px; max-height:300px; overflow-y:auto; }
+.clip-item { display:block; width:100%; padding:8px 12px; font-size:13px; font-family:monospace; color:#ddd; background:none; border:none; border-bottom:1px solid rgba(255,255,255,0.06); text-align:left; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.clip-item:active { background:rgba(0,122,204,0.3); }
+
 /* ============ WIDE: side-by-side KB + TP ============ */
 @media (min-width:901px) {
     .toolbar .tab-btn { display:none; }
@@ -108,6 +125,7 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 
 <div class="toolbar">
     <button class="tool-btn" id="menuBtn">Menu</button>
+    <button class="tool-btn" id="clipBtn" style="font-size:12px">Clip</button>
     <div class="spacer"></div>
     <button class="tool-btn tab-btn" id="tpToggle">TP</button>
     <button class="tool-btn" id="hideBtn">Hide</button>
@@ -125,6 +143,9 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
     </div>
 </div>
 
+<div id="diacPopup"><div class="diac-row" id="diacRow"></div></div>
+<div id="clipPopup"></div>
+
 <script>
 'use strict';
 
@@ -137,8 +158,18 @@ let compactPage = 'abc'; // 'abc' or 'sym'
 // ======================== ANDROID BRIDGE ========================
 const A = window.Android || {
     sendChar(){}, sendKey(){}, pointerMove(){}, click(){},
-    doubleClick(){}, scroll(){}, hideOverlay(){}, sendModifier(){}, backToMenu(){}
+    doubleClick(){}, scroll(){}, hideOverlay(){}, sendModifier(){}, backToMenu(){},
+    getClipboard(){ return ''; }
 };
+
+// Poll clipboard for changes (to populate history when user copies from VS Code)
+let lastClip = '';
+setInterval(() => {
+    try {
+        const c = A.getClipboard();
+        if (c && c !== lastClip) { lastClip = c; addToClipHistory(c); }
+    } catch(_){}
+}, 2000);
 
 // ======================== KEY HELPERS ========================
 function esc(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -153,9 +184,57 @@ function M(mod, label, cls) {
 }
 function SEP(cls) { return `<div class="${cls||'fn-sep'}"></div>`; }
 
+// ======================== DIACRITICS MAP ========================
+const DIAC = {
+    'a':['á','à','â','ä','ã','å','ą','æ'],
+    'c':['č','ć','ç'],
+    'd':['ď','đ'],
+    'e':['é','è','ě','ê','ë','ę'],
+    'i':['í','ì','î','ï'],
+    'l':['ľ','ĺ','ł'],
+    'n':['ň','ñ','ń'],
+    'o':['ó','ò','ô','ö','õ','ø','ő'],
+    'r':['ř','ŕ'],
+    's':['š','ś','ş','ß'],
+    't':['ť','ţ'],
+    'u':['ú','ù','û','ü','ů','ű'],
+    'y':['ý','ÿ'],
+    'z':['ž','ź','ż'],
+};
+
+// ======================== CLIPBOARD HISTORY ========================
+const clipHistory = [];
+const MAX_CLIP = 10;
+function addToClipHistory(text) {
+    if (!text || text.length > 500) return;
+    const idx = clipHistory.indexOf(text);
+    if (idx >= 0) clipHistory.splice(idx, 1);
+    clipHistory.unshift(text);
+    if (clipHistory.length > MAX_CLIP) clipHistory.pop();
+}
+
+// ======================== HAPTIC ========================
+function haptic() {
+    if (navigator.vibrate) navigator.vibrate(5);
+}
+
 // ======================== COMPACT: LETTERS (Gboard-style) ========================
+function quickActions() {
+    return `<div class="action-bar">
+        <button class="action-btn" data-action="ctrl+shift+p">Cmd Palette</button>
+        <button class="action-btn" data-action="ctrl+s">Save</button>
+        <button class="action-btn" data-action="ctrl+z">Undo</button>
+        <button class="action-btn" data-action="ctrl+shift+z">Redo</button>
+        <button class="action-btn" data-action="ctrl+p">Quick Open</button>
+        <button class="action-btn" data-action="ctrl+shift+f">Search Files</button>
+        <button class="action-btn" data-action="ctrl+b">Sidebar</button>
+        <button class="action-btn" data-action="ctrl+\`">Terminal</button>
+    </div>`;
+}
+
 function compactLetters() {
     return `
+        ${quickActions()}
         <div class="row row-num">${'1234567890'.split('').map(d=>K(d)).join('')}</div>
         <div class="row">${C('q')}${C('w')}${C('e')}${C('r')}${C('t')}${C('y')}${C('u')}${C('i')}${C('o')}${C('p')}</div>
         <div class="row row-home">${C('a')}${C('s')}${C('d')}${C('f')}${C('g')}${C('h')}${C('j')}${C('k')}${C('l')}</div>
@@ -302,8 +381,45 @@ function updateRepeatSettings(delay, rate) {
     REPEAT_RATE = rate || 50;
 }
 
+// ======================== DIACRITICS POPUP ========================
+const diacPopup = document.getElementById('diacPopup');
+const diacRow = document.getElementById('diacRow');
+let diacTimer = null, diacShown = false;
+
+function showDiacPopup(ch, btnRect) {
+    const alts = DIAC[ch.toLowerCase()];
+    if (!alts || alts.length === 0) return;
+    diacRow.innerHTML = '';
+    alts.forEach(d => {
+        const k = document.createElement('button');
+        k.className = 'diac-key';
+        k.textContent = mods.shift ? d.toUpperCase() : d;
+        k.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            haptic();
+            A.sendChar(mods.shift ? d.toUpperCase() : d);
+            resetMods();
+            hideDiacPopup();
+        });
+        diacRow.appendChild(k);
+    });
+    // Position above the key
+    const pw = alts.length * 43 + 8;
+    let left = btnRect.left + btnRect.width/2 - pw/2;
+    left = Math.max(4, Math.min(left, window.innerWidth - pw - 4));
+    diacPopup.style.left = left + 'px';
+    diacPopup.style.top = (btnRect.top - 52) + 'px';
+    diacPopup.style.display = 'block';
+    diacShown = true;
+}
+function hideDiacPopup() {
+    diacPopup.style.display = 'none';
+    diacShown = false;
+    clearTimeout(diacTimer); diacTimer = null;
+}
+
 function attachKeyEvents() {
-    // Character keys (a-z)
+    // Character keys (a-z) — with long-press diacritics + haptic
     kbPanel.querySelectorAll('.char-key').forEach(btn => {
         const fire = () => {
             const ch = mods.shift ? btn.dataset.char.toUpperCase() : btn.dataset.char;
@@ -313,18 +429,37 @@ function attachKeyEvents() {
                 A.sendChar(ch);
             }
         };
+        let longFired = false;
         btn.addEventListener('pointerdown', e => {
             e.preventDefault(); e.stopPropagation();
+            haptic();
+            longFired = false;
             fire();
-            startRepeat(fire);
+            // Long-press: show diacritics after delay (instead of repeat for letters with diacritics)
+            const ch = btn.dataset.char;
+            if (DIAC[ch]) {
+                diacTimer = setTimeout(() => {
+                    longFired = true;
+                    stopRepeat();
+                    showDiacPopup(ch, btn.getBoundingClientRect());
+                }, 300);
+                startRepeat(fire);
+            } else {
+                startRepeat(fire);
+            }
             btn.classList.add('pressed');
         });
-        btn.addEventListener('pointerup', e => { stopRepeat(); resetMods(); btn.classList.remove('pressed'); });
-        btn.addEventListener('pointerleave', () => { stopRepeat(); btn.classList.remove('pressed'); });
-        btn.addEventListener('pointercancel', () => { stopRepeat(); btn.classList.remove('pressed'); });
+        btn.addEventListener('pointerup', e => {
+            clearTimeout(diacTimer); diacTimer = null;
+            stopRepeat();
+            if (!diacShown) resetMods();
+            btn.classList.remove('pressed');
+        });
+        btn.addEventListener('pointerleave', () => { clearTimeout(diacTimer); stopRepeat(); btn.classList.remove('pressed'); });
+        btn.addEventListener('pointercancel', () => { clearTimeout(diacTimer); stopRepeat(); btn.classList.remove('pressed'); });
     });
 
-    // Special + symbol keys (data-key)
+    // Special + symbol keys (data-key) — with haptic
     kbPanel.querySelectorAll('.key[data-key]:not(.key-mod)').forEach(btn => {
         const fire = () => {
             const key = btn.dataset.key;
@@ -338,6 +473,7 @@ function attachKeyEvents() {
         };
         btn.addEventListener('pointerdown', e => {
             e.preventDefault(); e.stopPropagation();
+            haptic();
             fire();
             startRepeat(fire);
             btn.classList.add('pressed');
@@ -347,14 +483,68 @@ function attachKeyEvents() {
         btn.addEventListener('pointercancel', () => { stopRepeat(); btn.classList.remove('pressed'); });
     });
 
-    // Modifiers (no repeat)
+    // Modifiers (no repeat, haptic only)
     kbPanel.querySelectorAll('.key-mod').forEach(btn => {
         btn.addEventListener('pointerdown', e => {
             e.preventDefault(); e.stopPropagation();
+            haptic();
             toggleMod(btn.dataset.mod);
         });
     });
+
+    // Quick action buttons
+    kbPanel.querySelectorAll('.action-btn').forEach(btn => {
+        btn.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            haptic();
+            const action = btn.dataset.action;
+            if (!action) return;
+            const parts = action.split('+');
+            const key = parts[parts.length - 1];
+            A.sendKey(JSON.stringify({
+                key: key, ctrl: parts.includes('ctrl'), alt: parts.includes('alt'),
+                shift: parts.includes('shift'), meta: parts.includes('meta')
+            }));
+            btn.classList.add('pressed'); setTimeout(() => btn.classList.remove('pressed'), 100);
+        });
+    });
 }
+
+// Dismiss diacritics popup on tap outside
+document.addEventListener('pointerdown', e => {
+    if (diacShown && !diacPopup.contains(e.target)) hideDiacPopup();
+}, {passive:true});
+
+// ======================== CLIPBOARD POPUP ========================
+const clipPopup = document.getElementById('clipPopup');
+document.getElementById('clipBtn').addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (clipPopup.style.display === 'block') { clipPopup.style.display = 'none'; return; }
+    clipPopup.innerHTML = '';
+    if (clipHistory.length === 0) {
+        clipPopup.innerHTML = '<div style="padding:12px;color:#888;font-size:12px">No clipboard history</div>';
+    } else {
+        clipHistory.forEach(text => {
+            const item = document.createElement('button');
+            item.className = 'clip-item';
+            item.textContent = text.length > 40 ? text.substring(0,38) + '..' : text;
+            item.addEventListener('pointerdown', ev => {
+                ev.preventDefault(); ev.stopPropagation();
+                A.sendChar(text);
+                clipPopup.style.display = 'none';
+            });
+            clipPopup.appendChild(item);
+        });
+    }
+    const rect = e.target.getBoundingClientRect();
+    clipPopup.style.left = Math.max(4, rect.left) + 'px';
+    clipPopup.style.top = (rect.bottom + 4) + 'px';
+    clipPopup.style.display = 'block';
+});
+document.addEventListener('pointerdown', e => {
+    if (clipPopup.style.display === 'block' && !clipPopup.contains(e.target) && e.target.id !== 'clipBtn')
+        clipPopup.style.display = 'none';
+}, {passive:true});
 
 // ======================== TOUCHPAD ========================
 const TAP_MOVE_THRESHOLD = 10;

@@ -55,4 +55,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // SSH client
     implementation("com.github.mwiede:jsch:0.2.21")
+    // Biometric auth
+    implementation("androidx.biometric:biometric:1.1.0")
 }

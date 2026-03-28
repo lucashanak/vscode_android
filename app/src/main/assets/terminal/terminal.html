@@ -21,12 +21,26 @@ html, body { background:#1E1E1E; overflow:hidden; width:100%; height:100%; displ
 .ctx-item { display:block; width:100%; padding:10px 16px; font-size:14px; font-family:-apple-system,sans-serif; color:#ddd; background:none; border:none; text-align:left; cursor:pointer; }
 .ctx-item:active { background:rgba(0,122,204,0.3); }
 .ctx-sep { height:1px; background:rgba(255,255,255,0.1); margin:4px 0; }
+/* Search bar */
+#searchBar { display:none; align-items:center; gap:4px; padding:4px 8px; background:#252525; border-bottom:1px solid rgba(255,255,255,0.1); flex-shrink:0; }
+#searchInput { flex:1; padding:6px 10px; font-size:13px; background:rgba(255,255,255,0.08); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:4px; outline:none; font-family:-apple-system,sans-serif; }
+#searchInput:focus { border-color:#007acc; }
+.search-btn { padding:6px 10px; font-size:12px; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.08); color:#aaa; border:none; border-radius:4px; cursor:pointer; }
+.search-btn:active { background:rgba(0,122,204,0.3); }
+#searchCount { font-size:11px; color:#888; font-family:-apple-system,sans-serif; min-width:40px; text-align:center; }
 /* Selection handles (Android-style teardrops) */
 .sel-handle { position:fixed; width:28px; height:28px; z-index:150; display:none; touch-action:none; }
 .sel-handle svg { width:100%; height:100%; filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5)); }
 </style>
 </head>
 <body>
+<div id="searchBar">
+    <input id="searchInput" type="text" placeholder="Search..." inputmode="none">
+    <span id="searchCount"></span>
+    <button class="search-btn" id="searchPrev">&#9650;</button>
+    <button class="search-btn" id="searchNext">&#9660;</button>
+    <button class="search-btn" id="searchClose">&#10005;</button>
+</div>
 <div id="snippetBar"></div>
 <div id="terminal"></div>
 <div id="toast"></div>
@@ -40,10 +54,13 @@ html, body { background:#1E1E1E; overflow:hidden; width:100%; height:100%; displ
     <button class="ctx-item" id="ctxSelectAll">Select All</button>
     <button class="ctx-item" id="ctxClear">Clear</button>
     <div class="ctx-sep"></div>
+    <button class="ctx-item" id="ctxSearch">Search</button>
     <button class="ctx-item" id="ctxExport">Export Log</button>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-search@0.15.0/lib/addon-search.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
 <script>
 'use strict';
 
@@ -112,11 +129,48 @@ const term = new Terminal({
 
 const fitAddon = new FitAddon.FitAddon();
 term.loadAddon(fitAddon);
+
+// Search addon
+const searchAddon = new SearchAddon.SearchAddon();
+term.loadAddon(searchAddon);
+
+// Web links addon — clickable URLs
+const webLinksAddon = new WebLinksAddon.WebLinksAddon((e, uri) => {
+    if (A) A.openUrl(uri);
+});
+term.loadAddon(webLinksAddon);
+
 term.open(document.getElementById('terminal'));
 fitAddon.fit();
 
 // Send user input to Android
 term.onData(data => { if (A) A.onTerminalInput(data); });
+
+// ======================== SEARCH ========================
+const searchBar = document.getElementById('searchBar');
+const searchInput = document.getElementById('searchInput');
+const searchCount = document.getElementById('searchCount');
+let searchOpen = false;
+
+function toggleSearch() {
+    searchOpen = !searchOpen;
+    searchBar.style.display = searchOpen ? 'flex' : 'none';
+    if (searchOpen) { searchInput.focus(); searchInput.removeAttribute('inputmode'); }
+    else { searchAddon.clearDecorations(); searchCount.textContent = ''; fitAddon.fit(); }
+}
+
+searchInput.addEventListener('input', () => {
+    const q = searchInput.value;
+    if (q) searchAddon.findNext(q);
+    else searchAddon.clearDecorations();
+});
+document.getElementById('searchNext').addEventListener('click', () => {
+    if (searchInput.value) searchAddon.findNext(searchInput.value);
+});
+document.getElementById('searchPrev').addEventListener('click', () => {
+    if (searchInput.value) searchAddon.findPrevious(searchInput.value);
+});
+document.getElementById('searchClose').addEventListener('click', toggleSearch);
 
 // ======================== CONTEXT MENU ========================
 const ctxMenu = document.getElementById('ctxMenu');
@@ -188,6 +242,11 @@ document.getElementById('ctxSelectAll').addEventListener('click', () => {
 document.getElementById('ctxClear').addEventListener('click', () => {
     hideCtxMenu();
     term.clear();
+});
+
+document.getElementById('ctxSearch').addEventListener('click', () => {
+    hideCtxMenu();
+    if (!searchOpen) toggleSearch();
 });
 
 document.getElementById('ctxExport').addEventListener('click', () => {
