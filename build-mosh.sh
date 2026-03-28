@@ -89,8 +89,6 @@ fi
 cd mosh
 
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
-export LDFLAGS="-L$PREFIX/lib -static"
-export CPPFLAGS="-I$PREFIX/include"
 
 if [ ! -f configure ]; then
     ./autogen.sh
@@ -101,7 +99,8 @@ fi
     --with-crypto-library=openssl \
     PROTOC="$(which protoc)" \
     CPPFLAGS="-I$PREFIX/include -I$PREFIX/include/ncurses" \
-    LDFLAGS="-L$PREFIX/lib -static" \
+    LDFLAGS="-L$PREFIX/lib -static-libgcc -static-libstdc++" \
+    LIBS="-ldl" \
     protobuf_CFLAGS="-I$PREFIX/include" \
     protobuf_LIBS="-L$PREFIX/lib -lprotobuf" \
     openssl_CFLAGS="-I$PREFIX/include" \
