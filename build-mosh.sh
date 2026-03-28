@@ -100,7 +100,7 @@ fi
     PROTOC="$(which protoc)" \
     CPPFLAGS="-I$PREFIX/include -I$PREFIX/include/ncurses" \
     LDFLAGS="-L$PREFIX/lib -static-libgcc -static-libstdc++" \
-    LIBS="-ldl" \
+    LIBS="-ldl -llog" \
     protobuf_CFLAGS="-I$PREFIX/include" \
     protobuf_LIBS="-L$PREFIX/lib -lprotobuf" \
     openssl_CFLAGS="-I$PREFIX/include" \

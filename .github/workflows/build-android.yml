@@ -20,7 +20,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: app/src/main/assets/bin/mosh-client
-          key: mosh-client-arm64-v7
+          key: mosh-client-arm64-v8
 
       - name: Install build dependencies
         if: steps.mosh-cache.outputs.cache-hit != 'true'
