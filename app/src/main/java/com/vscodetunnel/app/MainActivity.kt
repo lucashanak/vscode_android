@@ -804,7 +804,7 @@ class MainActivity : AppCompatActivity() {
             layout.addView(TextView(this).apply {
                 text = title
                 setTextColor(resources.getColor(R.color.primary, theme))
-                textSize = 13f; textStyle = android.graphics.Typeface.BOLD
+                textSize = 13f; setTypeface(null, android.graphics.Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { topMargin = dp(16); bottomMargin = dp(6) }
