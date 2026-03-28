@@ -64,6 +64,22 @@ if [ ! -f "$PREFIX/lib/libcrypto.a" ]; then
     make -j1 install_sw
 fi
 
+# Build ncurses (required by mosh for terminal)
+cd "$WORKDIR"
+if [ ! -d ncurses ]; then
+    curl -sL https://ftp.gnu.org/gnu/ncurses/ncurses-6.4.tar.gz | tar xz
+    mv ncurses-6.4 ncurses
+fi
+cd ncurses
+if [ ! -f "$PREFIX/lib/libncurses.a" ]; then
+    ./configure --host=$TARGET --prefix="$PREFIX" \
+        --disable-shared --enable-static \
+        --without-debug --without-ada --without-manpages \
+        --without-progs --without-tests --without-cxx-binding \
+        CFLAGS="-fPIC"
+    make -j$(nproc) install
+fi
+
 echo "=== Building mosh ==="
 
 cd "$WORKDIR"
@@ -84,10 +100,13 @@ fi
     --enable-client --disable-server \
     --with-crypto-library=openssl \
     PROTOC="$(which protoc)" \
+    CPPFLAGS="-I$PREFIX/include -I$PREFIX/include/ncurses" \
+    LDFLAGS="-L$PREFIX/lib -static" \
     protobuf_CFLAGS="-I$PREFIX/include" \
     protobuf_LIBS="-L$PREFIX/lib -lprotobuf" \
     openssl_CFLAGS="-I$PREFIX/include" \
-    openssl_LIBS="-L$PREFIX/lib -lssl -lcrypto"
+    openssl_LIBS="-L$PREFIX/lib -lssl -lcrypto" \
+    TINFO_LIBS="-L$PREFIX/lib -lncurses"
 
 make -j$(nproc)
 
