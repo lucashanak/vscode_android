@@ -13,6 +13,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.webkit.WebView
+import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
@@ -82,6 +83,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sshEmptyText: TextView
     private var sshSessionManager: SshSessionManager? = null
     private var currentSshServer: SshServer? = null
+    private var pendingKeyField: EditText? = null
+    private val keyFilePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val text = contentResolver.openInputStream(uri)?.bufferedReader()?.readText() ?: ""
+                pendingKeyField?.setText(text)
+            } catch (e: Exception) {
+                showError("Failed to read key file: ${e.message}")
+            }
+        }
+        pendingKeyField = null
+    }
 
     // UI references
     private lateinit var btnGitHubLogin: Button
@@ -209,6 +224,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.btnLogout).setOnClickListener { logout() }
         findViewById<View>(R.id.btnRefreshTunnels).setOnClickListener { loadTunnels() }
         findViewById<View>(R.id.btnAddSsh).setOnClickListener { showSshServerDialog(null) }
+        findViewById<View>(R.id.btnQuickSsh).setOnClickListener { showQuickConnectDialog() }
         findViewById<View>(R.id.btnSettings).setOnClickListener { showSettingsDialog() }
 
         findViewById<Button>(R.id.btnConnect).setOnClickListener {
@@ -516,10 +532,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSshServerDialog(existing: SshServer?) {
+        val scroll = ScrollView(this)
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(16), dp(24), dp(8))
         }
+        scroll.addView(layout)
 
         fun addField(hint: String, value: String = "", inputType: Int = android.text.InputType.TYPE_CLASS_TEXT): EditText {
             return EditText(this).apply {
@@ -538,6 +556,18 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        fun addLabel(text: String) {
+            layout.addView(TextView(this).apply {
+                this.text = text
+                setTextColor(resources.getColor(R.color.text_secondary, theme))
+                textSize = 12f
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(8); bottomMargin = dp(2) }
+            })
+        }
+
         val nameField = addField("Display name (optional)", existing?.name ?: "")
         val hostField = addField("Host", existing?.host ?: "")
         val portField = addField("Port", (existing?.port ?: defaultSshPort).toString(),
@@ -545,16 +575,50 @@ class MainActivity : AppCompatActivity() {
         val userField = addField("Username", existing?.username ?: defaultSshUser)
         val passField = addField("Password", existing?.password ?: "",
             android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD)
+        val keyField = addField("Private key (paste PEM or use file picker)", existing?.privateKey ?: "",
+            android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE)
+        val startupField = addField("Startup command (e.g. cd /app && tmux attach)", existing?.startupCommand ?: "")
+        val portFwdField = addField("Port forwards (e.g. L8080:127.0.0.1:80,R3000:localhost:3000)",
+            existing?.portForwards?.joinToString(",") ?: "")
+        val snippetsField = addField("Snippets (comma-separated commands)",
+            existing?.snippets?.joinToString(",") ?: "")
 
         layout.addView(nameField)
         layout.addView(hostField)
         layout.addView(portField)
         layout.addView(userField)
         layout.addView(passField)
+        addLabel("Authentication key (optional)")
+        layout.addView(keyField)
+
+        // File picker button for SSH key
+        val pickKeyBtn = Button(this).apply {
+            text = "Pick key file..."
+            setTextColor(resources.getColor(R.color.primary, theme))
+            textSize = 13f
+            isAllCaps = false
+            background = resources.getDrawable(R.drawable.bg_input, theme)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) }
+        }
+        pickKeyBtn.setOnClickListener {
+            pendingKeyField = keyField
+            keyFilePickerLauncher.launch(arrayOf("*/*"))
+        }
+        layout.addView(pickKeyBtn)
+
+        addLabel("Automation")
+        layout.addView(startupField)
+        addLabel("Port forwarding (L=local, R=remote)")
+        layout.addView(portFwdField)
+        addLabel("Quick snippets for toolbar")
+        layout.addView(snippetsField)
 
         AlertDialog.Builder(this, R.style.AppDialogTheme)
             .setTitle(if (existing != null) "Edit Server" else "Add SSH Server")
-            .setView(layout)
+            .setView(scroll)
             .setPositiveButton("Save") { _, _ ->
                 val host = hostField.text.toString().trim()
                 val user = userField.text.toString().trim()
@@ -562,14 +626,19 @@ class MainActivity : AppCompatActivity() {
                     showError("Host and username are required")
                     return@setPositiveButton
                 }
+                val key = keyField.text.toString().trim()
                 val server = SshServer(
                     id = existing?.id ?: System.currentTimeMillis().toString(),
                     name = nameField.text.toString().trim(),
                     host = host,
                     port = portField.text.toString().toIntOrNull() ?: 22,
                     username = user,
-                    authMethod = SshServer.AuthMethod.PASSWORD,
-                    password = passField.text.toString()
+                    authMethod = if (key.isNotBlank()) SshServer.AuthMethod.KEY else SshServer.AuthMethod.PASSWORD,
+                    password = passField.text.toString(),
+                    privateKey = key,
+                    startupCommand = startupField.text.toString().trim(),
+                    portForwards = parsePortForwards(portFwdField.text.toString()),
+                    snippets = snippetsField.text.toString().split(",").map { it.trim() }.filter { it.isNotBlank() }
                 )
                 ServerStorage.saveServer(this, server)
                 renderSshServers()
@@ -578,27 +647,112 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun parsePortForwards(input: String): List<PortForward> {
+        if (input.isBlank()) return emptyList()
+        return input.split(",").mapNotNull { s ->
+            val t = s.trim()
+            if (t.length < 2) return@mapNotNull null
+            val type = if (t[0] == 'R' || t[0] == 'r') "remote" else "local"
+            val parts = t.substring(1).split(":", limit = 3)
+            if (parts.size < 3) return@mapNotNull null
+            PortForward(type, parts[0].toIntOrNull() ?: 0, parts[1], parts[2].toIntOrNull() ?: 0)
+        }
+    }
+
+    private fun showQuickConnectDialog() {
+        val input = EditText(this).apply {
+            hint = "user@host:port"
+            setTextColor(resources.getColor(R.color.text_primary, theme))
+            setHintTextColor(resources.getColor(R.color.text_secondary, theme))
+            textSize = 16f
+            background = resources.getDrawable(R.drawable.bg_input, theme)
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+        }
+        val container = LinearLayout(this).apply {
+            setPadding(dp(24), dp(16), dp(24), dp(0))
+            addView(input)
+        }
+        AlertDialog.Builder(this, R.style.AppDialogTheme)
+            .setTitle("Quick Connect")
+            .setView(container)
+            .setPositiveButton("Connect") { _, _ ->
+                val server = SshServer.fromQuickConnect(input.text.toString())
+                if (server != null) {
+                    // Ask for password
+                    showQuickConnectPasswordDialog(server)
+                } else {
+                    showError("Invalid format. Use: user@host or user@host:port")
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showQuickConnectPasswordDialog(server: SshServer) {
+        val input = EditText(this).apply {
+            hint = "Password (leave empty for key auth)"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setTextColor(resources.getColor(R.color.text_primary, theme))
+            setHintTextColor(resources.getColor(R.color.text_secondary, theme))
+            textSize = 16f
+            background = resources.getDrawable(R.drawable.bg_input, theme)
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+        }
+        val container = LinearLayout(this).apply {
+            setPadding(dp(24), dp(16), dp(24), dp(0))
+            addView(input)
+        }
+        AlertDialog.Builder(this, R.style.AppDialogTheme)
+            .setTitle("Password for ${server.username}@${server.host}")
+            .setView(container)
+            .setPositiveButton("Connect") { _, _ ->
+                val withPass = server.copy(password = input.text.toString())
+                connectSsh(withPass)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showHostKeyDialog(host: String, fingerprint: String, callback: (Boolean) -> Unit) {
+        runOnUiThread {
+            AlertDialog.Builder(this, R.style.AppDialogTheme)
+                .setTitle("Host Key Changed!")
+                .setMessage("The host key for $host has changed.\n\nNew fingerprint:\n$fingerprint\n\nThis could indicate a man-in-the-middle attack. Accept new key?")
+                .setPositiveButton("Accept") { _, _ -> callback(true) }
+                .setNegativeButton("Reject") { _, _ -> callback(false) }
+                .setCancelable(false)
+                .show()
+        }
+    }
+
     private fun connectSsh(server: SshServer) {
         currentSshServer = server
 
-        // Setup SSH terminal
-        val mgr = SshSessionManager(sshTerminalWebView) { reason ->
-            runOnUiThread {
-                FileLogger.d(TAG, "SSH disconnected: $reason")
-                if (keepAliveEnabled) {
-                    KeepAliveService.stop(this)
+        val mgr = SshSessionManager(this, sshTerminalWebView,
+            onDisconnected = { reason ->
+                runOnUiThread {
+                    FileLogger.d(TAG, "SSH disconnected: $reason")
+                    if (keepAliveEnabled) KeepAliveService.stop(this)
                 }
-            }
-        }
+            },
+            onHostKeyVerify = { host, fp, cb -> showHostKeyDialog(host, fp, cb) }
+        )
         sshSessionManager?.destroy()
         sshSessionManager = mgr
 
-        // Configure overlay for SSH
         overlayManager.inputTarget = OverlayManager.InputTarget.SSH_TERMINAL
         overlayManager.sshSessionManager = mgr
 
         mgr.setupTerminal()
         mgr.connect(server)
+
+        // Send snippets to terminal toolbar after a delay (terminal needs to load first)
+        if (server.snippets.isNotEmpty()) {
+            sshTerminalWebView.postDelayed({
+                val json = org.json.JSONArray(server.snippets).toString()
+                sshTerminalWebView.evaluateJavascript("setSnippets($json)", null)
+            }, 500)
+        }
 
         // Switch to SSH view
         launcherScroll.visibility = View.GONE

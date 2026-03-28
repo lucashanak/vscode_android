@@ -1,6 +1,7 @@
 package com.vscodetunnel.app
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -10,16 +11,21 @@ import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
 import org.json.JSONObject
 import kotlinx.coroutines.*
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.InputStream
 import java.io.OutputStream
+import java.security.MessageDigest
 import java.util.Properties
 
 class SshSessionManager(
+    private val context: Context,
     private val terminalWebView: WebView,
-    private val onDisconnected: (reason: String) -> Unit
+    private val onDisconnected: (reason: String) -> Unit,
+    private val onHostKeyVerify: (host: String, fingerprint: String, callback: (Boolean) -> Unit) -> Unit
 ) {
     companion object {
         private const val TAG = "SshSession"
+        private const val MAX_RECONNECT_ATTEMPTS = 3
     }
 
     private var session: Session? = null
@@ -28,16 +34,19 @@ class SshSessionManager(
     private var outputStream: OutputStream? = null
     private var readJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    @Volatile
-    var isConnected = false
-        private set
+    @Volatile var isConnected = false; private set
+    private var currentServer: SshServer? = null
+    private var reconnectAttempts = 0
+
+    // Port forwarding channels
+    private val activeForwards = mutableListOf<String>()
 
     @SuppressLint("SetJavaScriptEnabled")
     fun setupTerminal() {
         terminalWebView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
-            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             setSupportZoom(false)
             cacheMode = WebSettings.LOAD_DEFAULT
         }
@@ -48,6 +57,12 @@ class SshSessionManager(
     }
 
     fun connect(server: SshServer) {
+        currentServer = server
+        reconnectAttempts = 0
+        doConnect(server)
+    }
+
+    private fun doConnect(server: SshServer) {
         scope.launch {
             try {
                 writeInfo("Connecting to ${server.host}:${server.port}...\r\n")
@@ -69,7 +84,55 @@ class SshSessionManager(
                 sess.timeout = 15000
 
                 sess.connect()
+
+                // TOFU host key verification
+                val hostKey = sess.hostKey
+                if (hostKey != null) {
+                    val fingerprint = fingerprintHex(hostKey.getFingerPrint(jsch))
+                    val known = KnownHosts.getFingerprint(context, server.host, server.port)
+                    if (known == null) {
+                        // First time — save
+                        KnownHosts.saveFingerprint(context, server.host, server.port, fingerprint)
+                        writeInfo("Host key saved: $fingerprint\r\n")
+                    } else if (known != fingerprint) {
+                        // Changed — warn and ask
+                        writeInfo("\r\n\u001B[31mWARNING: HOST KEY CHANGED!\u001B[0m\r\n")
+                        writeInfo("Expected: $known\r\n")
+                        writeInfo("Got:      $fingerprint\r\n")
+                        val accepted = withContext(Dispatchers.Main) {
+                            suspendCancellableCoroutine { cont ->
+                                onHostKeyVerify(server.host, fingerprint) { result ->
+                                    cont.resumeWith(Result.success(result))
+                                }
+                            }
+                        }
+                        if (!accepted) {
+                            sess.disconnect()
+                            writeInfo("Connection rejected by user.\r\n")
+                            return@launch
+                        }
+                        KnownHosts.saveFingerprint(context, server.host, server.port, fingerprint)
+                    }
+                }
+
                 session = sess
+
+                // Setup port forwarding
+                for (pf in server.portForwards) {
+                    try {
+                        if (pf.type == "local" && pf.localPort > 0 && pf.remotePort > 0) {
+                            sess.setPortForwardingL(pf.localPort, pf.remoteHost, pf.remotePort)
+                            activeForwards.add("L${pf.localPort}")
+                            writeInfo("Port forward: L${pf.localPort} → ${pf.remoteHost}:${pf.remotePort}\r\n")
+                        } else if (pf.type == "remote" && pf.localPort > 0 && pf.remotePort > 0) {
+                            sess.setPortForwardingR(pf.remotePort, pf.remoteHost, pf.localPort)
+                            activeForwards.add("R${pf.remotePort}")
+                            writeInfo("Port forward: R${pf.remotePort} → ${pf.remoteHost}:${pf.localPort}\r\n")
+                        }
+                    } catch (e: Exception) {
+                        writeInfo("\u001B[33mPort forward failed: ${pf}: ${e.message}\u001B[0m\r\n")
+                    }
+                }
 
                 writeInfo("Connected. Opening shell...\r\n")
 
@@ -80,21 +143,29 @@ class SshSessionManager(
                 ch.connect()
                 channel = ch
                 isConnected = true
+                reconnectAttempts = 0
 
                 FileLogger.d(TAG, "SSH connected to ${server.host}")
 
-                // Read loop: SSH → terminal
+                // Apply color scheme
+                if (server.colorScheme != "default") {
+                    applyColorScheme(server.colorScheme)
+                }
+
+                // Send startup command
+                if (server.startupCommand.isNotBlank()) {
+                    delay(500) // wait for shell prompt
+                    sendInput(server.startupCommand + "\n")
+                }
+
+                // Read loop
                 readJob = scope.launch {
                     try {
                         val buf = ByteArray(8192)
                         while (isActive && ch.isConnected) {
                             val n = inputStream?.read(buf) ?: -1
-                            if (n < 0) break // EOF
-                            if (n == 0) {
-                                delay(50)
-                                if (ch.isClosed) break
-                                continue
-                            }
+                            if (n < 0) break
+                            if (n == 0) { delay(50); if (ch.isClosed) break; continue }
                             val text = String(buf, 0, n)
                             writeOutput(text)
                         }
@@ -102,8 +173,16 @@ class SshSessionManager(
                     } finally {
                         if (isConnected) {
                             isConnected = false
-                            withContext(Dispatchers.Main) {
-                                onDisconnected("Connection closed")
+                            // Try auto-reconnect
+                            if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && currentServer != null) {
+                                reconnectAttempts++
+                                writeInfo("\r\n\u001B[33mConnection lost. Reconnecting (${reconnectAttempts}/$MAX_RECONNECT_ATTEMPTS)...\u001B[0m\r\n")
+                                delay(2000)
+                                doConnect(currentServer!!)
+                            } else {
+                                withContext(Dispatchers.Main) {
+                                    onDisconnected("Connection closed")
+                                }
                             }
                         }
                     }
@@ -111,8 +190,15 @@ class SshSessionManager(
             } catch (e: Exception) {
                 FileLogger.e(TAG, "SSH connection failed: $e")
                 writeInfo("\r\nConnection failed: ${e.message}\r\n")
-                withContext(Dispatchers.Main) {
-                    onDisconnected("Connection failed: ${e.message}")
+                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && currentServer != null) {
+                    reconnectAttempts++
+                    writeInfo("\u001B[33mRetrying (${reconnectAttempts}/$MAX_RECONNECT_ATTEMPTS)...\u001B[0m\r\n")
+                    delay(3000)
+                    doConnect(currentServer!!)
+                } else {
+                    withContext(Dispatchers.Main) {
+                        onDisconnected("Connection failed: ${e.message}")
+                    }
                 }
             }
         }
@@ -130,49 +216,50 @@ class SshSessionManager(
     }
 
     fun resize(cols: Int, rows: Int) {
-        try {
-            channel?.setPtySize(cols, rows, cols * 8, rows * 16)
-        } catch (_: Exception) {}
+        try { channel?.setPtySize(cols, rows, cols * 8, rows * 16) } catch (_: Exception) {}
     }
 
     fun disconnect() {
         isConnected = false
-        readJob?.cancel()
-        readJob = null
+        reconnectAttempts = MAX_RECONNECT_ATTEMPTS // prevent auto-reconnect
+        currentServer = null
+        readJob?.cancel(); readJob = null
+        activeForwards.clear()
         try { channel?.disconnect() } catch (_: Exception) {}
         try { session?.disconnect() } catch (_: Exception) {}
-        channel = null
-        session = null
-        inputStream = null
-        outputStream = null
+        channel = null; session = null; inputStream = null; outputStream = null
         FileLogger.d(TAG, "SSH disconnected")
     }
 
-    fun destroy() {
-        disconnect()
-        scope.cancel()
+    fun destroy() { disconnect(); scope.cancel() }
+
+    fun getScrollback(): String {
+        // Will be called from JS bridge
+        return "" // placeholder — actual export done via JS
+    }
+
+    private fun applyColorScheme(scheme: String) {
+        terminalWebView.post {
+            terminalWebView.evaluateJavascript("applyColorScheme('$scheme')", null)
+        }
     }
 
     private fun writeOutput(text: String) {
-        val safe = JSONObject.quote(text) // returns "..."-wrapped, JSON-safe string
-        terminalWebView.post {
-            terminalWebView.evaluateJavascript("writeOutput($safe)", null)
-        }
+        val safe = JSONObject.quote(text)
+        terminalWebView.post { terminalWebView.evaluateJavascript("writeOutput($safe)", null) }
     }
 
     private fun writeInfo(text: String) {
         val safe = JSONObject.quote(text)
-        terminalWebView.post {
-            terminalWebView.evaluateJavascript("writeInfo($safe)", null)
-        }
+        terminalWebView.post { terminalWebView.evaluateJavascript("writeInfo($safe)", null) }
     }
+
+    private fun fingerprintHex(fp: String): String = fp
 
     @Suppress("unused")
     inner class TerminalBridge {
         @JavascriptInterface
-        fun onTerminalInput(data: String) {
-            sendInput(data)
-        }
+        fun onTerminalInput(data: String) { sendInput(data) }
 
         @JavascriptInterface
         fun onTerminalReady(cols: Int, rows: Int) {
@@ -181,8 +268,41 @@ class SshSessionManager(
         }
 
         @JavascriptInterface
-        fun onTerminalResize(cols: Int, rows: Int) {
-            resize(cols, rows)
+        fun onTerminalResize(cols: Int, rows: Int) { resize(cols, rows) }
+
+        @JavascriptInterface
+        fun copyToClipboard(text: String) {
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("terminal", text))
+        }
+
+        @JavascriptInterface
+        fun getClipboard(): String {
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            return cm.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+        }
+
+        @JavascriptInterface
+        fun exportScrollback(content: String) {
+            try {
+                val dir = java.io.File(context.cacheDir, "exports")
+                dir.mkdirs()
+                val file = java.io.File(dir, "terminal_${System.currentTimeMillis()}.log")
+                file.writeText(content)
+                terminalWebView.post {
+                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                        context, "${context.packageName}.fileprovider", file
+                    )
+                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(android.content.Intent.createChooser(intent, "Export terminal log"))
+                }
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "Export failed: $e")
+            }
         }
     }
 }
