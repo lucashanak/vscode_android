@@ -51,6 +51,9 @@ class MainActivity : AppCompatActivity() {
         private const val MAX_RECENT = 5
         private const val STATE_TUNNEL_URL = "tunnel_url"
         private const val STATE_GECKOVIEW_VISIBLE = "geckoview_visible"
+        private const val PREFS_SESSION = "session"
+        private const val KEY_LAST_URL = "last_url"
+        private const val KEY_AUTO_RECONNECT = "auto_reconnect"
         private val APP_VERSION: String get() = BuildConfig.VERSION_NAME
     }
 
@@ -60,6 +63,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var launcherScroll: View
     private lateinit var overlayManager: OverlayManager
     private var tunnelSession: GeckoSession? = null
+    private var suspendedTunnelUrl: String? = null  // URL of suspended session
     private var pollJob: Job? = null
     private var authDialog: Dialog? = null
     private var currentTunnelUrl: String? = null
@@ -90,9 +94,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var updateBanner: View
     private lateinit var updateText: TextView
     private lateinit var updateLink: TextView
+    private lateinit var activeSessionBanner: View
+    private lateinit var activeSessionLabel: TextView
+    private lateinit var activeSessionUrl: TextView
 
     private val authPrefs: SharedPreferences by lazy { getSharedPreferences(PREFS_AUTH, MODE_PRIVATE) }
     private val recentPrefs: SharedPreferences by lazy { getSharedPreferences(PREFS_RECENT, MODE_PRIVATE) }
+    private val sessionPrefs: SharedPreferences by lazy { getSharedPreferences(PREFS_SESSION, MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -138,9 +146,10 @@ class MainActivity : AppCompatActivity() {
         val overlayWebView = findViewById<WebView>(R.id.overlayWebView)
         val cursorDot = findViewById<View>(R.id.cursorDot)
         val floatingToggle = findViewById<Button>(R.id.floatingToggle)
-        overlayManager = OverlayManager(geckoView, overlayWebView, cursorDot, floatingToggle) { visible ->
-            onOverlayVisibilityChanged(visible)
-        }
+        overlayManager = OverlayManager(geckoView, overlayWebView, cursorDot, floatingToggle,
+            onVisibilityChanged = { visible -> onOverlayVisibilityChanged(visible) },
+            onBackToMenu = { suspendSession() }
+        )
         overlayManager.setup()
         floatingToggle.setOnClickListener { overlayManager.show() }
 
@@ -156,6 +165,7 @@ class MainActivity : AppCompatActivity() {
         renderSshServers()
         loadLastUrlIntoInput()
         checkForUpdate()
+        checkAutoReconnect()
     }
 
     private fun bindViews() {
@@ -176,6 +186,9 @@ class MainActivity : AppCompatActivity() {
         updateBanner = findViewById(R.id.updateBanner)
         updateText = findViewById(R.id.updateText)
         updateLink = findViewById(R.id.updateLink)
+        activeSessionBanner = findViewById(R.id.activeSessionBanner)
+        activeSessionLabel = findViewById(R.id.activeSessionLabel)
+        activeSessionUrl = findViewById(R.id.activeSessionUrl)
         sshServerList = findViewById(R.id.sshServerList)
         sshEmptyText = findViewById(R.id.sshEmptyText)
     }
@@ -186,6 +199,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.btnRefreshTunnels).setOnClickListener { loadTunnels() }
         findViewById<View>(R.id.btnAddSsh).setOnClickListener { showSshServerDialog(null) }
         findViewById<View>(R.id.btnSettings).setOnClickListener { showSettingsDialog() }
+        findViewById<View>(R.id.btnResumeSession).setOnClickListener { resumeSession() }
+        findViewById<View>(R.id.btnCloseSession).setOnClickListener { closeSession() }
 
         findViewById<Button>(R.id.btnConnect).setOnClickListener {
             connectTo(urlInput.text.toString().trim())
@@ -835,6 +850,9 @@ class MainActivity : AppCompatActivity() {
         geckoView.setSession(session)
         session.loadUri(url)
 
+        // Save for auto-reconnect after app restart
+        sessionPrefs.edit().putString(KEY_LAST_URL, url).apply()
+
         launcherScroll.visibility = View.GONE
         sessionWrapper.visibility = View.VISIBLE
         sshContainer.visibility = View.GONE
@@ -981,6 +999,7 @@ class MainActivity : AppCompatActivity() {
         geckoView.releaseSession()
         tunnelSession?.close()
         tunnelSession = null
+        suspendedTunnelUrl = null
         currentTunnelUrl = null
         sysKBSuppressed = false
         geckoView.suppressIME = false
@@ -990,6 +1009,95 @@ class MainActivity : AppCompatActivity() {
         sshContainer.visibility = View.GONE
         findViewById<Button>(R.id.floatingToggle).visibility = View.GONE
         launcherScroll.visibility = View.VISIBLE
+        updateActiveSessionBanner()
+    }
+
+    // --- Session Suspend / Resume ---
+
+    private fun suspendSession() {
+        overlayManager.hide()
+        if (currentTunnelUrl != null && tunnelSession != null) {
+            // Suspend VS Code tunnel session (keep in background)
+            suspendedTunnelUrl = currentTunnelUrl
+            tunnelSession?.setActive(false)
+            geckoView.releaseSession()
+            FileLogger.d(TAG, "Session suspended: $suspendedTunnelUrl")
+        } else if (currentSshServer != null) {
+            // SSH: just go to menu, keep SSH alive
+            suspendedTunnelUrl = "ssh://${currentSshServer?.username}@${currentSshServer?.host}"
+        }
+        // Save for auto-reconnect
+        sessionPrefs.edit().putString(KEY_LAST_URL, currentTunnelUrl ?: "").apply()
+
+        sysKBSuppressed = false
+        geckoView.suppressIME = false
+        sessionWrapper.visibility = View.GONE
+        geckoContainer.visibility = View.GONE
+        sshContainer.visibility = View.GONE
+        findViewById<Button>(R.id.floatingToggle).visibility = View.GONE
+        launcherScroll.visibility = View.VISIBLE
+        updateActiveSessionBanner()
+    }
+
+    private fun resumeSession() {
+        if (suspendedTunnelUrl?.startsWith("ssh://") == true && sshSessionManager?.isConnected == true) {
+            // Resume SSH
+            launcherScroll.visibility = View.GONE
+            sessionWrapper.visibility = View.VISIBLE
+            geckoContainer.visibility = View.GONE
+            sshContainer.visibility = View.VISIBLE
+            findViewById<Button>(R.id.floatingToggle).visibility = View.VISIBLE
+            activeSessionBanner.visibility = View.GONE
+        } else if (tunnelSession != null && suspendedTunnelUrl != null) {
+            // Resume VS Code tunnel
+            tunnelSession?.setActive(true)
+            geckoView.setSession(tunnelSession!!)
+            currentTunnelUrl = suspendedTunnelUrl
+            suspendedTunnelUrl = null
+
+            launcherScroll.visibility = View.GONE
+            sessionWrapper.visibility = View.VISIBLE
+            sshContainer.visibility = View.GONE
+            geckoContainer.visibility = View.VISIBLE
+            findViewById<Button>(R.id.floatingToggle).visibility = View.VISIBLE
+            activeSessionBanner.visibility = View.GONE
+
+            if (suppressSystemKeyboard) {
+                sysKBSuppressed = true
+                geckoView.suppressIME = true
+                val controller = WindowInsetsControllerCompat(window, geckoView)
+                controller.hide(WindowInsetsCompat.Type.ime())
+                ViewCompat.requestApplyInsets(findViewById(R.id.rootFrame))
+            }
+            FileLogger.d(TAG, "Session resumed: $currentTunnelUrl")
+        }
+    }
+
+    private fun closeSession() {
+        // Fully close suspended session
+        tunnelSession?.close()
+        tunnelSession = null
+        suspendedTunnelUrl = null
+        currentTunnelUrl = null
+        disconnectSsh()
+        if (keepAliveEnabled) {
+            KeepAliveService.stop(this)
+        }
+        sessionPrefs.edit().remove(KEY_LAST_URL).apply()
+        updateActiveSessionBanner()
+    }
+
+    private fun updateActiveSessionBanner() {
+        val hasSuspended = suspendedTunnelUrl != null ||
+            (sshSessionManager?.isConnected == true && sshContainer.visibility != View.VISIBLE)
+        if (hasSuspended) {
+            val url = suspendedTunnelUrl ?: ""
+            activeSessionLabel.text = if (url.startsWith("ssh://")) "SSH Session (background)" else "VS Code (background)"
+            activeSessionUrl.text = url
+            activeSessionBanner.visibility = View.VISIBLE
+        } else {
+            activeSessionBanner.visibility = View.GONE
+        }
     }
 
     // --- Recent URLs ---
@@ -1208,12 +1316,8 @@ class MainActivity : AppCompatActivity() {
                     overlayManager.hide()
                     return
                 }
-                if (sshContainer.visibility == View.VISIBLE) {
-                    showLauncher()
-                    return
-                }
-                if (geckoContainer.visibility == View.VISIBLE) {
-                    showLauncher()
+                if (sshContainer.visibility == View.VISIBLE || geckoContainer.visibility == View.VISIBLE) {
+                    suspendSession()
                     return
                 }
                 isEnabled = false
@@ -1257,6 +1361,27 @@ class MainActivity : AppCompatActivity() {
         tunnelSession = null
         sshSessionManager?.destroy()
         sshSessionManager = null
+    }
+
+    // --- Auto Reconnect ---
+
+    private fun checkAutoReconnect() {
+        val lastUrl = sessionPrefs.getString(KEY_LAST_URL, null)
+        if (!lastUrl.isNullOrBlank()) {
+            // Show banner offering to reconnect
+            activeSessionLabel.text = "Last session"
+            activeSessionUrl.text = lastUrl
+            activeSessionBanner.visibility = View.VISIBLE
+            findViewById<View>(R.id.btnResumeSession).setOnClickListener {
+                activeSessionBanner.visibility = View.GONE
+                sessionPrefs.edit().remove(KEY_LAST_URL).apply()
+                connectTo(lastUrl)
+            }
+            findViewById<View>(R.id.btnCloseSession).setOnClickListener {
+                activeSessionBanner.visibility = View.GONE
+                sessionPrefs.edit().remove(KEY_LAST_URL).apply()
+            }
+        }
     }
 
     // --- Utils ---

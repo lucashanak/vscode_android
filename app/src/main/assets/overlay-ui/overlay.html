@@ -109,6 +109,7 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 <div class="toolbar">
     <button class="tool-btn tab-btn" id="tpToggle">TP</button>
     <div class="spacer"></div>
+    <button class="tool-btn" id="menuBtn">Menu</button>
     <button class="tool-btn" id="hideBtn">Hide</button>
 </div>
 
@@ -136,7 +137,7 @@ let compactPage = 'abc'; // 'abc' or 'sym'
 // ======================== ANDROID BRIDGE ========================
 const A = window.Android || {
     sendChar(){}, sendKey(){}, pointerMove(){}, click(){},
-    doubleClick(){}, scroll(){}, hideOverlay(){}, sendModifier(){}
+    doubleClick(){}, scroll(){}, hideOverlay(){}, sendModifier(){}, backToMenu(){}
 };
 
 // ======================== KEY HELPERS ========================
@@ -407,6 +408,11 @@ document.getElementById('tpToggle').addEventListener('pointerdown', e => {
     kbPanel.classList.toggle('active', !show);
     tpPanel.classList.toggle('active', show);
     e.target.classList.toggle('active', show);
+});
+
+document.getElementById('menuBtn').addEventListener('pointerdown', e => {
+    e.preventDefault();
+    A.backToMenu();
 });
 
 document.getElementById('hideBtn').addEventListener('pointerdown', e => {

@@ -13,7 +13,8 @@ class OverlayManager(
     private val webView: WebView,
     private val cursorView: View,
     private val floatingToggle: View,
-    private val onVisibilityChanged: (Boolean) -> Unit
+    private val onVisibilityChanged: (Boolean) -> Unit,
+    private val onBackToMenu: () -> Unit = {}
 ) {
     companion object {
         private const val TAG = "OverlayManager"
@@ -225,6 +226,11 @@ class OverlayManager(
         @JavascriptInterface
         fun hideOverlay() {
             geckoView.post { hide() }
+        }
+
+        @JavascriptInterface
+        fun backToMenu() {
+            geckoView.post { hide(); onBackToMenu() }
         }
     }
 }
