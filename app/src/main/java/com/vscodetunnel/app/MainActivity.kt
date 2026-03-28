@@ -877,8 +877,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private var moshSessionManager: MoshSessionManager? = null
+
     private fun connectSsh(server: SshServer) {
         currentSshServer = server
+
+        if (server.useMosh) {
+            connectMosh(server)
+            return
+        }
 
         val mgr = SshSessionManager(this, sshTerminalWebView,
             onDisconnected = { reason ->
@@ -920,9 +927,96 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @android.annotation.SuppressLint("SetJavaScriptEnabled")
+    private fun connectMosh(server: SshServer) {
+        currentSshServer = server
+
+        // Setup terminal WebView (reuse SSH terminal)
+        sshTerminalWebView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            setSupportZoom(false)
+        }
+        sshTerminalWebView.setBackgroundColor(0xFF1E1E1E.toInt())
+
+        val mgr = MoshSessionManager(this, sshTerminalWebView) { reason ->
+            runOnUiThread {
+                FileLogger.d(TAG, "Mosh disconnected: $reason")
+                if (reason == "Mosh binary not available") {
+                    // Fallback to SSH
+                    val sshServer = server.copy(useMosh = false)
+                    connectSsh(sshServer)
+                    return@runOnUiThread
+                }
+                if (keepAliveEnabled) KeepAliveService.stop(this)
+            }
+        }
+        moshSessionManager?.destroy()
+        moshSessionManager = mgr
+
+        // For Mosh, overlay sends input to mosh process
+        overlayManager.inputTarget = OverlayManager.InputTarget.SSH_TERMINAL
+        // Create a thin wrapper so overlay can call sendInput on mosh
+        overlayManager.sshSessionManager = null // mosh uses its own manager
+        overlayManager.sshTerminalWebView = sshTerminalWebView
+
+        // Load terminal HTML first, then connect mosh
+        sshTerminalWebView.addJavascriptInterface(
+            object {
+                @android.webkit.JavascriptInterface
+                fun onTerminalInput(data: String) { mgr.sendInput(data) }
+                @android.webkit.JavascriptInterface
+                fun onTerminalReady(cols: Int, rows: Int) { FileLogger.d(TAG, "Mosh terminal ready: ${cols}x$rows") }
+                @android.webkit.JavascriptInterface
+                fun onTerminalResize(cols: Int, rows: Int) {}
+                @android.webkit.JavascriptInterface
+                fun copyToClipboard(text: String) {
+                    val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("terminal", text))
+                }
+                @android.webkit.JavascriptInterface
+                fun getClipboard(): String {
+                    val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    return cm.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+                }
+                @android.webkit.JavascriptInterface
+                fun exportScrollback(content: String) {}
+                @android.webkit.JavascriptInterface
+                fun openUrl(url: String) {
+                    try { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
+                    catch (_: Exception) {}
+                }
+            }, "Android"
+        )
+        sshTerminalWebView.loadUrl("file:///android_asset/terminal/terminal.html")
+
+        // Delay connect until terminal is loaded
+        sshTerminalWebView.postDelayed({ mgr.connect(server) }, 500)
+
+        if (server.snippets.isNotEmpty()) {
+            sshTerminalWebView.postDelayed({
+                val json = org.json.JSONArray(server.snippets).toString()
+                sshTerminalWebView.evaluateJavascript("setSnippets($json)", null)
+            }, 600)
+        }
+
+        launcherScroll.visibility = View.GONE
+        sessionWrapper.visibility = View.VISIBLE
+        geckoContainer.visibility = View.GONE
+        sshContainer.visibility = View.VISIBLE
+        findViewById<View>(R.id.sftpContainer).visibility = View.GONE
+        findViewById<Button>(R.id.floatingToggle).visibility = View.VISIBLE
+
+        if (keepAliveEnabled) {
+            KeepAliveService.start(this, "Mosh: ${server.username}@${server.host}")
+        }
+    }
+
     private fun disconnectSsh() {
         sshSessionManager?.destroy()
         sshSessionManager = null
+        moshSessionManager?.destroy()
+        moshSessionManager = null
         currentSshServer = null
         overlayManager.inputTarget = OverlayManager.InputTarget.VSCODE
         overlayManager.sshSessionManager = null
@@ -984,14 +1078,55 @@ class MainActivity : AppCompatActivity() {
     // --- Settings ---
 
     private fun showSettingsDialog() {
-        val scroll = ScrollView(this)
+        // Fullscreen dialog for settings
+        val dialog = Dialog(this, android.R.style.Theme_DeviceDefault_NoActionBar)
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(resources.getColor(R.color.background, theme))
+        }
+
+        // Top bar with title + save/cancel
+        val topBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(resources.getColor(R.color.surface, theme))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+        }
+        val titleTv = TextView(this).apply {
+            text = "Settings"
+            setTextColor(resources.getColor(R.color.text_white, theme))
+            textSize = 20f; setTypeface(null, android.graphics.Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val cancelBtn = Button(this).apply {
+            text = "Cancel"; isAllCaps = false; textSize = 14f
+            setTextColor(resources.getColor(R.color.text_secondary, theme))
+            background = null
+            setOnClickListener { dialog.dismiss() }
+        }
+        val saveBtn = Button(this).apply {
+            text = "Save"; isAllCaps = false; textSize = 14f
+            setTextColor(resources.getColor(R.color.primary, theme))
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            background = null
+        }
+        topBar.addView(titleTv)
+        topBar.addView(cancelBtn)
+        topBar.addView(saveBtn)
+        root.addView(topBar)
+
+        val scroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+        }
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(12), dp(24), dp(8))
+            setPadding(dp(20), dp(8), dp(20), dp(24))
         }
         scroll.addView(layout)
+        root.addView(scroll)
 
-        val colorWhite = resources.getColor(R.color.text_white, theme)
         val colorSec = resources.getColor(R.color.text_secondary, theme)
         val colorPrim = resources.getColor(R.color.text_primary, theme)
 
@@ -999,45 +1134,45 @@ class MainActivity : AppCompatActivity() {
             layout.addView(TextView(this).apply {
                 text = title
                 setTextColor(resources.getColor(R.color.primary, theme))
-                textSize = 13f; setTypeface(null, android.graphics.Typeface.BOLD)
+                textSize = 14f; setTypeface(null, android.graphics.Typeface.BOLD)
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = dp(16); bottomMargin = dp(6) }
+                ).apply { topMargin = dp(20); bottomMargin = dp(6) }
             })
             layout.addView(View(this).apply {
                 setBackgroundColor(resources.getColor(R.color.divider, theme))
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)).apply { bottomMargin = dp(8) }
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(1)).apply { bottomMargin = dp(10) }
             })
         }
 
         fun check(label: String, checked: Boolean): CheckBox {
             return CheckBox(this).apply {
                 text = label; isChecked = checked
-                setTextColor(colorPrim); textSize = 14f
+                setTextColor(colorPrim); textSize = 15f
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(6) }
+                ).apply { bottomMargin = dp(8) }
             }
         }
 
         fun field(hint: String, value: String, inputType: Int = android.text.InputType.TYPE_CLASS_TEXT): EditText {
             return EditText(this).apply {
                 this.hint = hint; setText(value); this.inputType = inputType
-                setTextColor(colorPrim); setHintTextColor(colorSec); textSize = 14f
+                setTextColor(colorPrim); setHintTextColor(colorSec); textSize = 15f
                 background = resources.getDrawable(R.drawable.bg_input, theme)
-                setPadding(dp(12), dp(8), dp(12), dp(8))
+                setPadding(dp(14), dp(10), dp(14), dp(10))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(6) }
+                ).apply { bottomMargin = dp(8) }
             }
         }
 
         fun label(text: String) {
             layout.addView(TextView(this).apply {
-                this.text = text; setTextColor(colorSec); textSize = 11f
+                this.text = text; setTextColor(colorSec); textSize = 12f
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(2) }
+                ).apply { bottomMargin = dp(3) }
             })
         }
 
@@ -1051,7 +1186,7 @@ class MainActivity : AppCompatActivity() {
             setSelection(schemes.indexOf(terminalColorScheme).coerceAtLeast(0))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(6) }
+            ).apply { bottomMargin = dp(8) }
         }
         layout.addView(schemeSpinner)
         label("Font size")
@@ -1104,43 +1239,41 @@ class MainActivity : AppCompatActivity() {
         val keepAliveCheck = check("Keep alive in background (foreground service)", keepAliveEnabled)
         layout.addView(keepAliveCheck)
 
-        AlertDialog.Builder(this, R.style.AppDialogTheme)
-            .setTitle("Settings")
-            .setView(scroll)
-            .setPositiveButton("Save") { _, _ ->
-                // Appearance
-                terminalColorScheme = schemes[schemeSpinner.selectedItemPosition]
-                terminalFontSize = fontField.text.toString().toIntOrNull() ?: 14
-                terminalScrollback = scrollbackField.text.toString().toIntOrNull() ?: 10000
-                // Keyboard
-                suppressSystemKeyboard = suppressCheck.isChecked
-                overlayManager.alwaysSuppressInput = suppressSystemKeyboard
-                overlayManager.syncInputSuppression() // tell content script to add/remove inputmode="none"
-                if (sessionWrapper.visibility == View.VISIBLE && suppressSystemKeyboard) {
-                    geckoView.suppressIME = true; sysKBSuppressed = true
-                    WindowInsetsControllerCompat(window, geckoView).hide(WindowInsetsCompat.Type.ime())
-                } else if (!suppressSystemKeyboard && !overlayManager.isVisible) {
-                    geckoView.suppressIME = false; sysKBSuppressed = false
-                }
-                hapticFeedback = hapticCheck.isChecked
-                keyRepeatDelay = repeatDelayField.text.toString().toIntOrNull() ?: 400
-                keyRepeatRate = repeatRateField.text.toString().toIntOrNull() ?: 50
-                // SSH
-                defaultSshPort = portField.text.toString().toIntOrNull() ?: 22
-                defaultSshUser = userField.text.toString().trim()
-                defaultStartupCmd = startupField.text.toString().trim()
-                sshAutoReconnect = autoReconnectCheck.isChecked
-                sshReconnectAttempts = attemptsField.text.toString().toIntOrNull() ?: 3
-                sshConnectTimeout = timeoutField.text.toString().toIntOrNull() ?: 15
-                // Background
-                // Security
-                biometricLockEnabled = biometricCheck.isChecked
-                keepAliveEnabled = keepAliveCheck.isChecked
-                // Push repeat settings to overlay keyboard
-                updateOverlaySettings()
+        saveBtn.setOnClickListener {
+            // Appearance
+            terminalColorScheme = schemes[schemeSpinner.selectedItemPosition]
+            terminalFontSize = fontField.text.toString().toIntOrNull() ?: 14
+            terminalScrollback = scrollbackField.text.toString().toIntOrNull() ?: 10000
+            // Keyboard
+            suppressSystemKeyboard = suppressCheck.isChecked
+            overlayManager.alwaysSuppressInput = suppressSystemKeyboard
+            overlayManager.syncInputSuppression()
+            if (sessionWrapper.visibility == View.VISIBLE && suppressSystemKeyboard) {
+                geckoView.suppressIME = true; sysKBSuppressed = true
+                WindowInsetsControllerCompat(window, geckoView).hide(WindowInsetsCompat.Type.ime())
+            } else if (!suppressSystemKeyboard && !overlayManager.isVisible) {
+                geckoView.suppressIME = false; sysKBSuppressed = false
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+            hapticFeedback = hapticCheck.isChecked
+            keyRepeatDelay = repeatDelayField.text.toString().toIntOrNull() ?: 400
+            keyRepeatRate = repeatRateField.text.toString().toIntOrNull() ?: 50
+            // SSH
+            defaultSshPort = portField.text.toString().toIntOrNull() ?: 22
+            defaultSshUser = userField.text.toString().trim()
+            defaultStartupCmd = startupField.text.toString().trim()
+            sshAutoReconnect = autoReconnectCheck.isChecked
+            sshReconnectAttempts = attemptsField.text.toString().toIntOrNull() ?: 3
+            sshConnectTimeout = timeoutField.text.toString().toIntOrNull() ?: 15
+            // Security
+            biometricLockEnabled = biometricCheck.isChecked
+            keepAliveEnabled = keepAliveCheck.isChecked
+            // Push repeat settings
+            updateOverlaySettings()
+            dialog.dismiss()
+        }
+
+        dialog.setContentView(root)
+        dialog.show()
     }
 
     private fun updateOverlaySettings() {
