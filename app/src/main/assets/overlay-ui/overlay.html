@@ -8,8 +8,8 @@
 html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; }
 
 /* Toolbar */
-.toolbar { display:flex; align-items:center; gap:4px; padding:4px 8px; background:#232323; border-bottom:1px solid rgba(255,255,255,0.06); }
-.tool-btn { padding:6px 12px; font-size:13px; font-weight:600; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.08); color:#aaa; border:1px solid rgba(255,255,255,0.1); border-radius:6px; cursor:pointer; touch-action:manipulation; }
+.toolbar { display:flex; align-items:center; gap:6px; padding:6px 10px; background:#232323; border-bottom:1px solid rgba(255,255,255,0.06); }
+.tool-btn { padding:10px 18px; font-size:15px; font-weight:600; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.08); color:#aaa; border:1px solid rgba(255,255,255,0.1); border-radius:8px; cursor:pointer; touch-action:manipulation; }
 .tool-btn.active { background:#007acc; color:#fff; border-color:#007acc; }
 .spacer { flex:1; }
 
@@ -46,6 +46,9 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 .key-mod { background:rgba(255,255,255,0.05); font-size:13px; color:#999; }
 .key-mod.mod-active { background:#007acc; color:#fff; }
 
+/* Number row: shorter keys */
+.row-num .key { height:42px; font-size:18px; }
+
 /* Bottom row: smaller gap, keys feel like action bar */
 .row-bottom { gap:4px; padding:3px 3px; }
 .row-bottom .key { height:48px; }
@@ -66,7 +69,7 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 
 /* ============ TOUCHPAD ============ */
 .tp-panel.active { display:flex; flex-direction:column; }
-.tp-area { flex:1; min-height:260px; margin:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; display:flex; align-items:center; justify-content:center; touch-action:none; }
+.tp-area { flex:1; min-height:310px; margin:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; display:flex; align-items:center; justify-content:center; touch-action:none; }
 .tp-hint { color:rgba(255,255,255,0.15); font-size:14px; pointer-events:none; font-family:-apple-system,sans-serif; }
 .tp-buttons { display:flex; gap:5px; padding:6px; }
 .tp-btn { flex:1; height:44px; font-size:14px; font-weight:500; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.08); color:#bbb; border:none; border-radius:8px; cursor:pointer; touch-action:manipulation; }
@@ -94,8 +97,8 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
     .row { gap:3px; padding:2px 2px; }
     .row-scroll .key { height:38px; font-size:14px; }
     .tp-btn { height:32px; font-size:12px; }
-    .toolbar { padding:2px 4px; }
-    .tool-btn { padding:4px 8px; font-size:11px; }
+    .toolbar { padding:4px 6px; }
+    .tool-btn { padding:6px 12px; font-size:13px; }
     .tp-area { min-height:120px; }
     .kb-panel { padding:4px 2px 6px 2px; }
 }
@@ -152,6 +155,7 @@ function SEP(cls) { return `<div class="${cls||'fn-sep'}"></div>`; }
 // ======================== COMPACT: LETTERS (Gboard-style) ========================
 function compactLetters() {
     return `
+        <div class="row row-num">${'1234567890'.split('').map(d=>K(d)).join('')}</div>
         <div class="row">${C('q')}${C('w')}${C('e')}${C('r')}${C('t')}${C('y')}${C('u')}${C('i')}${C('o')}${C('p')}</div>
         <div class="row row-home">${C('a')}${C('s')}${C('d')}${C('f')}${C('g')}${C('h')}${C('j')}${C('k')}${C('l')}</div>
         <div class="row row-shift">${M('shift','\u21E7','wide-key')}${C('z')}${C('x')}${C('c')}${C('v')}${C('b')}${C('n')}${C('m')}${K('Bksp','\u232B','wide-key')}</div>
