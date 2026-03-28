@@ -31,8 +31,12 @@ class OverlayManager(
     // SSH terminal routing
     var inputTarget = InputTarget.VSCODE
     var sshSessionManager: SshSessionManager? = null
+    var sshTerminalWebView: WebView? = null
     // When true, content script keeps inputmode="none" even when overlay is hidden
     var alwaysSuppressInput = false
+    // Cursor position for SSH terminal (in CSS px)
+    private var sshCursorX = 0f
+    private var sshCursorY = 0f
 
     @SuppressLint("SetJavaScriptEnabled")
     fun setup() {
@@ -97,6 +101,37 @@ class OverlayManager(
         if (inputTarget != InputTarget.VSCODE) return
         val active = isVisible || alwaysSuppressInput
         sendToContentScript("overlayActive", JSONObject().put("active", active))
+    }
+
+    private fun injectTerminalMouse(type: String, x: Float, y: Float, button: Int = 0) {
+        val wv = sshTerminalWebView ?: return
+        val btnMask = when (button) { 0 -> 1; 1 -> 4; 2 -> 2; else -> 0 }
+        wv.post {
+            wv.evaluateJavascript("""
+                (function(){
+                    var el = document.elementFromPoint($x,$y) || document.querySelector('.xterm-screen');
+                    if(el) el.dispatchEvent(new MouseEvent('$type',{
+                        clientX:$x, clientY:$y, button:$button, buttons:${if (type == "mouseup") 0 else btnMask},
+                        bubbles:true, cancelable:true, view:window
+                    }));
+                })()
+            """.trimIndent(), null)
+        }
+    }
+
+    private fun injectTerminalWheel(x: Float, y: Float, deltaY: Float) {
+        val wv = sshTerminalWebView ?: return
+        wv.post {
+            wv.evaluateJavascript("""
+                (function(){
+                    var el = document.elementFromPoint($x,$y) || document.querySelector('.xterm-screen');
+                    if(el) el.dispatchEvent(new WheelEvent('wheel',{
+                        deltaY:$deltaY, clientX:$x, clientY:$y,
+                        bubbles:true, cancelable:true, view:window
+                    }));
+                })()
+            """.trimIndent(), null)
+        }
     }
 
     private fun sendToContentScript(type: String, data: JSONObject) {
@@ -205,7 +240,13 @@ class OverlayManager(
 
         @JavascriptInterface
         fun pointerMove(dx: Float, dy: Float) {
-            if (inputTarget == InputTarget.SSH_TERMINAL) return
+            if (inputTarget == InputTarget.SSH_TERMINAL) {
+                // Track cursor and inject mousemove into terminal WebView
+                sshCursorX = (sshCursorX + dx).coerceAtLeast(0f)
+                sshCursorY = (sshCursorY + dy).coerceAtLeast(0f)
+                injectTerminalMouse("mousemove", sshCursorX, sshCursorY)
+                return
+            }
             val density = geckoView.resources.displayMetrics.density
             geckoView.post {
                 updateCursor(dx * density, dy * density)
@@ -216,21 +257,38 @@ class OverlayManager(
 
         @JavascriptInterface
         fun click(button: Int) {
-            if (inputTarget == InputTarget.SSH_TERMINAL) return
+            if (inputTarget == InputTarget.SSH_TERMINAL) {
+                injectTerminalMouse("mousedown", sshCursorX, sshCursorY, button)
+                injectTerminalMouse("mouseup", sshCursorX, sshCursorY, button)
+                injectTerminalMouse("click", sshCursorX, sshCursorY, button)
+                return
+            }
             val (cx, cy) = cursorCssPx()
             sendToContentScript("click", JSONObject().put("button", button).put("x", cx).put("y", cy))
         }
 
         @JavascriptInterface
         fun doubleClick() {
-            if (inputTarget == InputTarget.SSH_TERMINAL) return
+            if (inputTarget == InputTarget.SSH_TERMINAL) {
+                injectTerminalMouse("mousedown", sshCursorX, sshCursorY)
+                injectTerminalMouse("mouseup", sshCursorX, sshCursorY)
+                injectTerminalMouse("click", sshCursorX, sshCursorY)
+                injectTerminalMouse("mousedown", sshCursorX, sshCursorY)
+                injectTerminalMouse("mouseup", sshCursorX, sshCursorY)
+                injectTerminalMouse("click", sshCursorX, sshCursorY)
+                injectTerminalMouse("dblclick", sshCursorX, sshCursorY)
+                return
+            }
             val (cx, cy) = cursorCssPx()
             sendToContentScript("doubleClick", JSONObject().put("x", cx).put("y", cy))
         }
 
         @JavascriptInterface
         fun scroll(deltaY: Float) {
-            if (inputTarget == InputTarget.SSH_TERMINAL) return
+            if (inputTarget == InputTarget.SSH_TERMINAL) {
+                injectTerminalWheel(sshCursorX, sshCursorY, deltaY)
+                return
+            }
             val (cx, cy) = cursorCssPx()
             sendToContentScript("scroll", JSONObject().put("deltaY", deltaY).put("x", cx).put("y", cy))
         }

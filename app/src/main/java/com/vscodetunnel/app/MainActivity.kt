@@ -750,6 +750,7 @@ class MainActivity : AppCompatActivity() {
 
         overlayManager.inputTarget = OverlayManager.InputTarget.SSH_TERMINAL
         overlayManager.sshSessionManager = mgr
+        overlayManager.sshTerminalWebView = sshTerminalWebView
 
         mgr.setupTerminal()
         mgr.connect(server)
@@ -781,6 +782,7 @@ class MainActivity : AppCompatActivity() {
         currentSshServer = null
         overlayManager.inputTarget = OverlayManager.InputTarget.VSCODE
         overlayManager.sshSessionManager = null
+        overlayManager.sshTerminalWebView = null
         if (keepAliveEnabled) {
             KeepAliveService.stop(this)
         }
@@ -1077,6 +1079,7 @@ class MainActivity : AppCompatActivity() {
         setupOverlayMessaging(session)
         overlayManager.inputTarget = OverlayManager.InputTarget.VSCODE
         overlayManager.sshSessionManager = null
+        overlayManager.sshTerminalWebView = null
 
         // Extract label from URL (tunnel name + folder)
         val label = url.removePrefix("https://vscode.dev/tunnel/")
@@ -1309,6 +1312,7 @@ class MainActivity : AppCompatActivity() {
 
         overlayManager.inputTarget = OverlayManager.InputTarget.VSCODE
         overlayManager.sshSessionManager = null
+        overlayManager.sshTerminalWebView = null
 
         launcherScroll.visibility = View.GONE
         sessionWrapper.visibility = View.VISIBLE
