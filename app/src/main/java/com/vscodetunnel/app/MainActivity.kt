@@ -1011,7 +1011,11 @@ class MainActivity : AppCompatActivity() {
 
     // --- Update Check ---
 
+    private lateinit var updateProgress: ProgressBar
+
     private fun checkForUpdate() {
+        updateProgress = findViewById(R.id.updateProgress)
+
         lifecycleScope.launch {
             try {
                 val release = TunnelApi.checkUpdate(APP_VERSION) ?: return@launch
@@ -1029,12 +1033,126 @@ class MainActivity : AppCompatActivity() {
 
                 updateText.text = "Update available: v$version"
                 updateLink.setOnClickListener {
-                    try {
-                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)))
-                    } catch (_: Exception) {}
+                    downloadAndInstallUpdate(downloadUrl, version)
                 }
                 updateBanner.visibility = View.VISIBLE
             } catch (_: Exception) {}
+        }
+    }
+
+    private fun downloadAndInstallUpdate(url: String, version: String) {
+        updateLink.visibility = View.GONE
+        updateProgress.visibility = View.VISIBLE
+        updateProgress.isIndeterminate = false
+        updateProgress.progress = 0
+        updateText.text = "Downloading v$version..."
+
+        lifecycleScope.launch {
+            try {
+                val apkFile = downloadApk(url) { progress ->
+                    runOnUiThread {
+                        if (progress < 0) {
+                            updateProgress.isIndeterminate = true
+                        } else {
+                            updateProgress.isIndeterminate = false
+                            updateProgress.progress = progress
+                        }
+                    }
+                }
+
+                runOnUiThread {
+                    updateText.text = "Installing v$version..."
+                    updateProgress.visibility = View.GONE
+                    installApk(apkFile)
+                }
+            } catch (e: Exception) {
+                FileLogger.e(TAG, "Update download failed: $e")
+                runOnUiThread {
+                    updateText.text = "Download failed: ${e.message}"
+                    updateLink.text = "Retry"
+                    updateLink.visibility = View.VISIBLE
+                    updateProgress.visibility = View.GONE
+                }
+            }
+        }
+    }
+
+    private suspend fun downloadApk(
+        url: String,
+        onProgress: (Int) -> Unit
+    ): java.io.File = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val dir = java.io.File(cacheDir, "updates")
+        dir.mkdirs()
+        val file = java.io.File(dir, "update.apk")
+        if (file.exists()) file.delete()
+
+        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        conn.setRequestProperty("User-Agent", "VSCodeTunnel-Android/${BuildConfig.VERSION_NAME}")
+        conn.instanceFollowRedirects = true
+        conn.connect()
+
+        // Handle redirects (GitHub releases redirect to S3)
+        val responseCode = conn.responseCode
+        val actualConn = if (responseCode == 302 || responseCode == 301) {
+            val redirectUrl = conn.getHeaderField("Location")
+            conn.disconnect()
+            val rc = java.net.URL(redirectUrl).openConnection() as java.net.HttpURLConnection
+            rc.setRequestProperty("User-Agent", "VSCodeTunnel-Android/${BuildConfig.VERSION_NAME}")
+            rc.connect()
+            rc
+        } else {
+            conn
+        }
+
+        val totalSize = actualConn.contentLength.toLong()
+        var downloaded = 0L
+
+        actualConn.inputStream.use { input ->
+            file.outputStream().use { output ->
+                val buf = ByteArray(8192)
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    output.write(buf, 0, n)
+                    downloaded += n
+                    if (totalSize > 0) {
+                        onProgress(((downloaded * 100) / totalSize).toInt())
+                    } else {
+                        onProgress(-1)
+                    }
+                }
+            }
+        }
+        actualConn.disconnect()
+
+        FileLogger.d(TAG, "APK downloaded: ${file.length()} bytes")
+        file
+    }
+
+    private fun installApk(file: java.io.File) {
+        try {
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                this,
+                "${packageName}.fileprovider",
+                file
+            )
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "Install failed: $e")
+            showError("Install failed: ${e.message}")
+            // Fallback: show file location
+            updateText.text = "APK saved to: ${file.absolutePath}"
+            updateLink.text = "Open Downloads"
+            updateLink.visibility = View.VISIBLE
+            updateLink.setOnClickListener {
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("content://downloads/all_downloads")))
+                } catch (_: Exception) {}
+            }
         }
     }
 
