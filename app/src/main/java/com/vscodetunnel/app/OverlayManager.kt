@@ -31,6 +31,8 @@ class OverlayManager(
     // SSH terminal routing
     var inputTarget = InputTarget.VSCODE
     var sshSessionManager: SshSessionManager? = null
+    // When true, content script keeps inputmode="none" even when overlay is hidden
+    var alwaysSuppressInput = false
 
     @SuppressLint("SetJavaScriptEnabled")
     fun setup() {
@@ -67,7 +69,9 @@ class OverlayManager(
         floatingToggle.visibility = View.VISIBLE
         onVisibilityChanged(false)
         if (inputTarget == InputTarget.VSCODE) {
-            sendToContentScript("overlayActive", JSONObject().put("active", false))
+            // Keep inputmode="none" in content script if always-suppress is on
+            val keepActive = alwaysSuppressInput
+            sendToContentScript("overlayActive", JSONObject().put("active", keepActive))
         }
     }
 
@@ -82,7 +86,8 @@ class OverlayManager(
                 }
             }
         })
-        if (isVisible && inputTarget == InputTarget.VSCODE) {
+        // Sync input suppression state when content script connects
+        if (inputTarget == InputTarget.VSCODE && (isVisible || alwaysSuppressInput)) {
             sendToContentScript("overlayActive", JSONObject().put("active", true))
         }
     }

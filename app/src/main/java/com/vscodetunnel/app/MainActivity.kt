@@ -156,6 +156,7 @@ class MainActivity : AppCompatActivity() {
             onBackToMenu = { suspendSession() }
         )
         overlayManager.setup()
+        overlayManager.alwaysSuppressInput = suppressSystemKeyboard
         floatingToggle.setOnClickListener { overlayManager.show() }
 
         // Apply suppress setting immediately so it's ready before any session
@@ -720,13 +721,16 @@ class MainActivity : AppCompatActivity() {
             .setView(layout)
             .setPositiveButton("Save") { _, _ ->
                 suppressSystemKeyboard = suppressKbCheck.isChecked
+                overlayManager.alwaysSuppressInput = suppressSystemKeyboard
                 // Apply immediately if in session
                 if (sessionWrapper.visibility == View.VISIBLE && suppressSystemKeyboard) {
                     geckoView.suppressIME = true
+                    sysKBSuppressed = true
                     val controller = WindowInsetsControllerCompat(window, geckoView)
                     controller.hide(WindowInsetsCompat.Type.ime())
                 } else if (!suppressSystemKeyboard && !overlayManager.isVisible) {
                     geckoView.suppressIME = false
+                    sysKBSuppressed = false
                 }
                 keepAliveEnabled = keepAliveCheck.isChecked
                 terminalFontSize = fontField.text.toString().toIntOrNull() ?: 14
