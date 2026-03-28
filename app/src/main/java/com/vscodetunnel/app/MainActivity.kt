@@ -2041,6 +2041,10 @@ class MainActivity : AppCompatActivity() {
                     overlayManager.hide()
                     return
                 }
+                if (findViewById<View>(R.id.sftpContainer).visibility == View.VISIBLE) {
+                    closeSftp()
+                    return
+                }
                 if (sshContainer.visibility == View.VISIBLE || geckoContainer.visibility == View.VISIBLE) {
                     suspendSession()
                     return

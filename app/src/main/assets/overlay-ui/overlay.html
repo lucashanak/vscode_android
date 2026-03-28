@@ -26,8 +26,8 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 .row-shift { padding-left:2px; padding-right:2px; }
 
 .key {
-    flex:1 1 0; min-width:0; height:52px; padding:0 2px;
-    font-size:22px; font-weight:400;
+    flex:1 1 0; min-width:0; height:62px; padding:0 2px;
+    font-size:24px; font-weight:400;
     font-family:-apple-system,'SF Pro',system-ui,sans-serif;
     background:rgba(255,255,255,0.09); color:#e8e8e8;
     border:none; border-radius:6px;
@@ -47,11 +47,11 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 .key-mod.mod-active { background:#007acc; color:#fff; }
 
 /* Number row: shorter keys */
-.row-num .key { height:42px; font-size:18px; }
+.row-num .key { height:50px; font-size:20px; }
 
-/* Bottom row: smaller gap, keys feel like action bar */
+/* Bottom row */
 .row-bottom { gap:4px; padding:3px 3px; }
-.row-bottom .key { height:48px; }
+.row-bottom .key { height:56px; }
 
 /* F-key row styling (wide layout) */
 .fn-row { gap:1px; padding:1px 2px; }
@@ -110,7 +110,7 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 
 /* Landscape narrow */
 @media (orientation:landscape) and (max-width:900px) {
-    .key { height:44px; font-size:18px; }
+    .key { height:50px; font-size:20px; }
     .row { gap:3px; padding:2px 2px; }
     .row-scroll .key { height:38px; font-size:14px; }
     .tp-btn { height:32px; font-size:12px; }

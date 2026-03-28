@@ -169,8 +169,56 @@ class SftpManager(
 
         @JavascriptInterface
         fun closeSftp() {
+            webView.post { (context as? MainActivity)?.closeSftp() }
+        }
+
+        @JavascriptInterface
+        fun confirmDelete(remotePath: String, name: String) {
             webView.post {
-                (context as? MainActivity)?.closeSftp()
+                android.app.AlertDialog.Builder(context)
+                    .setTitle("Delete")
+                    .setMessage("Delete $name?")
+                    .setPositiveButton("Delete") { _, _ ->
+                        scope.launch {
+                            try {
+                                channel?.rm(remotePath)
+                                postJs("showStatus('Deleted'); refreshDir()")
+                            } catch (e: Exception) {
+                                postJs("showStatus('Delete failed: ${e.message?.replace("'", "\\'")}')")
+                            }
+                        }
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
+            }
+        }
+
+        @JavascriptInterface
+        fun promptMkdir(currentPath: String) {
+            webView.post {
+                val input = android.widget.EditText(context).apply {
+                    hint = "Directory name"
+                    setPadding(48, 32, 48, 16)
+                }
+                android.app.AlertDialog.Builder(context)
+                    .setTitle("Create Directory")
+                    .setView(input)
+                    .setPositiveButton("Create") { _, _ ->
+                        val name = input.text.toString().trim()
+                        if (name.isNotBlank()) {
+                            val full = currentPath + (if (currentPath.endsWith("/")) "" else "/") + name
+                            scope.launch {
+                                try {
+                                    channel?.mkdir(full)
+                                    postJs("showStatus('Created'); refreshDir()")
+                                } catch (e: Exception) {
+                                    postJs("showStatus('Mkdir failed: ${e.message?.replace("'", "\\'")}')")
+                                }
+                            }
+                        }
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
             }
         }
     }

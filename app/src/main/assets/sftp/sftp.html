@@ -97,10 +97,8 @@ function renderDir(items) {
         del.textContent = 'Del';
         del.addEventListener('click', ev => {
             ev.stopPropagation();
-            if (confirm('Delete ' + f.name + '?')) {
-                const fullPath = currentPath + (currentPath.endsWith('/') ? '' : '/') + f.name;
-                if (A) A.deleteFile(fullPath);
-            }
+            const fullPath = currentPath + (currentPath.endsWith('/') ? '' : '/') + f.name;
+            if (A) A.confirmDelete(fullPath, f.name);
         });
         item.appendChild(del);
 
@@ -139,11 +137,7 @@ document.getElementById('btnUpload').addEventListener('click', () => {
     if (A) A.uploadFile(currentPath);
 });
 document.getElementById('btnMkdir').addEventListener('click', () => {
-    const name = prompt('Directory name:');
-    if (name) {
-        const full = currentPath + (currentPath.endsWith('/') ? '' : '/') + name;
-        if (A) A.mkdir(full);
-    }
+    if (A) A.promptMkdir(currentPath);
 });
 </script>
 </body>
