@@ -20,7 +20,7 @@ html, body { background:#1E1E1E; overflow:hidden; touch-action:none; user-select
 
 /* Keyboard */
 .row { display:flex; gap:2px; padding:1px 2px; flex-wrap:nowrap; justify-content:center; }
-.key { flex:1 1 0; min-width:0; height:38px; padding:0 2px; font-size:14px; font-weight:500; font-family:'SF Mono','Fira Code','Consolas',monospace; background:rgba(255,255,255,0.1); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:4px; cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation; transition:background 0.08s; }
+.key { flex:1 1 0; min-width:0; height:57px; padding:0 2px; font-size:17px; font-weight:500; font-family:'SF Mono','Fira Code','Consolas',monospace; background:rgba(255,255,255,0.1); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:4px; cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation; transition:background 0.08s; }
 .key:active, .key.pressed { background:rgba(0,122,204,0.5); border-color:#007acc; }
 .key.mod-active { background:#007acc; color:#fff; border-color:#007acc; }
 .space-key { flex:3 1 0; }
@@ -30,7 +30,7 @@ html, body { background:#1E1E1E; overflow:hidden; touch-action:none; user-select
 /* Scrollable rows */
 .row-scroll { justify-content:flex-start; overflow-x:auto; scrollbar-width:none; }
 .row-scroll::-webkit-scrollbar { display:none; }
-.row-scroll .key { flex:0 0 auto; min-width:32px; height:30px; padding:0 5px; font-size:11px; }
+.row-scroll .key { flex:0 0 auto; min-width:40px; height:45px; padding:0 6px; font-size:14px; }
 
 /* Touchpad */
 .tp-panel.active { display:flex; flex-direction:column; }
@@ -48,15 +48,15 @@ html, body { background:#1E1E1E; overflow:hidden; touch-action:none; user-select
     .kb-panel { flex:2; min-width:0; }
     .tp-panel { display:flex; flex-direction:column; flex:1; min-width:0; border-left:1px solid rgba(255,255,255,0.1); }
     .tp-area { min-height:0; }
-    .key { height:34px; font-size:12px; }
-    .row-scroll .key { height:28px; font-size:10px; }
+    .key { height:51px; font-size:15px; }
+    .row-scroll .key { height:42px; font-size:13px; }
 }
 
 /* Landscape narrow */
 @media (orientation:landscape) and (max-width:900px) {
-    .key { height:32px; font-size:12px; }
+    .key { height:48px; font-size:15px; }
     .row { gap:1px; padding:0 1px; }
-    .row-scroll .key { height:26px; font-size:10px; }
+    .row-scroll .key { height:39px; font-size:13px; }
     .tp-btn { height:28px; font-size:11px; }
     .toolbar { padding:2px 4px; }
     .tool-btn { padding:3px 6px; font-size:10px; }
@@ -64,7 +64,7 @@ html, body { background:#1E1E1E; overflow:hidden; touch-action:none; user-select
 }
 
 @media (max-width:400px) {
-    .key { height:36px; font-size:13px; }
+    .key { height:54px; font-size:16px; }
 }
 </style>
 </head>
@@ -95,6 +95,7 @@ html, body { background:#1E1E1E; overflow:hidden; touch-action:none; user-select
 const mods = { ctrl:false, alt:false, shift:false, meta:false };
 const tp = { tracking:false, lastX:0, lastY:0, fingers:0, scrollLastY:0, tapStart:0, lastTap:0, tapTimeout:null };
 const SENSITIVITY = 1.5, SCROLL_SENS = 3;
+let compactPage = 'abc'; // 'abc' or 'sym'
 
 // ======================== ANDROID BRIDGE ========================
 const A = window.Android || {
@@ -107,25 +108,38 @@ function K(key, label) { return `<button class="key" data-key="${key}">${label||
 function C(ch) { return `<button class="key char-key" data-char="${ch}">${ch}</button>`; }
 function M(mod, label) { return `<button class="key key-mod wide-key" data-mod="${mod}">${label}</button>`; }
 
-function compactKB() {
+function compactLetters() {
     return `
-        <div class="row row-scroll">
-            ${K('Esc')} ${K('Tab')} ${K('`')} ${'1234567890'.split('').map(d=>K(d)).join('')}
-            ${K('-')} ${K('=')} ${K('[')} ${K(']')} ${K('\\\\')} ${K(';')} ${K("'")} ${K('/')}
-            ${K('Left','\u25C0')} ${K('Down','\u25BC')} ${K('Up','\u25B2')} ${K('Right','\u25B6')}
-            ${K('Home','Hm')} ${K('End')} ${K('PgUp','PU')} ${K('PgDn','PD')} ${K('Del')} ${K('Ins')}
-        </div>
         <div class="row">${C('q')}${C('w')}${C('e')}${C('r')}${C('t')}${C('y')}${C('u')}${C('i')}${C('o')}${C('p')}</div>
         <div class="row">${C('a')}${C('s')}${C('d')}${C('f')}${C('g')}${C('h')}${C('j')}${C('k')}${C('l')}</div>
         <div class="row">${M('shift','\u21E7')}${C('z')}${C('x')}${C('c')}${C('v')}${C('b')}${C('n')}${C('m')}${K('Bksp','\u232B')}</div>
         <div class="row">
+            <button class="key wide-key" id="symToggle">?#</button>
             ${M('ctrl','Ctrl')} ${M('alt','Alt')} ${M('meta','Meta')}
             <button class="key space-key" data-key="Space">&nbsp;</button>
             ${K(',',',')} ${K('.','.') } ${K('Enter','\u21B5')}
+        </div>`;
+}
+
+function compactSymbols() {
+    return `
+        <div class="row">${'1234567890'.split('').map(d=>K(d)).join('')}</div>
+        <div class="row">${['!','@','#','$','%','^','&','*','(',')'].map(s=>K(s, s==='&'?'&amp;':s)).join('')}</div>
+        <div class="row-scroll row">
+            ${['-','=','`','~','_','+','[',']','{','}','|','\\\\',';',':','\\'','\\\"','<','>','/','?'].map(s=>K(s, s==='&'?'&amp;':s==='<'?'&lt;':s==='>'?'&gt;':s==='\\"'?'&quot;':s)).join('')}
         </div>
-        <div class="row row-scroll">
-            ${['~','!','@','#','$','%','^','&','*','(',')','-','_','+','=','{','}','[',']','|','\\\\',':',';','"',"'",'<','>',',','.','/','?','`'].map(s=>K(s, s==='&'?'&amp;':s==='<'?'&lt;':s==='>'?'&gt;':s==='"'?'&quot;':s)).join('')}
+        <div class="row">
+            ${K('Left','\u25C0')} ${K('Down','\u25BC')} ${K('Up','\u25B2')} ${K('Right','\u25B6')}
+            ${K('Esc')} ${K('Tab')} ${K('Home','Hm')} ${K('End')} ${K('PgUp','PU')} ${K('PgDn','PD')} ${K('Del')} ${K('Ins')}
+        </div>
+        <div class="row-scroll row">
             ${'F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12'.split(' ').map(f=>K(f)).join('')}
+        </div>
+        <div class="row">
+            <button class="key wide-key" id="symToggle">ABC</button>
+            ${M('ctrl','Ctrl')} ${M('alt','Alt')} ${M('meta','Meta')}
+            <button class="key space-key" data-key="Space">&nbsp;</button>
+            ${K('Bksp','\u232B')} ${K('Enter','\u21B5')}
         </div>`;
 }
 
@@ -163,16 +177,32 @@ let currentLayout = '';
 const kbPanel = document.getElementById('kbPanel');
 const tpPanel = document.getElementById('tpPanel');
 
+function renderCompact() {
+    kbPanel.innerHTML = compactPage === 'abc' ? compactLetters() : compactSymbols();
+    attachKeyEvents();
+    // Attach sym/abc toggle
+    const symBtn = document.getElementById('symToggle');
+    if (symBtn) {
+        symBtn.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            compactPage = compactPage === 'abc' ? 'sym' : 'abc';
+            renderCompact();
+        });
+    }
+}
+
 function updateLayout() {
     const wide = window.innerWidth > 900;
     const layout = wide ? 'wide' : 'compact';
     if (layout === currentLayout) return;
     currentLayout = layout;
-    kbPanel.innerHTML = wide ? fullKB() : compactKB();
-    attachKeyEvents();
     if (wide) {
+        kbPanel.innerHTML = fullKB();
+        attachKeyEvents();
         kbPanel.classList.add('active');
         tpPanel.classList.add('active');
+    } else {
+        renderCompact();
     }
 }
 
