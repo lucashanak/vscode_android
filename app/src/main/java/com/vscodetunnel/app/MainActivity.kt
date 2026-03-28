@@ -57,10 +57,10 @@ class MainActivity : AppCompatActivity() {
         private val APP_VERSION: String get() = BuildConfig.VERSION_NAME
     }
 
-    data class TunnelSessionInfo(
-        val url: String,
+    class TunnelSessionInfo(
+        var url: String,
         val session: GeckoSession,
-        val label: String
+        var label: String
     )
 
     private lateinit var geckoView: SuppressableGeckoView
@@ -801,6 +801,16 @@ class MainActivity : AppCompatActivity() {
                 FileLogger.d(TAG, "Load request: ${request.uri} trigger=${request.triggerUri}")
                 return GeckoResult.fromValue(AllowOrDeny.ALLOW)
             }
+
+            override fun onLocationChange(
+                session: GeckoSession,
+                url: String?,
+                perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>,
+                hasUserGesture: Boolean
+            ) {
+                if (url == null) return
+                runOnUiThread { updateSessionUrl(session, url) }
+            }
         }
 
         session.contentDelegate = object : GeckoSession.ContentDelegate {
@@ -1236,6 +1246,20 @@ class MainActivity : AppCompatActivity() {
             item.setOnClickListener { resumeSshSession() }
             activeSessionList.addView(item)
         }
+    }
+
+    private fun updateSessionUrl(session: GeckoSession, newUrl: String) {
+        val info = tunnelSessions.find { it.session === session } ?: return
+        // Only track vscode.dev URLs (ignore auth redirects etc.)
+        if (!newUrl.contains("vscode.dev")) return
+        info.url = newUrl
+        info.label = newUrl.removePrefix("https://vscode.dev/tunnel/")
+            .removePrefix("https://insiders.vscode.dev/tunnel/")
+            .ifBlank { newUrl }
+        currentTunnelUrl = newUrl
+        // Persist updated URLs
+        saveOpenSessionUrls()
+        FileLogger.d(TAG, "Session URL updated: $newUrl")
     }
 
     private fun saveOpenSessionUrls() {
