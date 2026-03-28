@@ -59,11 +59,31 @@
         if (target && target.focus) target.focus();
 
         const mapped = KEY_MAP[msg.key];
+        let key, code, kc;
+        if (mapped) {
+            key = mapped.key; code = mapped.code; kc = mapped.kc;
+        } else if (msg.key.length === 1) {
+            // Single character — generate proper code/keyCode for Monaco
+            key = msg.key;
+            const lo = msg.key.toLowerCase();
+            const up = msg.key.toUpperCase();
+            if (lo >= 'a' && lo <= 'z') {
+                code = 'Key' + up;
+                kc = up.charCodeAt(0); // 65-90
+            } else if (lo >= '0' && lo <= '9') {
+                code = 'Digit' + lo;
+                kc = lo.charCodeAt(0); // 48-57
+            } else {
+                // Symbols: use charCode as keyCode
+                code = msg.key;
+                kc = msg.key.charCodeAt(0);
+            }
+        } else {
+            key = msg.key; code = msg.key; kc = 0;
+        }
+
         const opts = {
-            key: mapped ? mapped.key : msg.key,
-            code: mapped ? mapped.code : msg.key,
-            keyCode: mapped ? mapped.kc : 0,
-            which: mapped ? mapped.kc : 0,
+            key, code, keyCode: kc, which: kc,
             bubbles: true, cancelable: true,
             ctrlKey: !!msg.ctrl, altKey: !!msg.alt,
             shiftKey: !!msg.shift, metaKey: !!msg.meta,

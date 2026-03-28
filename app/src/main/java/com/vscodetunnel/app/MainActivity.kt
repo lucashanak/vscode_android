@@ -1038,10 +1038,9 @@ class MainActivity : AppCompatActivity() {
         tunnelSessions.clear()
         currentSessionIdx = -1
         currentTunnelUrl = null
-        if (!suppressSystemKeyboard) {
-            sysKBSuppressed = false
-            geckoView.suppressIME = false
-        }
+        // Always allow system keyboard on launcher (for URL input etc.)
+        sysKBSuppressed = false
+        geckoView.suppressIME = false
         disconnectSsh()
         sessionWrapper.visibility = View.GONE
         geckoContainer.visibility = View.GONE
@@ -1068,10 +1067,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         currentSessionIdx = -1
-        if (!suppressSystemKeyboard) {
-            sysKBSuppressed = false
-            geckoView.suppressIME = false
-        }
+        // Always allow system keyboard on launcher
+        sysKBSuppressed = false
+        geckoView.suppressIME = false
         sessionWrapper.visibility = View.GONE
         geckoContainer.visibility = View.GONE
         sshContainer.visibility = View.GONE
