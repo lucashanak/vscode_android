@@ -1084,6 +1084,7 @@ class MainActivity : AppCompatActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(resources.getColor(R.color.background, theme))
+            fitsSystemWindows = true
         }
 
         // Top bar with title + save/cancel
@@ -1092,6 +1093,7 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundColor(resources.getColor(R.color.surface, theme))
             setPadding(dp(16), dp(12), dp(16), dp(12))
+            elevation = 4f
         }
         val titleTv = TextView(this).apply {
             text = "Settings"

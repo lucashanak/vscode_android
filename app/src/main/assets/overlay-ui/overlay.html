@@ -215,7 +215,7 @@ function addToClipHistory(text) {
 
 // ======================== HAPTIC ========================
 function haptic() {
-    if (navigator.vibrate) navigator.vibrate(5);
+    try { A.haptic(); } catch(_) {}
 }
 
 // ======================== COMPACT: LETTERS (Gboard-style) ========================

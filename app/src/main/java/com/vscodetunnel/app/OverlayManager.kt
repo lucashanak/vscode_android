@@ -307,5 +307,23 @@ class OverlayManager(
             val cm = geckoView.context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
             return cm.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
         }
+
+        @JavascriptInterface
+        fun haptic() {
+            val ctx = geckoView.context
+            val vibrator = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                val vm = ctx.getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as android.os.VibratorManager
+                vm.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                ctx.getSystemService(android.content.Context.VIBRATOR_SERVICE) as android.os.Vibrator
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                vibrator.vibrate(android.os.VibrationEffect.createOneShot(5, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(5)
+            }
+        }
     }
 }
