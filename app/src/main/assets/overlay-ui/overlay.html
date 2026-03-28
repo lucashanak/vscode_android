@@ -18,19 +18,29 @@ html, body { background:#1E1E1E; overflow:hidden; touch-action:none; user-select
 .panel { display:none; padding:2px; }
 .panel.active { display:block; }
 
-/* Keyboard */
+/* Keyboard base */
 .row { display:flex; gap:2px; padding:1px 2px; flex-wrap:nowrap; justify-content:center; }
-.key { flex:1 1 0; min-width:0; height:57px; padding:0 2px; font-size:17px; font-weight:500; font-family:'SF Mono','Fira Code','Consolas',monospace; background:rgba(255,255,255,0.1); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:4px; cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation; transition:background 0.08s; }
+.key { flex:1 1 0; min-width:0; height:57px; padding:0 2px; font-size:17px; font-weight:500; font-family:'SF Mono','Fira Code','Consolas',monospace; background:rgba(255,255,255,0.1); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:4px; cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation; transition:background 0.08s; white-space:nowrap; }
 .key:active, .key.pressed { background:rgba(0,122,204,0.5); border-color:#007acc; }
 .key.mod-active { background:#007acc; color:#fff; border-color:#007acc; }
-.space-key { flex:3 1 0; }
+.space-key { flex:4 1 0; }
 .wide-key { flex:1.5 1 0; }
+.xwide-key { flex:2 1 0; }
 .shifted .char-key { text-transform:uppercase; }
+
+/* F-key row styling */
+.fn-row { gap:1px; padding:1px 2px; }
+.fn-row .key { height:38px; font-size:11px; background:rgba(255,255,255,0.06); }
+.fn-sep { width:8px; flex:0 0 8px; }
 
 /* Scrollable rows */
 .row-scroll { justify-content:flex-start; overflow-x:auto; scrollbar-width:none; }
 .row-scroll::-webkit-scrollbar { display:none; }
 .row-scroll .key { flex:0 0 auto; min-width:40px; height:45px; padding:0 6px; font-size:14px; }
+
+/* Nav cluster for wide layout */
+.nav-sep { width:6px; flex:0 0 6px; }
+.nav-key { flex:0 0 auto; width:48px; font-size:11px; }
 
 /* Touchpad */
 .tp-panel.active { display:flex; flex-direction:column; }
@@ -40,7 +50,7 @@ html, body { background:#1E1E1E; overflow:hidden; touch-action:none; user-select
 .tp-btn { flex:1; height:36px; font-size:13px; font-weight:500; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.08); color:#bbb; border:1px solid rgba(255,255,255,0.12); border-radius:6px; cursor:pointer; touch-action:manipulation; }
 .tp-btn:active { background:rgba(0,122,204,0.4); border-color:#007acc; }
 
-/* Wide: side-by-side */
+/* Wide: side-by-side KB + TP */
 @media (min-width:901px) {
     .toolbar .tab-btn { display:none; }
     .panels { display:flex; flex-direction:row; align-items:stretch; }
@@ -48,8 +58,10 @@ html, body { background:#1E1E1E; overflow:hidden; touch-action:none; user-select
     .kb-panel { flex:2; min-width:0; }
     .tp-panel { display:flex; flex-direction:column; flex:1; min-width:0; border-left:1px solid rgba(255,255,255,0.1); }
     .tp-area { min-height:0; }
-    .key { height:51px; font-size:15px; }
-    .row-scroll .key { height:42px; font-size:13px; }
+    .key { height:46px; font-size:14px; }
+    .fn-row .key { height:32px; font-size:10px; }
+    .row-scroll .key { height:38px; font-size:12px; }
+    .nav-key { width:42px; height:46px; font-size:10px; }
 }
 
 /* Landscape narrow */
@@ -104,10 +116,19 @@ const A = window.Android || {
 };
 
 // ======================== KEY HELPERS ========================
-function K(key, label) { return `<button class="key" data-key="${key}">${label||key}</button>`; }
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function K(key, label, cls) {
+    const c = cls ? ` ${cls}` : '';
+    return `<button class="key${c}" data-key="${esc(key)}">${label||esc(key)}</button>`;
+}
 function C(ch) { return `<button class="key char-key" data-char="${ch}">${ch}</button>`; }
-function M(mod, label) { return `<button class="key key-mod wide-key" data-mod="${mod}">${label}</button>`; }
+function M(mod, label, cls) {
+    const c = cls ? ` ${cls}` : '';
+    return `<button class="key key-mod wide-key${c}" data-mod="${mod}">${label}</button>`;
+}
+function SEP(cls) { return `<div class="${cls||'fn-sep'}"></div>`; }
 
+// ======================== COMPACT: LETTERS ========================
 function compactLetters() {
     return `
         <div class="row">${C('q')}${C('w')}${C('e')}${C('r')}${C('t')}${C('y')}${C('u')}${C('i')}${C('o')}${C('p')}</div>
@@ -121,12 +142,13 @@ function compactLetters() {
         </div>`;
 }
 
+// ======================== COMPACT: SYMBOLS ========================
 function compactSymbols() {
     return `
         <div class="row">${'1234567890'.split('').map(d=>K(d)).join('')}</div>
-        <div class="row">${['!','@','#','$','%','^','&','*','(',')'].map(s=>K(s, s==='&'?'&amp;':s)).join('')}</div>
+        <div class="row">${['!','@','#','$','%','^','&','*','(',')'].map(s=>K(s)).join('')}</div>
         <div class="row-scroll row">
-            ${['-','=','`','~','_','+','[',']','{','}','|','\\\\',';',':',"'",'"','<','>','/','?'].map(s=>K(s, s==='&'?'&amp;':s==='<'?'&lt;':s==='>'?'&gt;':s==='"'?'&quot;':s)).join('')}
+            ${['-','=','`','~','_','+','[',']','{','}','|','\\',';',':',"'",'"','<','>','/','?'].map(s=>K(s)).join('')}
         </div>
         <div class="row">
             ${K('Left','\u25C0')} ${K('Down','\u25BC')} ${K('Up','\u25B2')} ${K('Right','\u25B6')}
@@ -143,32 +165,39 @@ function compactSymbols() {
         </div>`;
 }
 
+// ======================== WIDE: PC KEYBOARD ========================
 function fullKB() {
     return `
-        <div class="row">
-            ${K('Esc')} ${'1234567890'.split('').map(d=>K(d)).join('')} ${K('-')} ${K('=')} ${K('Bksp','\u232B')}
+        <div class="row fn-row">
+            ${K('Esc','Esc')} ${SEP()}
+            ${K('F1','F1')} ${K('F2','F2')} ${K('F3','F3')} ${K('F4','F4')} ${SEP()}
+            ${K('F5','F5')} ${K('F6','F6')} ${K('F7','F7')} ${K('F8','F8')} ${SEP()}
+            ${K('F9','F9')} ${K('F10','F10')} ${K('F11','F11')} ${K('F12','F12')} ${SEP()}
+            ${K('Ins','Ins','nav-key')} ${K('Del','Del','nav-key')}
         </div>
         <div class="row">
-            ${K('Tab')} ${C('q')}${C('w')}${C('e')}${C('r')}${C('t')}${C('y')}${C('u')}${C('i')}${C('o')}${C('p')}
-            ${K('[')} ${K(']')} ${K('\\\\')}
+            ${K('`','`')} ${'1234567890'.split('').map(d=>K(d)).join('')} ${K('-','-')} ${K('=','=')} ${K('Bksp','\u232B','xwide-key')}
+            ${SEP('nav-sep')} ${K('Home','Home','nav-key')} ${K('PgUp','PgUp','nav-key')}
         </div>
         <div class="row">
-            ${M('ctrl','Ctrl')} ${C('a')}${C('s')}${C('d')}${C('f')}${C('g')}${C('h')}${C('j')}${C('k')}${C('l')}
-            ${K(';')} ${K("'")} ${K('Enter','\u21B5')}
+            ${K('Tab','Tab','wide-key')} ${C('q')}${C('w')}${C('e')}${C('r')}${C('t')}${C('y')}${C('u')}${C('i')}${C('o')}${C('p')}
+            ${K('[','[')} ${K(']',']')} ${K('\\','\\')}
+            ${SEP('nav-sep')} ${K('End','End','nav-key')} ${K('PgDn','PgDn','nav-key')}
         </div>
         <div class="row">
-            ${M('shift','\u21E7')} ${C('z')}${C('x')}${C('c')}${C('v')}${C('b')}${C('n')}${C('m')}
-            ${K(',')} ${K('.')} ${K('/')} ${M('shift','\u21E7')}
+            ${M('ctrl','Ctrl','xwide-key')} ${C('a')}${C('s')}${C('d')}${C('f')}${C('g')}${C('h')}${C('j')}${C('k')}${C('l')}
+            ${K(';',';')} ${K("'","'")} ${K('Enter','\u21B5','xwide-key')}
         </div>
         <div class="row">
-            ${M('alt','Alt')} ${M('meta','Meta')} ${K('\`')}
+            ${M('shift','\u21E7','xwide-key')} ${C('z')}${C('x')}${C('c')}${C('v')}${C('b')}${C('n')}${C('m')}
+            ${K(',',',')} ${K('.','.') } ${K('/','/') } ${M('shift','\u21E7','xwide-key')}
+            ${SEP('nav-sep')} ${K('Up','\u25B2','nav-key')}
+        </div>
+        <div class="row">
+            ${M('alt','Alt','wide-key')} ${M('meta','Meta','wide-key')}
             <button class="key space-key" data-key="Space">&nbsp;</button>
-            ${K('Left','\u25C0')} ${K('Down','\u25BC')} ${K('Up','\u25B2')} ${K('Right','\u25B6')}
-        </div>
-        <div class="row row-scroll">
-            ${'F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12'.split(' ').map(f=>K(f)).join('')}
-            ${['~','!','@','#','$','%','^','&','*','(',')','-','_','+','=','{','}','|',':','"','<','>','?'].map(s=>K(s,s==='&'?'&amp;':s==='<'?'&lt;':s==='>'?'&gt;':s==='"'?'&quot;':s)).join('')}
-            ${K('Home')} ${K('End')} ${K('PgUp')} ${K('PgDn')} ${K('Del')} ${K('Ins')}
+            ${M('alt','Alt','wide-key')} ${M('meta','Meta','wide-key')}
+            ${SEP('nav-sep')} ${K('Left','\u25C0','nav-key')} ${K('Down','\u25BC','nav-key')} ${K('Right','\u25B6','nav-key')}
         </div>`;
 }
 
@@ -180,7 +209,6 @@ const tpPanel = document.getElementById('tpPanel');
 function renderCompact() {
     kbPanel.innerHTML = compactPage === 'abc' ? compactLetters() : compactSymbols();
     attachKeyEvents();
-    // Attach sym/abc toggle
     const symBtn = document.getElementById('symToggle');
     if (symBtn) {
         symBtn.addEventListener('pointerdown', e => {
@@ -219,10 +247,11 @@ function toggleMod(mod) {
     if (mod === 'shift') kbPanel.classList.toggle('shifted', mods.shift);
 }
 
-// Printable single-char keys that need special key codes for dispatchKey
-const SPECIAL_KEYS = new Set(['Esc','Tab','Enter','Bksp','Del','Space','Home','End',
+// Keys that ALWAYS go through dispatchKey (never sendChar)
+const SPECIAL_KEYS = new Set(['Esc','Tab','Enter','Bksp','Del','Home','End',
     'PgUp','PgDn','Ins','Up','Down','Left','Right',
     'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12']);
+// Note: Space is NOT here — unmodified Space goes through sendChar(' ')
 
 function attachKeyEvents() {
     // Character keys (a-z)
@@ -230,22 +259,31 @@ function attachKeyEvents() {
         btn.addEventListener('pointerdown', e => {
             e.preventDefault(); e.stopPropagation();
             const ch = mods.shift ? btn.dataset.char.toUpperCase() : btn.dataset.char;
-            A.sendChar(ch);
+            if (mods.ctrl || mods.alt || mods.meta) {
+                // Modified char → send as key event (e.g. Ctrl+C)
+                A.sendKey(JSON.stringify({key:ch, ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+            } else {
+                A.sendChar(ch);
+            }
             resetMods();
             btn.classList.add('pressed'); setTimeout(() => btn.classList.remove('pressed'), 100);
         });
     });
 
-    // Special + symbol keys
+    // Special + symbol keys (data-key)
     kbPanel.querySelectorAll('.key[data-key]:not(.key-mod)').forEach(btn => {
         btn.addEventListener('pointerdown', e => {
             e.preventDefault(); e.stopPropagation();
             const key = btn.dataset.key;
-            if (SPECIAL_KEYS.has(key) || mods.ctrl || mods.alt || mods.meta) {
-                // Special key or modified → send as key event (keydown/keyup)
+
+            if (key === 'Space' && !mods.ctrl && !mods.alt && !mods.meta) {
+                // Unmodified space → printable char path (InputEvent)
+                A.sendChar(' ');
+            } else if (SPECIAL_KEYS.has(key) || key === 'Space' || mods.ctrl || mods.alt || mods.meta) {
+                // Special key or any modifier → keydown/keyup
                 A.sendKey(JSON.stringify({key, ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
             } else {
-                // Printable symbol → send as char insertion
+                // Printable symbol (e.g. !, @, #) → char insertion
                 A.sendChar(key);
             }
             resetMods();
@@ -323,7 +361,7 @@ document.getElementById('hideBtn').addEventListener('pointerdown', e => {
     A.hideOverlay();
 });
 
-// Prevent any focus stealing
+// Prevent focus stealing
 document.addEventListener('touchstart', e => e.preventDefault(), {passive:false});
 document.addEventListener('mousedown', e => e.preventDefault());
 

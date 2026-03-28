@@ -8,4 +8,10 @@
         <item name="colorOnPrimary">@color/text_white</item>
         <item name="colorSurface">@color/surface</item>
     </style>
+
+    <style name="AppDialogTheme" parent="Theme.Material3.Dark.Dialog.Alert">
+        <item name="android:windowBackground">@color/surface</item>
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorSurface">@color/surface</item>
+    </style>
 </resources>

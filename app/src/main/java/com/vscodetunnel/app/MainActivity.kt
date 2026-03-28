@@ -1,5 +1,6 @@
 package com.vscodetunnel.app
 
+import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Intent
 import android.content.SharedPreferences
@@ -11,7 +12,9 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import android.webkit.WebView
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -26,13 +29,16 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import android.webkit.WebView
-import org.json.JSONObject
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.WebExtension
+import com.vscodetunnel.app.AppSettings.keepAliveEnabled
+import com.vscodetunnel.app.AppSettings.hapticFeedback
+import com.vscodetunnel.app.AppSettings.terminalFontSize
+import com.vscodetunnel.app.AppSettings.defaultSshPort
+import com.vscodetunnel.app.AppSettings.defaultSshUser
 
 class MainActivity : AppCompatActivity() {
     companion object {
@@ -48,6 +54,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private lateinit var geckoView: SuppressableGeckoView
+    private lateinit var sessionWrapper: View
     private lateinit var geckoContainer: View
     private lateinit var launcherScroll: View
     private lateinit var overlayManager: OverlayManager
@@ -56,6 +63,14 @@ class MainActivity : AppCompatActivity() {
     private var authDialog: Dialog? = null
     private var currentTunnelUrl: String? = null
     private var sysKBSuppressed = false
+
+    // SSH
+    private lateinit var sshContainer: View
+    private lateinit var sshTerminalWebView: WebView
+    private lateinit var sshServerList: LinearLayout
+    private lateinit var sshEmptyText: TextView
+    private var sshSessionManager: SshSessionManager? = null
+    private var currentSshServer: SshServer? = null
 
     // UI references
     private lateinit var btnGitHubLogin: Button
@@ -85,7 +100,6 @@ class MainActivity : AppCompatActivity() {
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.rootFrame)) { view, windowInsets ->
             if (sysKBSuppressed) {
-                // Overlay active — ignore ALL IME insets, only apply system bars
                 val sysBarInsets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
                 view.setPadding(sysBarInsets.left, sysBarInsets.top, sysBarInsets.right, sysBarInsets.bottom)
             } else {
@@ -101,12 +115,17 @@ class MainActivity : AppCompatActivity() {
         setupListeners()
         setupBackNavigation()
 
-        // Initialize GeckoView engine in background
+        // Initialize GeckoView engine
         val runtime = GeckoManager.getRuntime(this)
         GeckoManager.installOverlayExtension(runtime)
 
         geckoView = findViewById(R.id.geckoView)
+        sessionWrapper = findViewById(R.id.sessionWrapper)
         geckoContainer = findViewById(R.id.geckoContainer)
+
+        // SSH views
+        sshContainer = findViewById(R.id.sshContainer)
+        sshTerminalWebView = findViewById(R.id.sshTerminalWebView)
 
         // Setup overlay manager
         val overlayWebView = findViewById<WebView>(R.id.overlayWebView)
@@ -127,6 +146,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         renderRecent()
+        renderSshServers()
         loadLastUrlIntoInput()
         checkForUpdate()
     }
@@ -149,12 +169,16 @@ class MainActivity : AppCompatActivity() {
         updateBanner = findViewById(R.id.updateBanner)
         updateText = findViewById(R.id.updateText)
         updateLink = findViewById(R.id.updateLink)
+        sshServerList = findViewById(R.id.sshServerList)
+        sshEmptyText = findViewById(R.id.sshEmptyText)
     }
 
     private fun setupListeners() {
         btnGitHubLogin.setOnClickListener { startGitHubLogin() }
         findViewById<View>(R.id.btnLogout).setOnClickListener { logout() }
         findViewById<View>(R.id.btnRefreshTunnels).setOnClickListener { loadTunnels() }
+        findViewById<View>(R.id.btnAddSsh).setOnClickListener { showSshServerDialog(null) }
+        findViewById<View>(R.id.btnSettings).setOnClickListener { showSettingsDialog() }
 
         findViewById<Button>(R.id.btnConnect).setOnClickListener {
             connectTo(urlInput.text.toString().trim())
@@ -177,7 +201,6 @@ class MainActivity : AppCompatActivity() {
             } else {
                 logText.text = FileLogger.readLog(this)
                 logScroll.visibility = View.VISIBLE
-                // Scroll to bottom
                 (logScroll as ScrollView).post {
                     logScroll.fullScroll(View.FOCUS_DOWN)
                 }
@@ -213,7 +236,6 @@ class MainActivity : AppCompatActivity() {
                 val openUri = data.optString("verification_uri_complete",
                     data.optString("verification_uri", "https://github.com/login/device"))
 
-                // Auto-open in system browser
                 try {
                     startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(openUri)))
                 } catch (_: Exception) {}
@@ -250,7 +272,6 @@ class MainActivity : AppCompatActivity() {
                         btnGitHubLogin.visibility = View.VISIBLE
                         return@launch
                     }
-                    // authorization_pending / slow_down → keep polling
                 } catch (e: Exception) {
                     showError("Auth polling failed: $e")
                     deviceCodeSection.visibility = View.GONE
@@ -341,7 +362,6 @@ class MainActivity : AppCompatActivity() {
             ).apply { bottomMargin = dp(6) }
         }
 
-        // Status dot
         val dot = View(this).apply {
             layoutParams = LinearLayout.LayoutParams(dp(8), dp(8)).apply {
                 marginEnd = dp(12)
@@ -349,7 +369,6 @@ class MainActivity : AppCompatActivity() {
             setBackgroundResource(if (tunnel.isOnline) R.drawable.status_online else R.drawable.status_offline)
         }
 
-        // Info
         val info = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -382,6 +401,291 @@ class MainActivity : AppCompatActivity() {
         tunnelList.addView(item)
     }
 
+    // --- SSH Servers ---
+
+    private fun renderSshServers() {
+        val servers = ServerStorage.getServers(this)
+        sshServerList.removeAllViews()
+
+        if (servers.isEmpty()) {
+            sshEmptyText.visibility = View.VISIBLE
+            return
+        }
+
+        sshEmptyText.visibility = View.GONE
+        for (server in servers) {
+            addSshServerItem(server)
+        }
+    }
+
+    private fun addSshServerItem(server: SshServer) {
+        val item = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundResource(R.drawable.bg_tunnel_item)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(6) }
+        }
+
+        val info = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        val nameView = TextView(this).apply {
+            text = server.name.ifBlank { "${server.username}@${server.host}" }
+            setTextColor(resources.getColor(R.color.text_white, theme))
+            textSize = 15f
+        }
+
+        val descView = TextView(this).apply {
+            text = "${server.username}@${server.host}:${server.port}"
+            setTextColor(resources.getColor(R.color.text_secondary, theme))
+            textSize = 12f
+        }
+
+        info.addView(nameView)
+        info.addView(descView)
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        val editBtn = TextView(this).apply {
+            text = "Edit"
+            setTextColor(resources.getColor(R.color.primary, theme))
+            textSize = 13f
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            setOnClickListener { showSshServerDialog(server) }
+        }
+
+        val deleteBtn = TextView(this).apply {
+            text = "Del"
+            setTextColor(resources.getColor(R.color.error, theme))
+            textSize = 13f
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            setOnClickListener {
+                ServerStorage.deleteServer(this@MainActivity, server.id)
+                renderSshServers()
+            }
+        }
+
+        actions.addView(editBtn)
+        actions.addView(deleteBtn)
+
+        item.addView(info)
+        item.addView(actions)
+
+        item.setOnClickListener { connectSsh(server) }
+
+        sshServerList.addView(item)
+    }
+
+    private fun showSshServerDialog(existing: SshServer?) {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(16), dp(24), dp(8))
+        }
+
+        fun addField(hint: String, value: String = "", inputType: Int = android.text.InputType.TYPE_CLASS_TEXT): EditText {
+            return EditText(this).apply {
+                this.hint = hint
+                setText(value)
+                this.inputType = inputType
+                setTextColor(resources.getColor(R.color.text_primary, theme))
+                setHintTextColor(resources.getColor(R.color.text_secondary, theme))
+                textSize = 14f
+                background = resources.getDrawable(R.drawable.bg_input, theme)
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(8) }
+            }
+        }
+
+        val nameField = addField("Display name (optional)", existing?.name ?: "")
+        val hostField = addField("Host", existing?.host ?: "")
+        val portField = addField("Port", (existing?.port ?: defaultSshPort).toString(),
+            android.text.InputType.TYPE_CLASS_NUMBER)
+        val userField = addField("Username", existing?.username ?: defaultSshUser)
+        val passField = addField("Password", existing?.password ?: "",
+            android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD)
+
+        layout.addView(nameField)
+        layout.addView(hostField)
+        layout.addView(portField)
+        layout.addView(userField)
+        layout.addView(passField)
+
+        AlertDialog.Builder(this, R.style.AppDialogTheme)
+            .setTitle(if (existing != null) "Edit Server" else "Add SSH Server")
+            .setView(layout)
+            .setPositiveButton("Save") { _, _ ->
+                val host = hostField.text.toString().trim()
+                val user = userField.text.toString().trim()
+                if (host.isBlank() || user.isBlank()) {
+                    showError("Host and username are required")
+                    return@setPositiveButton
+                }
+                val server = SshServer(
+                    id = existing?.id ?: System.currentTimeMillis().toString(),
+                    name = nameField.text.toString().trim(),
+                    host = host,
+                    port = portField.text.toString().toIntOrNull() ?: 22,
+                    username = user,
+                    authMethod = SshServer.AuthMethod.PASSWORD,
+                    password = passField.text.toString()
+                )
+                ServerStorage.saveServer(this, server)
+                renderSshServers()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun connectSsh(server: SshServer) {
+        currentSshServer = server
+
+        // Setup SSH terminal
+        val mgr = SshSessionManager(sshTerminalWebView) { reason ->
+            runOnUiThread {
+                FileLogger.d(TAG, "SSH disconnected: $reason")
+                if (keepAliveEnabled) {
+                    KeepAliveService.stop(this)
+                }
+            }
+        }
+        sshSessionManager?.destroy()
+        sshSessionManager = mgr
+
+        // Configure overlay for SSH
+        overlayManager.inputTarget = OverlayManager.InputTarget.SSH_TERMINAL
+        overlayManager.sshSessionManager = mgr
+
+        mgr.setupTerminal()
+        mgr.connect(server)
+
+        // Switch to SSH view
+        launcherScroll.visibility = View.GONE
+        sessionWrapper.visibility = View.VISIBLE
+        geckoContainer.visibility = View.GONE
+        sshContainer.visibility = View.VISIBLE
+        findViewById<Button>(R.id.floatingToggle).visibility = View.VISIBLE
+
+        // Start keepalive
+        if (keepAliveEnabled) {
+            KeepAliveService.start(this, "SSH: ${server.username}@${server.host}")
+        }
+    }
+
+    private fun disconnectSsh() {
+        sshSessionManager?.destroy()
+        sshSessionManager = null
+        currentSshServer = null
+        overlayManager.inputTarget = OverlayManager.InputTarget.VSCODE
+        overlayManager.sshSessionManager = null
+        if (keepAliveEnabled) {
+            KeepAliveService.stop(this)
+        }
+    }
+
+    // --- Settings ---
+
+    private fun showSettingsDialog() {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(16), dp(24), dp(8))
+        }
+
+        val keepAliveCheck = CheckBox(this).apply {
+            text = "Keep alive in background"
+            isChecked = keepAliveEnabled
+            setTextColor(resources.getColor(R.color.text_primary, theme))
+            textSize = 14f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(12) }
+        }
+
+        val fontLabel = TextView(this).apply {
+            text = "Terminal font size"
+            setTextColor(resources.getColor(R.color.text_secondary, theme))
+            textSize = 12f
+        }
+        val fontField = EditText(this).apply {
+            setText(terminalFontSize.toString())
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setTextColor(resources.getColor(R.color.text_primary, theme))
+            textSize = 14f
+            background = resources.getDrawable(R.drawable.bg_input, theme)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(12) }
+        }
+
+        val portLabel = TextView(this).apply {
+            text = "Default SSH port"
+            setTextColor(resources.getColor(R.color.text_secondary, theme))
+            textSize = 12f
+        }
+        val portField = EditText(this).apply {
+            setText(defaultSshPort.toString())
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setTextColor(resources.getColor(R.color.text_primary, theme))
+            textSize = 14f
+            background = resources.getDrawable(R.drawable.bg_input, theme)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(12) }
+        }
+
+        val userLabel = TextView(this).apply {
+            text = "Default SSH username"
+            setTextColor(resources.getColor(R.color.text_secondary, theme))
+            textSize = 12f
+        }
+        val userField = EditText(this).apply {
+            setText(defaultSshUser)
+            setTextColor(resources.getColor(R.color.text_primary, theme))
+            textSize = 14f
+            background = resources.getDrawable(R.drawable.bg_input, theme)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(12) }
+        }
+
+        layout.addView(keepAliveCheck)
+        layout.addView(fontLabel)
+        layout.addView(fontField)
+        layout.addView(portLabel)
+        layout.addView(portField)
+        layout.addView(userLabel)
+        layout.addView(userField)
+
+        AlertDialog.Builder(this, R.style.AppDialogTheme)
+            .setTitle("Settings")
+            .setView(layout)
+            .setPositiveButton("Save") { _, _ ->
+                keepAliveEnabled = keepAliveCheck.isChecked
+                terminalFontSize = fontField.text.toString().toIntOrNull() ?: 14
+                defaultSshPort = portField.text.toString().toIntOrNull() ?: 22
+                defaultSshUser = userField.text.toString().trim()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     // --- Navigation ---
 
     private fun connectTo(url: String) {
@@ -405,7 +709,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openTunnel(url: String) {
-        // Wait for overlay extension to be installed before loading
         if (!GeckoManager.extensionReady) {
             FileLogger.d(TAG, "Extension not ready, retrying in 500ms...")
             lifecycleScope.launch {
@@ -417,14 +720,12 @@ class MainActivity : AppCompatActivity() {
 
         FileLogger.d(TAG, "Opening tunnel: $url")
 
-        // Close any previous session
         tunnelSession?.close()
 
         val session = GeckoManager.createTunnelSession()
         val runtime = GeckoManager.getRuntime(this)
         session.open(runtime)
 
-        // Navigation delegate for auth popups and external links
         session.navigationDelegate = object : GeckoSession.NavigationDelegate {
             override fun onNewSession(
                 session: GeckoSession,
@@ -443,7 +744,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Content delegate for close requests
         session.contentDelegate = object : GeckoSession.ContentDelegate {
             override fun onCloseRequest(session: GeckoSession) {
                 runOnUiThread { showLauncher() }
@@ -455,7 +755,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Prompt delegate — handle JS alerts/confirms/popups so they don't crash
         session.promptDelegate = object : GeckoSession.PromptDelegate {
             override fun onAlertPrompt(
                 session: GeckoSession,
@@ -489,7 +788,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Permission delegate — allow persistent storage for service workers
         session.permissionDelegate = object : GeckoSession.PermissionDelegate {
             override fun onContentPermissionRequest(
                 session: GeckoSession,
@@ -500,18 +798,25 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Message delegate — overlay extension sends resize requests
         setupOverlayMessaging(session)
+        overlayManager.inputTarget = OverlayManager.InputTarget.VSCODE
+        overlayManager.sshSessionManager = null
 
         tunnelSession = session
         geckoView.releaseSession()
         geckoView.setSession(session)
         session.loadUri(url)
 
-        // Switch to GeckoView
         launcherScroll.visibility = View.GONE
+        sessionWrapper.visibility = View.VISIBLE
+        sshContainer.visibility = View.GONE
         geckoContainer.visibility = View.VISIBLE
         findViewById<Button>(R.id.floatingToggle).visibility = View.VISIBLE
+
+        // Start keepalive
+        if (keepAliveEnabled) {
+            KeepAliveService.start(this, "VS Code: $url")
+        }
     }
 
     private fun setupOverlayMessaging(session: GeckoSession) {
@@ -520,7 +825,6 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Port-based messaging: content script connects via connectNative('browser')
         val messageDelegate = object : WebExtension.MessageDelegate {
             override fun onConnect(port: WebExtension.Port) {
                 FileLogger.d(TAG, "Content script port connected")
@@ -539,25 +843,18 @@ class MainActivity : AppCompatActivity() {
             val controller = WindowInsetsControllerCompat(window, geckoView)
             controller.hide(WindowInsetsCompat.Type.ime())
         }
-        // Force insets re-evaluation so IME padding is cleared/applied correctly
         ViewCompat.requestApplyInsets(findViewById(R.id.rootFrame))
     }
 
-
-
     private fun openAuthPopup(uri: String): GeckoResult<GeckoSession>? {
-        // IMPORTANT: Do NOT call session.open() — onNewSession requires an unopened session.
-        // GeckoView will open it automatically after we return it.
         val popupSession = GeckoManager.createTunnelSession()
         FileLogger.d(TAG, "Created popup session for: $uri")
 
-        // Set all delegates on the unopened session before returning it
         popupSession.navigationDelegate = object : GeckoSession.NavigationDelegate {
             override fun onNewSession(
                 session: GeckoSession,
                 uri: String
             ): GeckoResult<GeckoSession>? {
-                // Nested popups: open in system browser instead
                 FileLogger.d(TAG, "Nested popup, opening in browser: $uri")
                 try {
                     runOnUiThread {
@@ -604,7 +901,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Show popup dialog on UI thread (session will be opened by GeckoView after we return it)
         runOnUiThread {
             try {
                 val popupView = GeckoView(this)
@@ -633,7 +929,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Return unopened session — GeckoView will open it and load the URL
         return GeckoResult.fromValue(popupSession)
     }
 
@@ -650,7 +945,10 @@ class MainActivity : AppCompatActivity() {
         currentTunnelUrl = null
         sysKBSuppressed = false
         geckoView.suppressIME = false
+        disconnectSsh()
+        sessionWrapper.visibility = View.GONE
         geckoContainer.visibility = View.GONE
+        sshContainer.visibility = View.GONE
         findViewById<Button>(R.id.floatingToggle).visibility = View.GONE
         launcherScroll.visibility = View.VISIBLE
     }
@@ -753,6 +1051,10 @@ class MainActivity : AppCompatActivity() {
                     overlayManager.hide()
                     return
                 }
+                if (sshContainer.visibility == View.VISIBLE) {
+                    showLauncher()
+                    return
+                }
                 if (geckoContainer.visibility == View.VISIBLE) {
                     showLauncher()
                     return
@@ -773,8 +1075,8 @@ class MainActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString(STATE_TUNNEL_URL, currentTunnelUrl)
-        outState.putBoolean(STATE_GECKOVIEW_VISIBLE, geckoView.visibility == View.VISIBLE)
-        FileLogger.d(TAG, "onSaveInstanceState: url=$currentTunnelUrl, visible=${geckoView.visibility == View.VISIBLE}")
+        outState.putBoolean(STATE_GECKOVIEW_VISIBLE, geckoContainer.visibility == View.VISIBLE)
+        FileLogger.d(TAG, "onSaveInstanceState: url=$currentTunnelUrl, visible=${geckoContainer.visibility == View.VISIBLE}")
     }
 
     override fun onRestoreInstanceState(savedInstanceState: Bundle) {
@@ -796,6 +1098,8 @@ class MainActivity : AppCompatActivity() {
         geckoView.releaseSession()
         tunnelSession?.close()
         tunnelSession = null
+        sshSessionManager?.destroy()
+        sshSessionManager = null
     }
 
     // --- Utils ---

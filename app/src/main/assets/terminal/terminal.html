@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { background:#1E1E1E; overflow:hidden; width:100%; height:100%; }
+#terminal { width:100%; height:100%; }
+.xterm { height:100%; }
+</style>
+</head>
+<body>
+<div id="terminal"></div>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<script>
+'use strict';
+
+const A = window.Android;
+const term = new Terminal({
+    cursorBlink: true,
+    fontSize: 14,
+    fontFamily: "'Fira Code', 'Consolas', 'Courier New', monospace",
+    theme: {
+        background: '#1E1E1E',
+        foreground: '#CCCCCC',
+        cursor: '#AEAFAD',
+        selectionBackground: '#264F78',
+        black: '#000000',
+        red: '#CD3131',
+        green: '#0DBC79',
+        yellow: '#E5E510',
+        blue: '#2472C8',
+        magenta: '#BC3FBC',
+        cyan: '#11A8CD',
+        white: '#E5E5E5',
+        brightBlack: '#666666',
+        brightRed: '#F14C4C',
+        brightGreen: '#23D18B',
+        brightYellow: '#F5F543',
+        brightBlue: '#3B8EEA',
+        brightMagenta: '#D670D6',
+        brightCyan: '#29B8DB',
+        brightWhite: '#FFFFFF'
+    },
+    allowTransparency: false,
+    scrollback: 5000,
+    convertEol: true
+});
+
+const fitAddon = new FitAddon.FitAddon();
+term.loadAddon(fitAddon);
+term.open(document.getElementById('terminal'));
+fitAddon.fit();
+
+// Send user input to Android
+term.onData(data => {
+    if (A) A.onTerminalInput(data);
+});
+
+// Resize notification
+const ro = new ResizeObserver(() => {
+    fitAddon.fit();
+    if (A) A.onTerminalResize(term.cols, term.rows);
+});
+ro.observe(document.getElementById('terminal'));
+
+// Called from Android to write SSH output
+function writeOutput(text) {
+    term.write(text);
+}
+
+// Called from Android to write terminal info messages
+function writeInfo(text) {
+    term.write('\x1b[33m' + text + '\x1b[0m');
+}
+
+// Called from Android to clear terminal
+function clearTerminal() {
+    term.clear();
+}
+
+// Called from Android to set font size
+function setFontSize(size) {
+    term.options.fontSize = size;
+    fitAddon.fit();
+}
+
+// Notify Android that terminal is ready
+if (A) {
+    setTimeout(() => {
+        fitAddon.fit();
+        A.onTerminalReady(term.cols, term.rows);
+    }, 100);
+}
+</script>
+</body>
+</html>

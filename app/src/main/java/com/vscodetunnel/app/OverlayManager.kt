@@ -19,11 +19,17 @@ class OverlayManager(
         private const val TAG = "OverlayManager"
     }
 
+    enum class InputTarget { VSCODE, SSH_TERMINAL }
+
     private var port: WebExtension.Port? = null
     private var cursorX = 0f
     private var cursorY = 0f
     var isVisible = false
         private set
+
+    // SSH terminal routing
+    var inputTarget = InputTarget.VSCODE
+    var sshSessionManager: SshSessionManager? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     fun setup() {
@@ -42,10 +48,14 @@ class OverlayManager(
         if (isVisible) return
         isVisible = true
         webView.visibility = View.VISIBLE
-        cursorView.visibility = View.VISIBLE
+        if (inputTarget == InputTarget.VSCODE) {
+            cursorView.visibility = View.VISIBLE
+        }
         floatingToggle.visibility = View.GONE
         onVisibilityChanged(true)
-        sendToContentScript("overlayActive", JSONObject().put("active", true))
+        if (inputTarget == InputTarget.VSCODE) {
+            sendToContentScript("overlayActive", JSONObject().put("active", true))
+        }
     }
 
     fun hide() {
@@ -55,7 +65,9 @@ class OverlayManager(
         cursorView.visibility = View.GONE
         floatingToggle.visibility = View.VISIBLE
         onVisibilityChanged(false)
-        sendToContentScript("overlayActive", JSONObject().put("active", false))
+        if (inputTarget == InputTarget.VSCODE) {
+            sendToContentScript("overlayActive", JSONObject().put("active", false))
+        }
     }
 
     fun setPort(p: WebExtension.Port) {
@@ -69,8 +81,7 @@ class OverlayManager(
                 }
             }
         })
-        // Sync current state
-        if (isVisible) {
+        if (isVisible && inputTarget == InputTarget.VSCODE) {
             sendToContentScript("overlayActive", JSONObject().put("active", true))
         }
     }
@@ -92,25 +103,88 @@ class OverlayManager(
         cursorView.translationY = cursorY - cursorView.height / 2f
     }
 
-    // Convert cursor position from native px to CSS px for content script
     private fun cursorCssPx(): Pair<Float, Float> {
         val density = geckoView.resources.displayMetrics.density
         return Pair(cursorX / density, cursorY / density)
+    }
+
+    // Map overlay key names to terminal escape sequences
+    private fun keyToTerminalSequence(key: String, ctrl: Boolean, alt: Boolean, shift: Boolean): String? {
+        val base = when (key) {
+            "Enter" -> "\r"
+            "Bksp" -> "\u007F"
+            "Tab" -> "\t"
+            "Esc" -> "\u001B"
+            "Space" -> " "
+            "Up" -> "\u001B[A"
+            "Down" -> "\u001B[B"
+            "Right" -> "\u001B[C"
+            "Left" -> "\u001B[D"
+            "Home" -> "\u001B[H"
+            "End" -> "\u001B[F"
+            "PgUp" -> "\u001B[5~"
+            "PgDn" -> "\u001B[6~"
+            "Del" -> "\u001B[3~"
+            "Ins" -> "\u001B[2~"
+            "F1" -> "\u001BOP"
+            "F2" -> "\u001BOQ"
+            "F3" -> "\u001BOR"
+            "F4" -> "\u001BOS"
+            "F5" -> "\u001B[15~"
+            "F6" -> "\u001B[17~"
+            "F7" -> "\u001B[18~"
+            "F8" -> "\u001B[19~"
+            "F9" -> "\u001B[20~"
+            "F10" -> "\u001B[21~"
+            "F11" -> "\u001B[23~"
+            "F12" -> "\u001B[24~"
+            else -> {
+                if (key.length == 1) key else return null
+            }
+        }
+
+        // Ctrl modifier: convert letter to control character
+        if (ctrl && base.length == 1) {
+            val ch = base[0]
+            if (ch in 'a'..'z') return (ch - 'a' + 1).toChar().toString()
+            if (ch in 'A'..'Z') return (ch - 'A' + 1).toChar().toString()
+        }
+
+        // Alt modifier: prepend ESC
+        if (alt && base.length == 1) {
+            return "\u001B$base"
+        }
+
+        return base
     }
 
     @Suppress("unused")
     inner class JSInterface {
         @JavascriptInterface
         fun sendChar(ch: String) {
-            sendToContentScript("char", JSONObject().put("char", ch))
+            if (inputTarget == InputTarget.SSH_TERMINAL) {
+                sshSessionManager?.sendInput(ch)
+            } else {
+                sendToContentScript("char", JSONObject().put("char", ch))
+            }
         }
 
         @JavascriptInterface
         fun sendKey(json: String) {
             try {
                 val obj = JSONObject(json)
-                obj.put("type", "key")
-                port?.postMessage(obj)
+                if (inputTarget == InputTarget.SSH_TERMINAL) {
+                    val seq = keyToTerminalSequence(
+                        obj.getString("key"),
+                        obj.optBoolean("ctrl"),
+                        obj.optBoolean("alt"),
+                        obj.optBoolean("shift")
+                    )
+                    if (seq != null) sshSessionManager?.sendInput(seq)
+                } else {
+                    obj.put("type", "key")
+                    port?.postMessage(obj)
+                }
             } catch (e: Exception) {
                 FileLogger.w(TAG, "sendKey error: $e")
             }
@@ -118,6 +192,7 @@ class OverlayManager(
 
         @JavascriptInterface
         fun pointerMove(dx: Float, dy: Float) {
+            if (inputTarget == InputTarget.SSH_TERMINAL) return
             val density = geckoView.resources.displayMetrics.density
             geckoView.post {
                 updateCursor(dx * density, dy * density)
@@ -128,18 +203,21 @@ class OverlayManager(
 
         @JavascriptInterface
         fun click(button: Int) {
+            if (inputTarget == InputTarget.SSH_TERMINAL) return
             val (cx, cy) = cursorCssPx()
             sendToContentScript("click", JSONObject().put("button", button).put("x", cx).put("y", cy))
         }
 
         @JavascriptInterface
         fun doubleClick() {
+            if (inputTarget == InputTarget.SSH_TERMINAL) return
             val (cx, cy) = cursorCssPx()
             sendToContentScript("doubleClick", JSONObject().put("x", cx).put("y", cy))
         }
 
         @JavascriptInterface
         fun scroll(deltaY: Float) {
+            if (inputTarget == InputTarget.SSH_TERMINAL) return
             val (cx, cy) = cursorCssPx()
             sendToContentScript("scroll", JSONObject().put("deltaY", deltaY).put("x", cx).put("y", cy))
         }
