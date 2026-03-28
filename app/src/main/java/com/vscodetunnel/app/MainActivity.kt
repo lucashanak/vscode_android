@@ -1032,11 +1032,13 @@ class MainActivity : AppCompatActivity() {
     private var sftpManager: SftpManager? = null
     private var pendingSftpUploadPath: String? = null
     private val sftpUploadLauncher = registerForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null && pendingSftpUploadPath != null) {
-            val name = getFileNameFromUri(uri)
-            sftpManager?.uploadFileFromUri(pendingSftpUploadPath!!, uri, name)
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty() && pendingSftpUploadPath != null) {
+            for (uri in uris) {
+                val name = getFileNameFromUri(uri)
+                sftpManager?.uploadFileFromUri(pendingSftpUploadPath!!, uri, name)
+            }
         }
         pendingSftpUploadPath = null
     }

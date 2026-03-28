@@ -101,57 +101,155 @@ class SftpManager(
         webView.post { webView.evaluateJavascript(js, null) }
     }
 
+    // Recursive folder download
+    private fun downloadRecursive(ch: ChannelSftp, remotePath: String, localDir: File) {
+        localDir.mkdirs()
+        @Suppress("UNCHECKED_CAST")
+        val entries = ch.ls(remotePath) as java.util.Vector<ChannelSftp.LsEntry>
+        for (entry in entries) {
+            val name = entry.filename
+            if (name == "." || name == "..") continue
+            val rPath = "$remotePath/$name"
+            val lPath = File(localDir, name)
+            if (entry.attrs.isDir) {
+                downloadRecursive(ch, rPath, lPath)
+            } else {
+                ch.get(rPath, lPath.absolutePath)
+            }
+        }
+    }
+
+    // Recursive folder upload
+    fun uploadRecursive(ch: ChannelSftp, localDir: File, remotePath: String) {
+        try { ch.mkdir(remotePath) } catch (_: Exception) {}
+        localDir.listFiles()?.forEach { f ->
+            val rPath = "$remotePath/${f.name}"
+            if (f.isDirectory) {
+                uploadRecursive(ch, f, rPath)
+            } else {
+                ch.put(f.absolutePath, rPath)
+            }
+        }
+    }
+
+    // Recursive delete
+    private fun deleteRecursive(ch: ChannelSftp, remotePath: String) {
+        try {
+            // Try as file first
+            ch.rm(remotePath)
+        } catch (_: Exception) {
+            // If fails, it's a directory — recurse
+            try {
+                @Suppress("UNCHECKED_CAST")
+                val entries = ch.ls(remotePath) as java.util.Vector<ChannelSftp.LsEntry>
+                for (entry in entries) {
+                    val name = entry.filename
+                    if (name == "." || name == "..") continue
+                    deleteRecursive(ch, "$remotePath/$name")
+                }
+                ch.rmdir(remotePath)
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "Delete failed: $remotePath: $e")
+            }
+        }
+    }
+
     @Suppress("unused")
     inner class SftpBridge {
         @JavascriptInterface
         fun navigate(path: String) { listDir(path) }
 
         @JavascriptInterface
-        fun downloadFile(remotePath: String, fileName: String) {
-            scope.launch {
-                try {
-                    postJs("showStatus('Downloading $fileName...')")
-                    val ch = channel ?: return@launch
-                    val dir = File(context.cacheDir, "sftp_downloads")
-                    dir.mkdirs()
-                    val local = File(dir, fileName)
-                    ch.get(remotePath, local.absolutePath)
-                    postJs("showStatus('Downloaded: $fileName')")
-
-                    // Share via intent
-                    withContext(Dispatchers.Main) {
-                        val uri = androidx.core.content.FileProvider.getUriForFile(
-                            context, "${context.packageName}.fileprovider", local
-                        )
-                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                            setDataAndType(uri, "*/*")
-                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        context.startActivity(android.content.Intent.createChooser(intent, "Open $fileName"))
-                    }
-                } catch (e: Exception) {
-                    postJs("showStatus('Download failed: ${e.message?.replace("'", "\\'")}')")
-                }
-            }
-        }
-
-        @JavascriptInterface
-        fun uploadFile(remotePath: String) {
-            // Trigger file picker on main thread, result handled via callback
+        fun uploadFiles(remotePath: String) {
             scope.launch(Dispatchers.Main) {
                 (context as? MainActivity)?.launchSftpUpload(remotePath)
             }
         }
 
         @JavascriptInterface
-        fun deleteFile(remotePath: String) {
+        fun downloadMultiple(itemsJson: String) {
             scope.launch {
                 try {
-                    channel?.rm(remotePath)
-                    postJs("showStatus('Deleted'); refreshDir()")
+                    val ch = channel ?: return@launch
+                    val items = org.json.JSONArray(itemsJson)
+                    val dir = File(context.cacheDir, "sftp_downloads")
+                    dir.mkdirs()
+                    val downloaded = mutableListOf<File>()
+
+                    for (i in 0 until items.length()) {
+                        val item = items.getJSONObject(i)
+                        val name = item.getString("name")
+                        val path = item.getString("path")
+                        val isDir = item.getBoolean("isDir")
+                        postJs("showStatus('Downloading ${i+1}/${items.length()}: $name...'); setProgress(${(i*100)/items.length()})")
+
+                        val local = File(dir, name)
+                        if (isDir) {
+                            downloadRecursive(ch, path, local)
+                        } else {
+                            ch.get(path, local.absolutePath)
+                        }
+                        downloaded.add(local)
+                    }
+
+                    postJs("showStatus('Downloaded ${downloaded.size} items'); setProgress(100)")
+
+                    // Share all files
+                    withContext(Dispatchers.Main) {
+                        val uris = ArrayList<android.net.Uri>()
+                        for (f in downloaded) {
+                            if (f.isFile) {
+                                uris.add(androidx.core.content.FileProvider.getUriForFile(
+                                    context, "${context.packageName}.fileprovider", f))
+                            }
+                        }
+                        if (uris.size == 1) {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                setDataAndType(uris[0], "*/*")
+                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(android.content.Intent.createChooser(intent, "Open"))
+                        } else if (uris.size > 1) {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_SEND_MULTIPLE).apply {
+                                type = "*/*"
+                                putParcelableArrayListExtra(android.content.Intent.EXTRA_STREAM, uris)
+                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(android.content.Intent.createChooser(intent, "Share ${uris.size} files"))
+                        }
+                    }
+                    postJs("setProgress(0); selected.clear(); updateSelBar()")
                 } catch (e: Exception) {
-                    postJs("showStatus('Delete failed: ${e.message?.replace("'", "\\'")}')")
+                    postJs("showStatus('Download failed: ${e.message?.replace("'", "\\'")}')")
+                    postJs("setProgress(0)")
                 }
+            }
+        }
+
+        @JavascriptInterface
+        fun confirmDeleteMultiple(pathsJson: String, count: Int) {
+            webView.post {
+                android.app.AlertDialog.Builder(context)
+                    .setTitle("Delete $count items")
+                    .setMessage("Delete $count selected items? This cannot be undone.")
+                    .setPositiveButton("Delete") { _, _ ->
+                        scope.launch {
+                            try {
+                                val paths = org.json.JSONArray(pathsJson)
+                                val ch = channel ?: return@launch
+                                for (i in 0 until paths.length()) {
+                                    val path = paths.getString(i)
+                                    postJs("showStatus('Deleting ${i+1}/${paths.length()}...'); setProgress(${(i*100)/paths.length()})")
+                                    deleteRecursive(ch, path)
+                                }
+                                postJs("showStatus('Deleted $count items'); setProgress(0); refreshDir()")
+                            } catch (e: Exception) {
+                                postJs("showStatus('Delete failed: ${e.message?.replace("'", "\\'")}'); setProgress(0)")
+                            }
+                        }
+                    }
+                    .setNegativeButton("Cancel", null)
+                    .show()
             }
         }
 
@@ -170,27 +268,6 @@ class SftpManager(
         @JavascriptInterface
         fun closeSftp() {
             webView.post { (context as? MainActivity)?.closeSftp() }
-        }
-
-        @JavascriptInterface
-        fun confirmDelete(remotePath: String, name: String) {
-            webView.post {
-                android.app.AlertDialog.Builder(context)
-                    .setTitle("Delete")
-                    .setMessage("Delete $name?")
-                    .setPositiveButton("Delete") { _, _ ->
-                        scope.launch {
-                            try {
-                                channel?.rm(remotePath)
-                                postJs("showStatus('Deleted'); refreshDir()")
-                            } catch (e: Exception) {
-                                postJs("showStatus('Delete failed: ${e.message?.replace("'", "\\'")}')")
-                            }
-                        }
-                    }
-                    .setNegativeButton("Cancel", null)
-                    .show()
-            }
         }
 
         @JavascriptInterface
