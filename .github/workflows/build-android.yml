@@ -9,13 +9,63 @@ permissions:
   contents: write
 
 jobs:
+  build-mosh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache mosh binary
+        id: mosh-cache
+        uses: actions/cache@v4
+        with:
+          path: app/src/main/assets/bin/mosh-client
+          key: mosh-client-arm64-v3
+
+      - name: Install build dependencies
+        if: steps.mosh-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq autoconf automake libtool pkg-config protobuf-compiler
+
+      - name: Setup Android NDK
+        if: steps.mosh-cache.outputs.cache-hit != 'true'
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        if: steps.mosh-cache.outputs.cache-hit != 'true'
+        run: sdkmanager "ndk;27.2.12479018"
+
+      - name: Build mosh-client for arm64
+        if: steps.mosh-cache.outputs.cache-hit != 'true'
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          bash build-mosh.sh "$ANDROID_NDK_HOME"
+          ls -la app/src/main/assets/bin/mosh-client
+
+      - name: Upload mosh binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: mosh-client-arm64
+          path: app/src/main/assets/bin/mosh-client
+
   build-android:
     runs-on: ubuntu-latest
+    needs: build-mosh
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Download mosh binary
+        uses: actions/download-artifact@v4
+        with:
+          name: mosh-client-arm64
+          path: app/src/main/assets/bin/
+
+      - name: Make mosh executable
+        run: chmod +x app/src/main/assets/bin/mosh-client 2>/dev/null || true
 
       - name: Auto-increment version
         id: version
