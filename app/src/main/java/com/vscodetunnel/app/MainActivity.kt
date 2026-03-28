@@ -1035,10 +1035,27 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null && pendingSftpUploadPath != null) {
-            val name = uri.lastPathSegment?.substringAfterLast('/') ?: "file"
+            val name = getFileNameFromUri(uri)
             sftpManager?.uploadFileFromUri(pendingSftpUploadPath!!, uri, name)
         }
         pendingSftpUploadPath = null
+    }
+
+    private fun getFileNameFromUri(uri: Uri): String {
+        // Try DISPLAY_NAME from ContentResolver (most reliable)
+        try {
+            contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0) {
+                        val name = cursor.getString(idx)
+                        if (!name.isNullOrBlank()) return name
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        // Fallback: extract from path
+        return uri.lastPathSegment?.substringAfterLast('/') ?: "file"
     }
 
     fun launchSftpUpload(remotePath: String) {
