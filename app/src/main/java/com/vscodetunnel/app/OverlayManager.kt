@@ -32,11 +32,12 @@ class OverlayManager(
     var inputTarget = InputTarget.VSCODE
     var sshSessionManager: SshSessionManager? = null
     var sshTerminalWebView: WebView? = null
+        set(value) { field = value; sshCursorX = -1f; sshCursorY = -1f } // reset cursor on new terminal
     // When true, content script keeps inputmode="none" even when overlay is hidden
     var alwaysSuppressInput = false
-    // Cursor position for SSH terminal (in CSS px)
-    private var sshCursorX = 0f
-    private var sshCursorY = 0f
+    // Cursor position for SSH terminal (in CSS px, initialized lazily to center)
+    private var sshCursorX = -1f
+    private var sshCursorY = -1f
 
     @SuppressLint("SetJavaScriptEnabled")
     fun setup() {
@@ -241,9 +242,17 @@ class OverlayManager(
         @JavascriptInterface
         fun pointerMove(dx: Float, dy: Float) {
             if (inputTarget == InputTarget.SSH_TERMINAL) {
-                // Track cursor and inject mousemove into terminal WebView
-                sshCursorX = (sshCursorX + dx).coerceAtLeast(0f)
-                sshCursorY = (sshCursorY + dy).coerceAtLeast(0f)
+                val wv = sshTerminalWebView ?: return
+                // Initialize to center on first use
+                if (sshCursorX < 0) {
+                    val density = wv.resources.displayMetrics.density
+                    sshCursorX = wv.width / density / 2f
+                    sshCursorY = wv.height / density / 2f
+                }
+                val maxX = wv.width / wv.resources.displayMetrics.density.toFloat()
+                val maxY = wv.height / wv.resources.displayMetrics.density.toFloat()
+                sshCursorX = (sshCursorX + dx).coerceIn(0f, maxX)
+                sshCursorY = (sshCursorY + dy).coerceIn(0f, maxY)
                 injectTerminalMouse("mousemove", sshCursorX, sshCursorY)
                 return
             }

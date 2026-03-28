@@ -99,7 +99,9 @@ const term = new Terminal({
     theme: SCHEMES['default'],
     allowTransparency: false,
     scrollback: 10000,
-    convertEol: true
+    convertEol: true,
+    rightClickSelectsWord: true,
+    allowProposedApi: true
 });
 
 const fitAddon = new FitAddon.FitAddon();
@@ -113,48 +115,48 @@ term.onData(data => { if (A) A.onTerminalInput(data); });
 // ======================== CONTEXT MENU ========================
 const ctxMenu = document.getElementById('ctxMenu');
 const termEl = document.getElementById('terminal');
-let longPressTimer = null, longPressPos = null;
 
 function showCtxMenu(x, y) {
-    // Position menu, keep on screen
     const mw = ctxMenu.offsetWidth || 140, mh = ctxMenu.offsetHeight || 200;
     const mx = Math.min(x, window.innerWidth - mw - 8);
     const my = Math.min(y, window.innerHeight - mh - 8);
     ctxMenu.style.left = Math.max(4, mx) + 'px';
     ctxMenu.style.top = Math.max(4, my) + 'px';
     ctxMenu.style.display = 'block';
-    // Update copy button state
     const hasSel = term.hasSelection();
     document.getElementById('ctxCopy').style.opacity = hasSel ? '1' : '0.4';
 }
 
 function hideCtxMenu() { ctxMenu.style.display = 'none'; }
 
-// Long-press to show context menu
+// 2-finger tap → context menu (keeps single-finger free for xterm text selection)
+// Track 2-finger gesture to distinguish tap from pinch
+let twoFingerStart = 0, twoFingerMoved = false, twoFingerPos = {x:0,y:0};
 termEl.addEventListener('touchstart', e => {
-    if (e.touches.length === 1) {
-        longPressPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-        longPressTimer = setTimeout(() => {
-            showCtxMenu(longPressPos.x, longPressPos.y);
-        }, 500);
+    if (e.touches.length === 2) {
+        twoFingerStart = Date.now();
+        twoFingerMoved = false;
+        twoFingerPos = {
+            x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+            y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+        };
     }
 }, {passive:true});
-
 termEl.addEventListener('touchmove', e => {
-    if (longPressTimer && longPressPos) {
-        const dx = Math.abs(e.touches[0].clientX - longPressPos.x);
-        const dy = Math.abs(e.touches[0].clientY - longPressPos.y);
-        if (dx > 10 || dy > 10) { clearTimeout(longPressTimer); longPressTimer = null; }
+    if (e.touches.length === 2) twoFingerMoved = true;
+}, {passive:true});
+termEl.addEventListener('touchend', e => {
+    // 2-finger short tap without movement → context menu
+    if (twoFingerStart > 0 && !twoFingerMoved && Date.now() - twoFingerStart < 400) {
+        showCtxMenu(twoFingerPos.x, twoFingerPos.y);
     }
+    if (e.touches.length === 0) twoFingerStart = 0;
 }, {passive:true});
 
-termEl.addEventListener('touchend', () => {
-    clearTimeout(longPressTimer); longPressTimer = null;
-}, {passive:true});
-
-// Dismiss menu on tap outside
+// Dismiss menu on single tap outside
 document.addEventListener('touchstart', e => {
-    if (ctxMenu.style.display === 'block' && !ctxMenu.contains(e.target)) hideCtxMenu();
+    if (ctxMenu.style.display === 'block' && !ctxMenu.contains(e.target) && e.touches.length === 1)
+        hideCtxMenu();
 }, {passive:true});
 
 // Context menu actions
