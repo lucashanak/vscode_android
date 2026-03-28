@@ -5,78 +5,99 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-html, body { background:#1E1E1E; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; }
+html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; }
 
 /* Toolbar */
-.toolbar { display:flex; align-items:center; gap:4px; padding:3px 6px; background:rgba(20,20,20,0.9); border-bottom:1px solid rgba(255,255,255,0.06); }
-.tool-btn { padding:5px 10px; font-size:12px; font-weight:600; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.08); color:#aaa; border:1px solid rgba(255,255,255,0.1); border-radius:4px; cursor:pointer; touch-action:manipulation; }
+.toolbar { display:flex; align-items:center; gap:4px; padding:4px 8px; background:#232323; border-bottom:1px solid rgba(255,255,255,0.06); }
+.tool-btn { padding:6px 12px; font-size:13px; font-weight:600; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.08); color:#aaa; border:1px solid rgba(255,255,255,0.1); border-radius:6px; cursor:pointer; touch-action:manipulation; }
 .tool-btn.active { background:#007acc; color:#fff; border-color:#007acc; }
 .spacer { flex:1; }
 
 /* Panels */
 .panels { display:block; }
-.panel { display:none; padding:2px; }
+.panel { display:none; }
 .panel.active { display:block; }
 
-/* Keyboard base */
-.row { display:flex; gap:2px; padding:1px 2px; flex-wrap:nowrap; justify-content:center; }
-.key { flex:1 1 0; min-width:0; height:57px; padding:0 2px; font-size:17px; font-weight:500; font-family:'SF Mono','Fira Code','Consolas',monospace; background:rgba(255,255,255,0.1); color:#ddd; border:1px solid rgba(255,255,255,0.15); border-radius:4px; cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation; transition:background 0.08s; white-space:nowrap; }
-.key:active, .key.pressed { background:rgba(0,122,204,0.5); border-color:#007acc; }
-.key.mod-active { background:#007acc; color:#fff; border-color:#007acc; }
-.space-key { flex:4 1 0; }
-.wide-key { flex:1.5 1 0; }
-.xwide-key { flex:2 1 0; }
+/* ============ COMPACT KEYBOARD (Gboard-style) ============ */
+.kb-panel { padding:6px 3px 10px 3px; }
+.row { display:flex; gap:5px; padding:3px 3px; flex-wrap:nowrap; justify-content:center; }
+/* Row stagger like physical keyboard */
+.row-home { padding-left:5%; padding-right:5%; }
+.row-shift { padding-left:2px; padding-right:2px; }
+
+.key {
+    flex:1 1 0; min-width:0; height:52px; padding:0 2px;
+    font-size:22px; font-weight:400;
+    font-family:-apple-system,'SF Pro',system-ui,sans-serif;
+    background:rgba(255,255,255,0.09); color:#e8e8e8;
+    border:none; border-radius:6px;
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    touch-action:manipulation; transition:background 0.08s;
+    white-space:nowrap;
+}
+.key:active, .key.pressed { background:rgba(0,122,204,0.45); }
+.key.mod-active { background:#007acc; color:#fff; }
+.space-key { flex:5 1 0; background:rgba(255,255,255,0.12); border-radius:8px; font-size:14px; color:#888; }
+.wide-key { flex:1.4 1 0; font-size:16px; }
+.xwide-key { flex:1.8 1 0; font-size:16px; }
 .shifted .char-key { text-transform:uppercase; }
 
-/* F-key row styling */
+/* Modifier keys: darker, distinct */
+.key-mod { background:rgba(255,255,255,0.05); font-size:13px; color:#999; }
+.key-mod.mod-active { background:#007acc; color:#fff; }
+
+/* Bottom row: smaller gap, keys feel like action bar */
+.row-bottom { gap:4px; padding:3px 3px; }
+.row-bottom .key { height:48px; }
+
+/* F-key row styling (wide layout) */
 .fn-row { gap:1px; padding:1px 2px; }
-.fn-row .key { height:38px; font-size:11px; background:rgba(255,255,255,0.06); }
+.fn-row .key { height:34px; font-size:11px; background:rgba(255,255,255,0.05); }
 .fn-sep { width:8px; flex:0 0 8px; }
 
-/* Scrollable rows */
+/* Scrollable rows (symbols) */
 .row-scroll { justify-content:flex-start; overflow-x:auto; scrollbar-width:none; }
 .row-scroll::-webkit-scrollbar { display:none; }
-.row-scroll .key { flex:0 0 auto; min-width:40px; height:45px; padding:0 6px; font-size:14px; }
+.row-scroll .key { flex:0 0 auto; min-width:38px; height:48px; padding:0 7px; font-size:18px; }
 
 /* Nav cluster for wide layout */
 .nav-sep { width:6px; flex:0 0 6px; }
 .nav-key { flex:0 0 auto; width:48px; font-size:11px; }
 
-/* Touchpad */
+/* ============ TOUCHPAD ============ */
 .tp-panel.active { display:flex; flex-direction:column; }
-.tp-area { flex:1; min-height:120px; margin:4px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:8px; display:flex; align-items:center; justify-content:center; touch-action:none; }
-.tp-hint { color:rgba(255,255,255,0.2); font-size:14px; pointer-events:none; font-family:-apple-system,sans-serif; }
-.tp-buttons { display:flex; gap:4px; padding:4px; }
-.tp-btn { flex:1; height:36px; font-size:13px; font-weight:500; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.08); color:#bbb; border:1px solid rgba(255,255,255,0.12); border-radius:6px; cursor:pointer; touch-action:manipulation; }
-.tp-btn:active { background:rgba(0,122,204,0.4); border-color:#007acc; }
+.tp-area { flex:1; min-height:260px; margin:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; display:flex; align-items:center; justify-content:center; touch-action:none; }
+.tp-hint { color:rgba(255,255,255,0.15); font-size:14px; pointer-events:none; font-family:-apple-system,sans-serif; }
+.tp-buttons { display:flex; gap:5px; padding:6px; }
+.tp-btn { flex:1; height:44px; font-size:14px; font-weight:500; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.08); color:#bbb; border:none; border-radius:8px; cursor:pointer; touch-action:manipulation; }
+.tp-btn:active { background:rgba(0,122,204,0.4); }
 
-/* Wide: side-by-side KB + TP */
+/* ============ WIDE: side-by-side KB + TP ============ */
 @media (min-width:901px) {
     .toolbar .tab-btn { display:none; }
     .panels { display:flex; flex-direction:row; align-items:stretch; }
     .panel { display:block; }
-    .kb-panel { flex:2; min-width:0; }
-    .tp-panel { display:flex; flex-direction:column; flex:1; min-width:0; border-left:1px solid rgba(255,255,255,0.1); }
+    .kb-panel { flex:2; min-width:0; padding:4px 2px 6px 2px; }
+    .tp-panel { display:flex; flex-direction:column; flex:1; min-width:0; border-left:1px solid rgba(255,255,255,0.08); }
     .tp-area { min-height:0; }
     .key { height:46px; font-size:14px; }
     .fn-row .key { height:32px; font-size:10px; }
     .row-scroll .key { height:38px; font-size:12px; }
     .nav-key { width:42px; height:46px; font-size:10px; }
+    .row { gap:3px; padding:2px 2px; }
+    .row-home { padding-left:3%; padding-right:3%; }
 }
 
 /* Landscape narrow */
 @media (orientation:landscape) and (max-width:900px) {
-    .key { height:48px; font-size:15px; }
-    .row { gap:1px; padding:0 1px; }
-    .row-scroll .key { height:39px; font-size:13px; }
-    .tp-btn { height:28px; font-size:11px; }
+    .key { height:44px; font-size:18px; }
+    .row { gap:3px; padding:2px 2px; }
+    .row-scroll .key { height:38px; font-size:14px; }
+    .tp-btn { height:32px; font-size:12px; }
     .toolbar { padding:2px 4px; }
-    .tool-btn { padding:3px 6px; font-size:10px; }
-    .tp-area { min-height:80px; }
-}
-
-@media (max-width:400px) {
-    .key { height:54px; font-size:16px; }
+    .tool-btn { padding:4px 8px; font-size:11px; }
+    .tp-area { min-height:120px; }
+    .kb-panel { padding:4px 2px 6px 2px; }
 }
 </style>
 </head>
@@ -124,21 +145,21 @@ function K(key, label, cls) {
 function C(ch) { return `<button class="key char-key" data-char="${ch}">${ch}</button>`; }
 function M(mod, label, cls) {
     const c = cls ? ` ${cls}` : '';
-    return `<button class="key key-mod wide-key${c}" data-mod="${mod}">${label}</button>`;
+    return `<button class="key key-mod${c}" data-mod="${mod}">${label}</button>`;
 }
 function SEP(cls) { return `<div class="${cls||'fn-sep'}"></div>`; }
 
-// ======================== COMPACT: LETTERS ========================
+// ======================== COMPACT: LETTERS (Gboard-style) ========================
 function compactLetters() {
     return `
         <div class="row">${C('q')}${C('w')}${C('e')}${C('r')}${C('t')}${C('y')}${C('u')}${C('i')}${C('o')}${C('p')}</div>
-        <div class="row">${C('a')}${C('s')}${C('d')}${C('f')}${C('g')}${C('h')}${C('j')}${C('k')}${C('l')}</div>
-        <div class="row">${M('shift','\u21E7')}${C('z')}${C('x')}${C('c')}${C('v')}${C('b')}${C('n')}${C('m')}${K('Bksp','\u232B')}</div>
-        <div class="row">
-            <button class="key wide-key" id="symToggle">?#</button>
-            ${M('ctrl','Ctrl')} ${M('alt','Alt')} ${M('meta','Meta')}
-            <button class="key space-key" data-key="Space">&nbsp;</button>
-            ${K(',',',')} ${K('.','.') } ${K('Enter','\u21B5')}
+        <div class="row row-home">${C('a')}${C('s')}${C('d')}${C('f')}${C('g')}${C('h')}${C('j')}${C('k')}${C('l')}</div>
+        <div class="row row-shift">${M('shift','\u21E7','wide-key')}${C('z')}${C('x')}${C('c')}${C('v')}${C('b')}${C('n')}${C('m')}${K('Bksp','\u232B','wide-key')}</div>
+        <div class="row row-bottom">
+            <button class="key wide-key" id="symToggle" style="font-size:14px">?123</button>
+            ${M('ctrl','Ctrl')} ${M('alt','Alt')}
+            <button class="key space-key" data-key="Space">space</button>
+            ${K('.','.') } ${K('Enter','\u21B5','wide-key')}
         </div>`;
 }
 
@@ -157,11 +178,11 @@ function compactSymbols() {
         <div class="row-scroll row">
             ${'F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12'.split(' ').map(f=>K(f)).join('')}
         </div>
-        <div class="row">
-            <button class="key wide-key" id="symToggle">ABC</button>
+        <div class="row row-bottom">
+            <button class="key wide-key" id="symToggle" style="font-size:14px">ABC</button>
             ${M('ctrl','Ctrl')} ${M('alt','Alt')} ${M('meta','Meta')}
-            <button class="key space-key" data-key="Space">&nbsp;</button>
-            ${K('Bksp','\u232B')} ${K('Enter','\u21B5')}
+            <button class="key space-key" data-key="Space">space</button>
+            ${K('Bksp','\u232B')} ${K('Enter','\u21B5','wide-key')}
         </div>`;
 }
 
@@ -251,7 +272,6 @@ function toggleMod(mod) {
 const SPECIAL_KEYS = new Set(['Esc','Tab','Enter','Bksp','Del','Home','End',
     'PgUp','PgDn','Ins','Up','Down','Left','Right',
     'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12']);
-// Note: Space is NOT here — unmodified Space goes through sendChar(' ')
 
 function attachKeyEvents() {
     // Character keys (a-z)
@@ -260,7 +280,6 @@ function attachKeyEvents() {
             e.preventDefault(); e.stopPropagation();
             const ch = mods.shift ? btn.dataset.char.toUpperCase() : btn.dataset.char;
             if (mods.ctrl || mods.alt || mods.meta) {
-                // Modified char → send as key event (e.g. Ctrl+C)
                 A.sendKey(JSON.stringify({key:ch, ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
             } else {
                 A.sendChar(ch);
@@ -277,13 +296,10 @@ function attachKeyEvents() {
             const key = btn.dataset.key;
 
             if (key === 'Space' && !mods.ctrl && !mods.alt && !mods.meta) {
-                // Unmodified space → printable char path (InputEvent)
                 A.sendChar(' ');
             } else if (SPECIAL_KEYS.has(key) || key === 'Space' || mods.ctrl || mods.alt || mods.meta) {
-                // Special key or any modifier → keydown/keyup
                 A.sendKey(JSON.stringify({key, ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
             } else {
-                // Printable symbol (e.g. !, @, #) → char insertion
                 A.sendChar(key);
             }
             resetMods();
@@ -301,7 +317,7 @@ function attachKeyEvents() {
 }
 
 // ======================== TOUCHPAD ========================
-const TAP_MOVE_THRESHOLD = 10; // px — movement below this still counts as a tap
+const TAP_MOVE_THRESHOLD = 10;
 const tpArea = document.getElementById('tpArea');
 tpArea.addEventListener('touchstart', e => {
     e.preventDefault();
