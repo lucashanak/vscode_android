@@ -153,6 +153,12 @@ class MainActivity : AppCompatActivity() {
         overlayManager.setup()
         floatingToggle.setOnClickListener { overlayManager.show() }
 
+        // Apply suppress setting immediately so it's ready before any session
+        if (suppressSystemKeyboard) {
+            geckoView.suppressIME = true
+            sysKBSuppressed = true
+        }
+
         // Restore state
         val token = authPrefs.getString(KEY_TOKEN, null)
         if (token != null) {
@@ -846,6 +852,13 @@ class MainActivity : AppCompatActivity() {
         overlayManager.sshSessionManager = null
 
         tunnelSession = session
+
+        // Suppress BEFORE setSession so onCreateInputConnection returns null immediately
+        if (suppressSystemKeyboard) {
+            sysKBSuppressed = true
+            geckoView.suppressIME = true
+        }
+
         geckoView.releaseSession()
         geckoView.setSession(session)
         session.loadUri(url)
@@ -859,10 +872,8 @@ class MainActivity : AppCompatActivity() {
         geckoContainer.visibility = View.VISIBLE
         findViewById<Button>(R.id.floatingToggle).visibility = View.VISIBLE
 
-        // Suppress system keyboard if setting is on
         if (suppressSystemKeyboard) {
-            sysKBSuppressed = true
-            geckoView.suppressIME = true
+            // Also hide IME in case it was already showing
             val controller = WindowInsetsControllerCompat(window, geckoView)
             controller.hide(WindowInsetsCompat.Type.ime())
             ViewCompat.requestApplyInsets(findViewById(R.id.rootFrame))
@@ -1001,8 +1012,11 @@ class MainActivity : AppCompatActivity() {
         tunnelSession = null
         suspendedTunnelUrl = null
         currentTunnelUrl = null
-        sysKBSuppressed = false
-        geckoView.suppressIME = false
+        // Keep suppressIME if setting is on
+        if (!suppressSystemKeyboard) {
+            sysKBSuppressed = false
+            geckoView.suppressIME = false
+        }
         disconnectSsh()
         sessionWrapper.visibility = View.GONE
         geckoContainer.visibility = View.GONE
@@ -1029,8 +1043,11 @@ class MainActivity : AppCompatActivity() {
         // Save for auto-reconnect
         sessionPrefs.edit().putString(KEY_LAST_URL, currentTunnelUrl ?: "").apply()
 
-        sysKBSuppressed = false
-        geckoView.suppressIME = false
+        // Keep suppressIME if setting is on (never reset it)
+        if (!suppressSystemKeyboard) {
+            sysKBSuppressed = false
+            geckoView.suppressIME = false
+        }
         sessionWrapper.visibility = View.GONE
         geckoContainer.visibility = View.GONE
         sshContainer.visibility = View.GONE
@@ -1049,7 +1066,12 @@ class MainActivity : AppCompatActivity() {
             findViewById<Button>(R.id.floatingToggle).visibility = View.VISIBLE
             activeSessionBanner.visibility = View.GONE
         } else if (tunnelSession != null && suspendedTunnelUrl != null) {
-            // Resume VS Code tunnel
+            // Resume VS Code tunnel — suppress BEFORE setSession
+            if (suppressSystemKeyboard) {
+                sysKBSuppressed = true
+                geckoView.suppressIME = true
+            }
+
             tunnelSession?.setActive(true)
             geckoView.setSession(tunnelSession!!)
             currentTunnelUrl = suspendedTunnelUrl
@@ -1063,8 +1085,6 @@ class MainActivity : AppCompatActivity() {
             activeSessionBanner.visibility = View.GONE
 
             if (suppressSystemKeyboard) {
-                sysKBSuppressed = true
-                geckoView.suppressIME = true
                 val controller = WindowInsetsControllerCompat(window, geckoView)
                 controller.hide(WindowInsetsCompat.Type.ime())
                 ViewCompat.requestApplyInsets(findViewById(R.id.rootFrame))
