@@ -166,6 +166,13 @@ class SftpManager(
                 }
             }
         }
+
+        @JavascriptInterface
+        fun closeSftp() {
+            webView.post {
+                (context as? MainActivity)?.closeSftp()
+            }
+        }
     }
 
     fun uploadFileFromUri(remotePath: String, uri: Uri, fileName: String) {

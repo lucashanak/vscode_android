@@ -381,29 +381,27 @@ function updateRepeatSettings(delay, rate) {
     REPEAT_RATE = rate || 50;
 }
 
-// ======================== DIACRITICS POPUP ========================
+// ======================== DIACRITICS POPUP (Gboard-style) ========================
+// Hold key → popup appears → slide finger to char → release = sends that char
+// If released before popup → sends original char (normal tap)
 const diacPopup = document.getElementById('diacPopup');
 const diacRow = document.getElementById('diacRow');
-let diacTimer = null, diacShown = false;
+let diacTimer = null, diacShown = false, diacChars = [], diacSelected = -1, diacOrigChar = '';
 
 function showDiacPopup(ch, btnRect) {
     const alts = DIAC[ch.toLowerCase()];
     if (!alts || alts.length === 0) return;
+    diacChars = alts;
+    diacSelected = -1;
+    diacOrigChar = ch;
     diacRow.innerHTML = '';
-    alts.forEach(d => {
-        const k = document.createElement('button');
+    alts.forEach((d, i) => {
+        const k = document.createElement('div');
         k.className = 'diac-key';
         k.textContent = mods.shift ? d.toUpperCase() : d;
-        k.addEventListener('pointerdown', e => {
-            e.preventDefault(); e.stopPropagation();
-            haptic();
-            A.sendChar(mods.shift ? d.toUpperCase() : d);
-            resetMods();
-            hideDiacPopup();
-        });
+        k.dataset.idx = i;
         diacRow.appendChild(k);
     });
-    // Position above the key
     const pw = alts.length * 43 + 8;
     let left = btnRect.left + btnRect.width/2 - pw/2;
     left = Math.max(4, Math.min(left, window.innerWidth - pw - 4));
@@ -411,17 +409,49 @@ function showDiacPopup(ch, btnRect) {
     diacPopup.style.top = (btnRect.top - 52) + 'px';
     diacPopup.style.display = 'block';
     diacShown = true;
+    haptic();
 }
+
+function updateDiacHighlight(x, y) {
+    if (!diacShown) return;
+    const keys = diacRow.querySelectorAll('.diac-key');
+    let found = -1;
+    keys.forEach((k, i) => {
+        const r = k.getBoundingClientRect();
+        // Generous vertical hit area (finger is below the popup)
+        if (x >= r.left - 5 && x <= r.right + 5 && y >= r.top - 30 && y <= r.bottom + 30) {
+            found = i;
+        }
+        k.style.background = '';
+    });
+    if (found >= 0) {
+        keys[found].style.background = '#007acc';
+        if (found !== diacSelected) haptic();
+    }
+    diacSelected = found;
+}
+
+function commitDiac() {
+    if (diacShown && diacSelected >= 0 && diacSelected < diacChars.length) {
+        const d = diacChars[diacSelected];
+        A.sendChar(mods.shift ? d.toUpperCase() : d);
+    }
+    // If no diac selected and popup was shown, send nothing (original char not sent yet)
+    hideDiacPopup();
+    resetMods();
+}
+
 function hideDiacPopup() {
     diacPopup.style.display = 'none';
     diacShown = false;
+    diacSelected = -1;
     clearTimeout(diacTimer); diacTimer = null;
 }
 
 function attachKeyEvents() {
-    // Character keys (a-z) — with long-press diacritics + haptic
+    // Character keys (a-z) — Gboard-style: tap=char, hold=diacritics slide
     kbPanel.querySelectorAll('.char-key').forEach(btn => {
-        const fire = () => {
+        const fireChar = () => {
             const ch = mods.shift ? btn.dataset.char.toUpperCase() : btn.dataset.char;
             if (mods.ctrl || mods.alt || mods.meta) {
                 A.sendKey(JSON.stringify({key:ch, ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
@@ -429,35 +459,73 @@ function attachKeyEvents() {
                 A.sendChar(ch);
             }
         };
-        let longFired = false;
+        let pendingChar = false; // true = char not yet sent, waiting for long-press decision
         btn.addEventListener('pointerdown', e => {
             e.preventDefault(); e.stopPropagation();
             haptic();
-            longFired = false;
-            fire();
-            // Long-press: show diacritics after delay (instead of repeat for letters with diacritics)
+            btn.classList.add('pressed');
             const ch = btn.dataset.char;
-            if (DIAC[ch]) {
+            if (DIAC[ch] && !mods.ctrl && !mods.alt && !mods.meta) {
+                // Has diacritics: DON'T send char yet, wait for long-press
+                pendingChar = true;
                 diacTimer = setTimeout(() => {
-                    longFired = true;
+                    pendingChar = false; // popup takes over
                     stopRepeat();
                     showDiacPopup(ch, btn.getBoundingClientRect());
                 }, 300);
-                startRepeat(fire);
             } else {
-                startRepeat(fire);
+                // No diacritics: send immediately + start repeat
+                pendingChar = false;
+                fireChar();
+                startRepeat(fireChar);
             }
-            btn.classList.add('pressed');
+        });
+        btn.addEventListener('pointermove', e => {
+            if (diacShown) updateDiacHighlight(e.clientX, e.clientY);
         });
         btn.addEventListener('pointerup', e => {
             clearTimeout(diacTimer); diacTimer = null;
             stopRepeat();
-            if (!diacShown) resetMods();
             btn.classList.remove('pressed');
+            if (diacShown) {
+                // Release on diacritics popup → commit selected char
+                updateDiacHighlight(e.clientX, e.clientY);
+                commitDiac();
+            } else if (pendingChar) {
+                // Released before popup → normal tap, send original char
+                pendingChar = false;
+                fireChar();
+                resetMods();
+            } else {
+                resetMods();
+            }
         });
-        btn.addEventListener('pointerleave', () => { clearTimeout(diacTimer); stopRepeat(); btn.classList.remove('pressed'); });
-        btn.addEventListener('pointercancel', () => { clearTimeout(diacTimer); stopRepeat(); btn.classList.remove('pressed'); });
+        btn.addEventListener('pointerleave', e => {
+            // Finger left key area — if popup shown, track position for diac selection
+            if (diacShown) {
+                // Don't cancel — let pointermove on document handle it
+            } else {
+                clearTimeout(diacTimer); diacTimer = null;
+                stopRepeat();
+                if (pendingChar) { pendingChar = false; fireChar(); resetMods(); }
+                btn.classList.remove('pressed');
+            }
+        });
+        btn.addEventListener('pointercancel', () => {
+            clearTimeout(diacTimer); stopRepeat();
+            pendingChar = false;
+            btn.classList.remove('pressed');
+            hideDiacPopup();
+        });
     });
+
+    // Track finger movement globally for diacritics slide
+    document.addEventListener('pointermove', e => {
+        if (diacShown) updateDiacHighlight(e.clientX, e.clientY);
+    }, {passive:true});
+    document.addEventListener('pointerup', e => {
+        if (diacShown) { updateDiacHighlight(e.clientX, e.clientY); commitDiac(); }
+    }, {passive:true});
 
     // Special + symbol keys (data-key) — with haptic
     kbPanel.querySelectorAll('.key[data-key]:not(.key-mod)').forEach(btn => {
@@ -510,9 +578,10 @@ function attachKeyEvents() {
     });
 }
 
-// Dismiss diacritics popup on tap outside
+// Dismiss diacritics popup on tap elsewhere
 document.addEventListener('pointerdown', e => {
-    if (diacShown && !diacPopup.contains(e.target)) hideDiacPopup();
+    if (diacShown && !diacPopup.contains(e.target) && !e.target.classList.contains('char-key'))
+        hideDiacPopup();
 }, {passive:true});
 
 // ======================== CLIPBOARD POPUP ========================

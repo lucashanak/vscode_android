@@ -1075,6 +1075,14 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.floatingToggle).visibility = View.GONE
     }
 
+    fun closeSftp() {
+        sftpManager?.destroy()
+        sftpManager = null
+        sessionWrapper.visibility = View.GONE
+        findViewById<View>(R.id.sftpContainer).visibility = View.GONE
+        launcherScroll.visibility = View.VISIBLE
+    }
+
     // --- Settings ---
 
     private fun showSettingsDialog() {

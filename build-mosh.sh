@@ -21,11 +21,13 @@ ARCH=aarch64
 TARGET=aarch64-linux-android
 TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
 
-export CC="$TOOLCHAIN/bin/${TARGET}${API}-clang"
-export CXX="$TOOLCHAIN/bin/${TARGET}${API}-clang++"
-export AR="$TOOLCHAIN/bin/llvm-ar"
-export RANLIB="$TOOLCHAIN/bin/llvm-ranlib"
-export STRIP="$TOOLCHAIN/bin/llvm-strip"
+export PATH="$TOOLCHAIN/bin:$PATH"
+export ANDROID_NDK_ROOT="$NDK"
+export CC="${TARGET}${API}-clang"
+export CXX="${TARGET}${API}-clang++"
+export AR="llvm-ar"
+export RANLIB="llvm-ranlib"
+export STRIP="llvm-strip"
 
 WORKDIR="$(pwd)/build-mosh-tmp"
 PREFIX="$WORKDIR/install"
@@ -56,8 +58,14 @@ if [ ! -d openssl ]; then
 fi
 cd openssl
 if [ ! -f "$PREFIX/lib/libcrypto.a" ]; then
+    export ANDROID_NDK_ROOT="$NDK"
     ./Configure android-arm64 --prefix="$PREFIX" no-shared no-tests \
-        -D__ANDROID_API__=$API
+        -D__ANDROID_API__=$API \
+        --cross-compile-prefix="" \
+        CC="${TARGET}${API}-clang" \
+        CXX="${TARGET}${API}-clang++" \
+        AR="llvm-ar" \
+        RANLIB="llvm-ranlib"
     make -j$(nproc) install_sw
 fi
 

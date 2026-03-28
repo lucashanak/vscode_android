@@ -26,6 +26,7 @@ html, body { background:#1E1E1E; color:#ccc; font-family:-apple-system,sans-seri
 </head>
 <body>
 <div id="toolbar">
+    <button class="tb" id="btnBack" style="background:#c33;color:#fff">Close</button>
     <button class="tb" id="btnUp">Up</button>
     <input id="pathInput" type="text" value="/">
     <button class="tb" id="btnGo">Go</button>
@@ -52,11 +53,8 @@ function formatSize(bytes) {
 function renderDir(items) {
     const list = document.getElementById('fileList');
     list.innerHTML = '';
-    // Sort: dirs first, then by name
-    const arr = [];
-    for (let i = 0; i < items.length(); i++) arr.push(items.get ? items.get(i) : items[i]);
-    // Handle both JSONArray (from Android) and JS array
-    const parsed = typeof arr[0] === 'string' ? arr.map(JSON.parse) : arr;
+    // items is a JS array (from evaluateJavascript JSON)
+    const parsed = (typeof items === 'string') ? JSON.parse(items) : items;
     parsed.sort((a,b) => {
         if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
         return a.name.localeCompare(b.name);
@@ -125,6 +123,9 @@ function renderDir(items) {
 
 function refreshDir() { if (A) A.navigate(currentPath); }
 
+document.getElementById('btnBack').addEventListener('click', () => {
+    if (A) A.closeSftp();
+});
 document.getElementById('btnUp').addEventListener('click', () => {
     const parent = currentPath.replace(/\/[^/]+\/?$/, '') || '/';
     setPath(parent);
