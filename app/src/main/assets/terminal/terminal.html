@@ -16,12 +16,26 @@ html, body { background:#1E1E1E; overflow:hidden; width:100%; height:100%; displ
 /* Toast notification */
 #toast { position:fixed; bottom:60px; left:50%; transform:translateX(-50%); padding:6px 16px; background:rgba(0,122,204,0.85); color:#fff; font-size:12px; font-family:-apple-system,sans-serif; border-radius:16px; pointer-events:none; opacity:0; transition:opacity 0.2s; z-index:100; }
 #toast.show { opacity:1; }
+/* Context menu */
+#ctxMenu { position:fixed; display:none; background:#2d2d2d; border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:4px 0; z-index:200; box-shadow:0 4px 16px rgba(0,0,0,0.5); min-width:140px; }
+.ctx-item { display:block; width:100%; padding:10px 16px; font-size:14px; font-family:-apple-system,sans-serif; color:#ddd; background:none; border:none; text-align:left; cursor:pointer; }
+.ctx-item:active { background:rgba(0,122,204,0.3); }
+.ctx-sep { height:1px; background:rgba(255,255,255,0.1); margin:4px 0; }
 </style>
 </head>
 <body>
 <div id="snippetBar"></div>
 <div id="terminal"></div>
 <div id="toast"></div>
+<div id="ctxMenu">
+    <button class="ctx-item" id="ctxCopy">Copy</button>
+    <button class="ctx-item" id="ctxPaste">Paste</button>
+    <div class="ctx-sep"></div>
+    <button class="ctx-item" id="ctxSelectAll">Select All</button>
+    <button class="ctx-item" id="ctxClear">Clear</button>
+    <div class="ctx-sep"></div>
+    <button class="ctx-item" id="ctxExport">Export Log</button>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
 <script>
@@ -96,35 +110,83 @@ fitAddon.fit();
 // Send user input to Android
 term.onData(data => { if (A) A.onTerminalInput(data); });
 
-// ======================== COPY ON SELECT ========================
-term.onSelectionChange(() => {
+// ======================== CONTEXT MENU ========================
+const ctxMenu = document.getElementById('ctxMenu');
+const termEl = document.getElementById('terminal');
+let longPressTimer = null, longPressPos = null;
+
+function showCtxMenu(x, y) {
+    // Position menu, keep on screen
+    const mw = ctxMenu.offsetWidth || 140, mh = ctxMenu.offsetHeight || 200;
+    const mx = Math.min(x, window.innerWidth - mw - 8);
+    const my = Math.min(y, window.innerHeight - mh - 8);
+    ctxMenu.style.left = Math.max(4, mx) + 'px';
+    ctxMenu.style.top = Math.max(4, my) + 'px';
+    ctxMenu.style.display = 'block';
+    // Update copy button state
+    const hasSel = term.hasSelection();
+    document.getElementById('ctxCopy').style.opacity = hasSel ? '1' : '0.4';
+}
+
+function hideCtxMenu() { ctxMenu.style.display = 'none'; }
+
+// Long-press to show context menu
+termEl.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) {
+        longPressPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        longPressTimer = setTimeout(() => {
+            showCtxMenu(longPressPos.x, longPressPos.y);
+        }, 500);
+    }
+}, {passive:true});
+
+termEl.addEventListener('touchmove', e => {
+    if (longPressTimer && longPressPos) {
+        const dx = Math.abs(e.touches[0].clientX - longPressPos.x);
+        const dy = Math.abs(e.touches[0].clientY - longPressPos.y);
+        if (dx > 10 || dy > 10) { clearTimeout(longPressTimer); longPressTimer = null; }
+    }
+}, {passive:true});
+
+termEl.addEventListener('touchend', () => {
+    clearTimeout(longPressTimer); longPressTimer = null;
+}, {passive:true});
+
+// Dismiss menu on tap outside
+document.addEventListener('touchstart', e => {
+    if (ctxMenu.style.display === 'block' && !ctxMenu.contains(e.target)) hideCtxMenu();
+}, {passive:true});
+
+// Context menu actions
+document.getElementById('ctxCopy').addEventListener('click', () => {
+    hideCtxMenu();
     const sel = term.getSelection();
-    if (sel && A) {
-        A.copyToClipboard(sel);
-        showToast('Copied');
+    if (sel && A) { A.copyToClipboard(sel); showToast('Copied'); }
+});
+
+document.getElementById('ctxPaste').addEventListener('click', () => {
+    hideCtxMenu();
+    if (A) {
+        const text = A.getClipboard();
+        if (text) { A.onTerminalInput(text); showToast('Pasted'); }
     }
 });
 
-// ======================== DOUBLE-TAP TO PASTE ========================
-let lastTapTime = 0;
-const termEl = document.getElementById('terminal');
-termEl.addEventListener('touchend', e => {
-    if (e.changedTouches.length !== 1) return;
-    const now = Date.now();
-    if (now - lastTapTime < 300) {
-        // Double-tap → paste
-        if (A) {
-            const text = A.getClipboard();
-            if (text) {
-                A.onTerminalInput(text);
-                showToast('Pasted');
-            }
-        }
-        lastTapTime = 0;
-    } else {
-        lastTapTime = now;
-    }
-}, {passive:true});
+document.getElementById('ctxSelectAll').addEventListener('click', () => {
+    hideCtxMenu();
+    term.selectAll();
+});
+
+document.getElementById('ctxClear').addEventListener('click', () => {
+    hideCtxMenu();
+    term.clear();
+});
+
+document.getElementById('ctxExport').addEventListener('click', () => {
+    hideCtxMenu();
+    exportScrollback();
+    showToast('Exporting...');
+});
 
 // ======================== RESIZE ========================
 const ro = new ResizeObserver(() => {
