@@ -1711,9 +1711,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun resumeSshSession() {
-        if (sshSessionManager?.isConnected != true) return
+        if (sshSessionManager?.isConnected != true && moshSessionManager?.isConnected != true) return
         overlayManager.inputTarget = OverlayManager.InputTarget.SSH_TERMINAL
         overlayManager.sshSessionManager = sshSessionManager
+        overlayManager.moshSessionManager = moshSessionManager
 
         launcherScroll.visibility = View.GONE
         sessionWrapper.visibility = View.VISIBLE
