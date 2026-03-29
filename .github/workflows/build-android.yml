@@ -190,8 +190,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ steps.version.outputs.tag }}"
-          git tag "$TAG"
-          git push origin "$TAG"
+          SHA="${{ github.sha }}"
+
+          # Create tag via API (avoids workflows permission issue with git push)
+          gh api repos/${{ github.repository }}/git/refs \
+            -f ref="refs/tags/$TAG" -f sha="$SHA"
 
           ASSETS="VSCodeTunnel.apk"
           if [ -n "${{ steps.patch.outputs.patch_file }}" ]; then
