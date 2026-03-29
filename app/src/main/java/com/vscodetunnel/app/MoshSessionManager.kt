@@ -19,8 +19,8 @@ import java.util.Properties
  * 3. Launch native mosh-client binary as subprocess
  * 4. Bridge subprocess stdin/stdout to terminal WebView
  *
- * Requires: mosh-client binary at app files/bin/mosh-client (arm64)
- * The binary is extracted from assets on first run.
+ * Requires: mosh-client binary bundled as jniLibs/arm64-v8a/libmosh.so
+ * Android extracts it to nativeLibraryDir with execute permission.
  */
 class MoshSessionManager(
     private val context: Context,
@@ -29,33 +29,16 @@ class MoshSessionManager(
 ) {
     companion object {
         private const val TAG = "MoshSession"
-        private const val MOSH_BINARY = "mosh-client"
+        private const val MOSH_LIB = "libmosh.so"
+
+        /** Get mosh binary path from nativeLibraryDir */
+        private fun moshBin(context: Context) =
+            File(context.applicationInfo.nativeLibraryDir, MOSH_LIB)
 
         /** Check if mosh-client binary is available */
         fun isAvailable(context: Context): Boolean {
-            val bin = File(context.filesDir, "bin/$MOSH_BINARY")
+            val bin = moshBin(context)
             return bin.exists() && bin.canExecute()
-        }
-
-        /** Extract mosh-client from assets if bundled */
-        fun extractBinary(context: Context): Boolean {
-            try {
-                val binDir = File(context.filesDir, "bin")
-                binDir.mkdirs()
-                val dest = File(binDir, MOSH_BINARY)
-                if (dest.exists()) return true
-
-                // Try to extract from assets
-                val input = context.assets.open("bin/$MOSH_BINARY")
-                dest.outputStream().use { out -> input.copyTo(out) }
-                input.close()
-                dest.setExecutable(true)
-                FileLogger.d(TAG, "Mosh binary extracted to ${dest.absolutePath}")
-                return true
-            } catch (e: Exception) {
-                FileLogger.w(TAG, "Mosh binary not bundled in assets: $e")
-                return false
-            }
         }
     }
 
@@ -72,12 +55,8 @@ class MoshSessionManager(
 
                 // Step 1: Check if mosh-client binary exists
                 if (!isAvailable(context)) {
-                    extractBinary(context)
-                }
-                if (!isAvailable(context)) {
                     writeInfo("\u001B[31mMosh client binary not found.\u001B[0m\r\n")
-                    writeInfo("To use Mosh, place the arm64 mosh-client binary in:\r\n")
-                    writeInfo("  ${context.filesDir}/bin/mosh-client\r\n")
+                    writeInfo("Expected at: ${moshBin(context).absolutePath}\r\n")
                     writeInfo("\r\nFalling back to SSH...\r\n")
                     withContext(Dispatchers.Main) {
                         onDisconnected("Mosh binary not available")
@@ -142,7 +121,7 @@ class MoshSessionManager(
                 sshSession = null
 
                 // Step 3: Launch mosh-client binary
-                val moshBin = File(context.filesDir, "bin/$MOSH_BINARY").absolutePath
+                val moshBin = moshBin(context).absolutePath
                 val env = arrayOf(
                     "MOSH_KEY=$moshKey",
                     "HOME=${context.filesDir}",

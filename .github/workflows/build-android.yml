@@ -19,8 +19,8 @@ jobs:
         id: mosh-cache
         uses: actions/cache@v4
         with:
-          path: app/src/main/assets/bin/mosh-client
-          key: mosh-client-arm64-v8
+          path: app/src/main/jniLibs/arm64-v8a/libmosh.so
+          key: mosh-client-arm64-v9
 
       - name: Install build dependencies
         if: steps.mosh-cache.outputs.cache-hit != 'true'
@@ -41,14 +41,16 @@ jobs:
         run: |
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
           bash build-mosh.sh "$ANDROID_NDK_HOME"
-          ls -la ./app/src/main/assets/bin/mosh-client
-          file ./app/src/main/assets/bin/mosh-client
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          mv app/src/main/assets/bin/mosh-client app/src/main/jniLibs/arm64-v8a/libmosh.so
+          ls -la app/src/main/jniLibs/arm64-v8a/libmosh.so
+          file app/src/main/jniLibs/arm64-v8a/libmosh.so
 
       - name: Upload mosh binary
         uses: actions/upload-artifact@v4
         with:
           name: mosh-client-arm64
-          path: app/src/main/assets/bin/mosh-client
+          path: app/src/main/jniLibs/arm64-v8a/libmosh.so
 
   build-android:
     runs-on: ubuntu-latest
@@ -63,10 +65,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: mosh-client-arm64
-          path: app/src/main/assets/bin/
-
-      - name: Make mosh executable
-        run: chmod +x app/src/main/assets/bin/mosh-client 2>/dev/null || true
+          path: app/src/main/jniLibs/arm64-v8a/
 
       - name: Auto-increment version
         id: version
