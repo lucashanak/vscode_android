@@ -647,6 +647,19 @@ class MainActivity : AppCompatActivity() {
         addLabel("Quick snippets for toolbar")
         layout.addView(snippetsField)
 
+        addLabel("Connection protocol")
+        val moshCheck = CheckBox(this).apply {
+            text = "Use Mosh (UDP, survives network switches)"
+            isChecked = existing?.useMosh ?: false
+            setTextColor(resources.getColor(R.color.text_primary, theme))
+            textSize = 14f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) }
+        }
+        layout.addView(moshCheck)
+
         AlertDialog.Builder(this, R.style.AppDialogTheme)
             .setTitle(if (existing != null) "Edit Server" else "Add SSH Server")
             .setView(scroll)
@@ -669,7 +682,8 @@ class MainActivity : AppCompatActivity() {
                     privateKey = key,
                     startupCommand = startupField.text.toString().trim(),
                     portForwards = parsePortForwards(portFwdField.text.toString()),
-                    snippets = snippetsField.text.toString().split(",").map { it.trim() }.filter { it.isNotBlank() }
+                    snippets = snippetsField.text.toString().split(",").map { it.trim() }.filter { it.isNotBlank() },
+                    useMosh = moshCheck.isChecked
                 )
                 ServerStorage.saveServer(this, server)
                 renderSshServers()
