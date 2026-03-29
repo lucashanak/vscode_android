@@ -153,7 +153,7 @@ jobs:
           echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
           echo "APK SHA-256: $SHA"
 
-      - name: Generate delta patches
+      - name: Generate delta patch
         id: patch
         env:
           GH_TOKEN: ${{ github.token }}
@@ -162,40 +162,32 @@ jobs:
 
           NEW_VER="${{ steps.version.outputs.version }}"
           APK_SIZE=$(stat -c%s "VSCodeTunnel.apk")
-          PATCH_FILES=""
 
-          # Get last 3 release tags
-          TAGS=$(gh release list --limit 3 --json tagName -q '.[].tagName' 2>/dev/null || echo "")
-          echo "Previous releases: $TAGS"
+          # Get previous release only
+          PREV_TAG=$(gh release list --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
+          echo "Previous release: $PREV_TAG"
 
-          for PREV_TAG in $TAGS; do
+          if [ -n "$PREV_TAG" ]; then
             PREV_VER="${PREV_TAG#v}"
-            if [ "$PREV_VER" = "$NEW_VER" ]; then continue; fi
+            mkdir -p /tmp/prev
+            gh release download "$PREV_TAG" --pattern "VSCodeTunnel.apk" --dir /tmp/prev/ 2>/dev/null || true
 
-            mkdir -p "/tmp/prev-${PREV_VER}"
-            gh release download "$PREV_TAG" --pattern "VSCodeTunnel.apk" \
-              --dir "/tmp/prev-${PREV_VER}/" 2>/dev/null || continue
+            if [ -f /tmp/prev/VSCodeTunnel.apk ]; then
+              PATCH_NAME="patch-${PREV_VER}-to-${NEW_VER}.bspatch"
+              bsdiff /tmp/prev/VSCodeTunnel.apk VSCodeTunnel.apk "$PATCH_NAME"
 
-            PREV_APK="/tmp/prev-${PREV_VER}/VSCodeTunnel.apk"
-            if [ ! -f "$PREV_APK" ]; then continue; fi
+              PATCH_SIZE=$(stat -c%s "$PATCH_NAME")
+              PCT=$(( PATCH_SIZE * 100 / APK_SIZE ))
+              echo "Patch: ${PATCH_SIZE} bytes (${PCT}% of full APK)"
 
-            PATCH_NAME="patch-${PREV_VER}-to-${NEW_VER}.bspatch"
-            bsdiff "$PREV_APK" VSCodeTunnel.apk "$PATCH_NAME" || continue
-
-            PATCH_SIZE=$(stat -c%s "$PATCH_NAME")
-            PCT=$(( PATCH_SIZE * 100 / APK_SIZE ))
-            echo "Patch from $PREV_VER: ${PATCH_SIZE} bytes (${PCT}% of full APK)"
-
-            # Only include if patch saves >20%
-            if [ "$PATCH_SIZE" -lt "$((APK_SIZE * 80 / 100))" ]; then
-              PATCH_FILES="$PATCH_FILES $PATCH_NAME"
-            else
-              echo "  → too large, skipping"
-              rm "$PATCH_NAME"
+              if [ "$PATCH_SIZE" -lt "$((APK_SIZE * 80 / 100))" ]; then
+                echo "patch_file=$PATCH_NAME" >> "$GITHUB_OUTPUT"
+              else
+                echo "Patch too large, skipping"
+                rm "$PATCH_NAME"
+              fi
             fi
-          done
-
-          echo "patch_files=${PATCH_FILES}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -210,7 +202,10 @@ jobs:
           TAG="${{ steps.version.outputs.tag }}"
 
           # gh release create auto-creates the tag
-          ASSETS="VSCodeTunnel.apk ${{ steps.patch.outputs.patch_files }}"
+          ASSETS="VSCodeTunnel.apk"
+          if [ -n "${{ steps.patch.outputs.patch_file }}" ]; then
+            ASSETS="$ASSETS ${{ steps.patch.outputs.patch_file }}"
+          fi
 
           gh release create "$TAG" $ASSETS \
             --target "${{ github.sha }}" \

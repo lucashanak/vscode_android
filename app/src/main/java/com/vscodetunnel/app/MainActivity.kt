@@ -2106,9 +2106,10 @@ class MainActivity : AppCompatActivity() {
             try {
                 val update = TunnelApi.checkUpdate(APP_VERSION) ?: return@launch
 
-                val dlSize = if (update.patchUrl != null) update.patchSize else update.apkSize
+                val dlSize = if (update.hasPatch) update.totalPatchSize else update.apkSize
                 val sizeStr = formatBytes(dlSize)
-                val patchInfo = if (update.patchUrl != null) " (patch $sizeStr)" else " ($sizeStr)"
+                val steps = if (update.hasPatch) " (${update.patchChain.size}x patch $sizeStr)" else " ($sizeStr)"
+                val patchInfo = steps
                 updateText.text = "Update available: v${update.version}$patchInfo"
                 updateLink.setOnClickListener {
                     downloadAndInstallUpdate(update)
@@ -2126,64 +2127,16 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                val apkFile = if (update.patchUrl != null) {
+                val apkFile = if (update.hasPatch) {
                     try {
-                        // Delta update: download small patch, apply to current APK
-                        runOnUiThread { updateText.text = "Downloading patch..." }
-                        val patchFile = downloadFile(update.patchUrl, "update.patch") { progress, dl, total ->
-                            runOnUiThread {
-                                if (progress < 0) updateProgress.isIndeterminate = true
-                                else {
-                                    updateProgress.isIndeterminate = false; updateProgress.progress = progress
-                                    updateText.text = "Downloading patch ${formatBytes(dl)} / ${formatBytes(total)}"
-                                }
-                            }
-                        }
-
-                        runOnUiThread {
-                            updateText.text = "Applying patch..."
-                            updateProgress.isIndeterminate = true
-                        }
-                        val patched = applyBsPatch(patchFile)
-                        patchFile.delete()
-                        FileLogger.d(TAG, "Delta update applied: ${patched.length()} bytes")
-
-                        // Verify patched APK integrity
-                        if (update.apkSha256 != null) {
-                            val actualHash = sha256(patched)
-                            if (actualHash != update.apkSha256) {
-                                FileLogger.e(TAG, "Patch hash mismatch: expected=${update.apkSha256}, got=$actualHash")
-                                throw Exception("Patched APK hash mismatch")
-                            }
-                            FileLogger.d(TAG, "Patch hash verified: $actualHash")
-                        }
-                        patched
+                        applyPatchChain(update)
                     } catch (e: Throwable) {
-                        // Fallback to full APK on any error (including OutOfMemoryError)
                         FileLogger.e(TAG, "Delta update failed, falling back to full APK: $e")
                         runOnUiThread { updateText.text = "Patch failed, downloading full APK..." }
-                        downloadFile(update.apkUrl, "update.apk") { progress, dl, total ->
-                            runOnUiThread {
-                                if (progress < 0) updateProgress.isIndeterminate = true
-                                else {
-                                    updateProgress.isIndeterminate = false; updateProgress.progress = progress
-                                    updateText.text = "Downloading ${formatBytes(dl)} / ${formatBytes(total)}"
-                                }
-                            }
-                        }
+                        downloadFullApk(update)
                     }
                 } else {
-                    // No patch available, download full APK
-                    runOnUiThread { updateText.text = "Downloading v${update.version}..." }
-                    downloadFile(update.apkUrl, "update.apk") { progress, dl, total ->
-                        runOnUiThread {
-                            if (progress < 0) updateProgress.isIndeterminate = true
-                            else {
-                                updateProgress.isIndeterminate = false; updateProgress.progress = progress
-                                updateText.text = "Downloading ${formatBytes(dl)} / ${formatBytes(total)}"
-                            }
-                        }
-                    }
+                    downloadFullApk(update)
                 }
 
                 runOnUiThread {
@@ -2202,6 +2155,87 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    private suspend fun downloadFullApk(update: TunnelApi.UpdateInfo): java.io.File {
+        runOnUiThread { updateText.text = "Downloading v${update.version}..." }
+        return downloadFile(update.apkUrl, "update.apk") { progress, dl, total ->
+            runOnUiThread {
+                if (progress < 0) updateProgress.isIndeterminate = true
+                else {
+                    updateProgress.isIndeterminate = false; updateProgress.progress = progress
+                    updateText.text = "Downloading ${formatBytes(dl)} / ${formatBytes(total)}"
+                }
+            }
+        }
+    }
+
+    private suspend fun applyPatchChain(update: TunnelApi.UpdateInfo): java.io.File =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val chain = update.patchChain
+            val total = chain.size
+            var currentApk = java.io.File(applicationInfo.sourceDir)
+
+            for ((idx, step) in chain.withIndex()) {
+                // Download patch
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    updateText.text = "Downloading patch ${idx + 1}/$total (${step.from} → ${step.to})..."
+                    updateProgress.isIndeterminate = false
+                    updateProgress.progress = 0
+                }
+                val patchFile = downloadFile(step.url, "patch_${idx}.bspatch") { progress, dl, sz ->
+                    runOnUiThread {
+                        if (progress < 0) updateProgress.isIndeterminate = true
+                        else {
+                            updateProgress.isIndeterminate = false
+                            updateProgress.progress = progress
+                        }
+                    }
+                }
+
+                // Apply patch
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    updateText.text = "Applying patch ${idx + 1}/$total..."
+                    updateProgress.isIndeterminate = true
+                }
+                val outputApk = java.io.File(cacheDir, "updates/step_${idx}.apk")
+                outputApk.parentFile?.mkdirs()
+                if (outputApk.exists()) outputApk.delete()
+
+                io.sigpipe.jbsdiff.Patch.patch(
+                    currentApk.readBytes(),
+                    patchFile.readBytes(),
+                    outputApk.outputStream()
+                )
+                patchFile.delete()
+
+                if (outputApk.length() < 1_000_000) {
+                    throw Exception("Patched APK step ${idx + 1} too small (${outputApk.length()} bytes)")
+                }
+                FileLogger.d(TAG, "Patch step ${idx + 1}/$total: ${currentApk.length()} → ${outputApk.length()} bytes")
+
+                // Clean up previous intermediate file (not the installed APK)
+                if (idx > 0) currentApk.delete()
+                currentApk = outputApk
+            }
+
+            // Rename final result
+            val finalApk = java.io.File(cacheDir, "updates/update.apk")
+            if (finalApk.exists()) finalApk.delete()
+            currentApk.renameTo(finalApk)
+
+            // Verify SHA-256 of final APK
+            if (update.apkSha256 != null) {
+                val actualHash = sha256(finalApk)
+                if (actualHash != update.apkSha256) {
+                    FileLogger.e(TAG, "Chain patch hash mismatch: expected=${update.apkSha256}, got=$actualHash")
+                    finalApk.delete()
+                    throw Exception("Patched APK hash mismatch after ${total} steps")
+                }
+                FileLogger.d(TAG, "Patch chain hash verified: $actualHash")
+            }
+
+            finalApk
+        }
 
     private suspend fun applyBsPatch(patchFile: java.io.File): java.io.File =
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {

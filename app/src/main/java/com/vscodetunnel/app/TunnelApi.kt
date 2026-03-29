@@ -102,56 +102,92 @@ object TunnelApi {
         return "https://vscode.dev/tunnel/${URLEncoder.encode(tunnelName, "UTF-8")}"
     }
 
+    data class PatchStep(val url: String, val size: Long, val from: String, val to: String)
+
     data class UpdateInfo(
         val version: String,
         val apkUrl: String,
         val apkSize: Long,
-        val patchUrl: String?,
-        val patchSize: Long,
+        val patchChain: List<PatchStep>,
         val apkSha256: String?
-    )
+    ) {
+        val totalPatchSize: Long get() = patchChain.sumOf { it.size }
+        val hasPatch: Boolean get() = patchChain.isNotEmpty()
+    }
+
+    private const val REPO = "lucashanak/vscode_android"
+    private const val MAX_PATCH_CHAIN = 3
 
     suspend fun checkUpdate(currentVersion: String): UpdateInfo? = withContext(Dispatchers.IO) {
         try {
-            val conn = (URL("https://api.github.com/repos/lucashanak/vscode_android/releases/latest").openConnection() as HttpURLConnection).apply {
+            val current = currentVersion.trimStart('v')
+
+            // Fetch last 5 releases to find patch chain
+            val conn = (URL("https://api.github.com/repos/$REPO/releases?per_page=5").openConnection() as HttpURLConnection).apply {
                 setRequestProperty("User-Agent", "VSCodeTunnel-Android/2.0")
                 setRequestProperty("Accept", "application/vnd.github+json")
             }
             val body = conn.inputStream.bufferedReader().readText()
             conn.disconnect()
-            val release = JSONObject(body)
-            val tag = release.optString("tag_name", "").trimStart('v')
-            val current = currentVersion.trimStart('v')
-            if (tag.isBlank() || tag == current) return@withContext null
+            val releases = org.json.JSONArray(body)
+            if (releases.length() == 0) return@withContext null
 
-            val assets = release.optJSONArray("assets") ?: return@withContext null
+            // Latest release info
+            val latest = releases.getJSONObject(0)
+            val latestVer = latest.optString("tag_name", "").trimStart('v')
+            if (latestVer.isBlank() || latestVer == current) return@withContext null
+
+            // Parse APK url + sha256 from latest release
             var apkUrl: String? = null
             var apkSize = 0L
-            var patchUrl: String? = null
-            var patchSize = 0L
+            val latestAssets = latest.optJSONArray("assets") ?: return@withContext null
+            for (i in 0 until latestAssets.length()) {
+                val a = latestAssets.getJSONObject(i)
+                if (a.optString("name", "").endsWith(".apk")) {
+                    apkUrl = a.optString("browser_download_url", "")
+                    apkSize = a.optLong("size", 0)
+                }
+            }
+            if (apkUrl == null) return@withContext null
 
-            for (i in 0 until assets.length()) {
-                val asset = assets.getJSONObject(i)
-                val name = asset.optString("name", "")
-                val url = asset.optString("browser_download_url", "")
-                val size = asset.optLong("size", 0)
-                when {
-                    name.endsWith(".apk") -> { apkUrl = url; apkSize = size }
-                    name.endsWith(".bspatch") -> {
-                        val match = Regex("patch-(.*)-to-(.*)\\.bspatch").find(name)
-                        if (match != null && match.groupValues[1] == current) {
-                            patchUrl = url; patchSize = size
-                        }
-                    }
+            val latestBody = latest.optString("body", "")
+            val sha256 = Regex("sha256:([a-f0-9]{64})").find(latestBody)?.groupValues?.get(1)
+
+            // Build patch map: from_version → PatchStep for each release
+            val patchMap = mutableMapOf<String, PatchStep>()
+            for (r in 0 until releases.length()) {
+                val rel = releases.getJSONObject(r)
+                val assets = rel.optJSONArray("assets") ?: continue
+                for (i in 0 until assets.length()) {
+                    val a = assets.getJSONObject(i)
+                    val name = a.optString("name", "")
+                    if (!name.endsWith(".bspatch")) continue
+                    val match = Regex("patch-(.*)-to-(.*)\\.bspatch").find(name) ?: continue
+                    val from = match.groupValues[1]
+                    val to = match.groupValues[2]
+                    patchMap[from] = PatchStep(
+                        url = a.optString("browser_download_url", ""),
+                        size = a.optLong("size", 0),
+                        from = from, to = to
+                    )
                 }
             }
 
-            // Parse sha256 from release body (format: "sha256:<hex>")
-            val releaseBody = release.optString("body", "")
-            val sha256 = Regex("sha256:([a-f0-9]{64})").find(releaseBody)?.groupValues?.get(1)
+            // Find chain: current → ... → latestVer (max MAX_PATCH_CHAIN steps)
+            val chain = mutableListOf<PatchStep>()
+            var ver = current
+            for (step in 0 until MAX_PATCH_CHAIN) {
+                val patch = patchMap[ver] ?: break
+                chain.add(patch)
+                ver = patch.to
+                if (ver == latestVer) break
+            }
+            // Only use chain if it reaches the latest version
+            val validChain = if (ver == latestVer) chain else emptyList()
 
-            apkUrl?.let { UpdateInfo(tag, it, apkSize, patchUrl, patchSize, sha256) }
-        } catch (_: Exception) {
+            UpdateInfo(latestVer, apkUrl, apkSize, validChain, sha256)
+        } catch (e: Exception) {
+            FileLogger.w("TunnelApi", "checkUpdate failed: $e")
             null
         }
     }
