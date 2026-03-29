@@ -203,10 +203,13 @@ class MoshSessionManager(
         readJob?.cancel(); readJob = null
         moshProcess?.destroy(); moshProcess = null
         sshSession?.disconnect(); sshSession = null
-        FileLogger.d(TAG, "Mosh disconnected")
+        FileLogger.w(TAG, "Mosh disconnected", Exception("disconnect callstack"))
     }
 
-    fun destroy() { disconnect(); scope.cancel() }
+    fun destroy() {
+        FileLogger.w(TAG, "Mosh destroy called", Exception("destroy callstack"))
+        disconnect(); scope.cancel()
+    }
 
     private fun writeOutput(text: String) {
         val safe = JSONObject.quote(text)
