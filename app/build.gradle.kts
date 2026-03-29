@@ -13,6 +13,16 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "2.0.0"
+        ndk { abiFilters += "arm64-v8a" }
+        externalNativeBuild {
+            cmake { arguments("-DANDROID_STL=none") }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+        }
     }
 
     buildFeatures {

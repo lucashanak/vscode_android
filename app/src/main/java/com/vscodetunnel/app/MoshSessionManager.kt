@@ -59,7 +59,7 @@ class MoshSessionManager(
     }
 
     private var sshSession: Session? = null
-    private var moshProcess: Process? = null
+    private var moshProcess: PtyProcess? = null
     private var readJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     @Volatile var isConnected = false; private set
@@ -161,13 +161,13 @@ class MoshSessionManager(
                 writeInfo("Launching mosh-client...\r\n")
                 FileLogger.d(TAG, "Mosh cmd: ${cmd.joinToString(" ")}")
                 FileLogger.d(TAG, "Mosh env: ${env.joinToString(", ") { it.substringBefore('=') }}")
-                val process = Runtime.getRuntime().exec(cmd, env)
+                val process = PtyProcess.start(moshBin, cmd, env, rows = 24, cols = 80)
                 moshProcess = process
                 isConnected = true
 
-                FileLogger.d(TAG, "Mosh process started, pid alive: ${process.isAlive}")
+                FileLogger.d(TAG, "Mosh PTY process started, pid=${process.pid}, alive=${process.isAlive}")
 
-                // Step 4: Bridge stdin/stdout
+                // Step 4: Bridge PTY master fd to terminal WebView
                 readJob = scope.launch {
                     try {
                         val buf = ByteArray(8192)
@@ -190,19 +190,6 @@ class MoshSessionManager(
                     }
                 }
 
-                // Also read stderr
-                scope.launch {
-                    try {
-                        val buf = ByteArray(4096)
-                        val err = process.errorStream
-                        while (isActive) {
-                            val n = err.read(buf)
-                            if (n < 0) break
-                            if (n > 0) writeInfo(String(buf, 0, n))
-                        }
-                    } catch (_: Exception) {}
-                }
-
             } catch (e: Exception) {
                 FileLogger.e(TAG, "Mosh connection failed: $e")
                 writeInfo("\r\n\u001B[31mMosh failed: ${e.message}\u001B[0m\r\n")
@@ -214,9 +201,9 @@ class MoshSessionManager(
     fun sendInput(data: String) {
         scope.launch {
             try {
-                moshProcess?.outputStream?.apply {
-                    write(data.toByteArray())
-                    flush()
+                moshProcess?.let {
+                    it.outputStream.write(data.toByteArray())
+                    it.outputStream.flush()
                 }
             } catch (e: Exception) {
                 FileLogger.w(TAG, "Send failed: $e")
@@ -227,15 +214,13 @@ class MoshSessionManager(
     fun disconnect() {
         isConnected = false
         readJob?.cancel(); readJob = null
-        moshProcess?.destroy(); moshProcess = null
+        moshProcess?.destroy()
+        moshProcess = null
         sshSession?.disconnect(); sshSession = null
-        FileLogger.w(TAG, "Mosh disconnected", Exception("disconnect callstack"))
+        FileLogger.d(TAG, "Mosh disconnected")
     }
 
-    fun destroy() {
-        FileLogger.w(TAG, "Mosh destroy called", Exception("destroy callstack"))
-        disconnect(); scope.cancel()
-    }
+    fun destroy() { disconnect(); scope.cancel() }
 
     private fun writeOutput(text: String) {
         val safe = JSONObject.quote(text)
