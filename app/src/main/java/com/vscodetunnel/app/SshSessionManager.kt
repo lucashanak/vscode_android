@@ -63,9 +63,9 @@ class SshSessionManager(
 
         /** Attach 2-finger scroll/pinch handling at native Android level */
         /**
-         * Intercept 2-finger gestures on WebView for scroll/pinch.
-         * Uses requestDisallowInterceptTouchEvent + overrides onTouchEvent
-         * to fully consume 2-finger gestures while passing 1-finger through.
+         * Observe 2-finger gestures on WebView for scroll/pinch.
+         * NEVER returns true — all events pass through to WebView/xterm.js.
+         * Scroll/pinch are triggered as side effects via evaluateJavascript.
          */
         @SuppressLint("ClickableViewAccessibility")
         fun setupTwoFingerScroll(webView: WebView) {
@@ -90,9 +90,6 @@ class SshSessionManager(
                             webView.evaluateJavascript(
                                 "typeof term!=='undefined'?term.options.fontSize:14"
                             ) { r -> startFontSize = r?.toIntOrNull() ?: 14 }
-                            // Cancel any WebView gesture tracking
-                            webView.parent?.requestDisallowInterceptTouchEvent(true)
-                            return@setOnTouchListener true
                         }
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
@@ -127,27 +124,16 @@ class SshSessionManager(
                                         "if(term.options.fontSize!==$newSize){term.options.fontSize=$newSize;fitAddon.fit()}", null)
                                 }
                             }
-                            return@setOnTouchListener true
                         }
                     }
-                    android.view.MotionEvent.ACTION_POINTER_UP -> {
-                        if (twoFingerActive) {
-                            twoFingerActive = false
-                            twoFingerStartDist = 0f
-                            mode = null
-                            webView.parent?.requestDisallowInterceptTouchEvent(false)
-                            return@setOnTouchListener true
-                        }
-                    }
-                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
-                        if (twoFingerActive) {
-                            twoFingerActive = false
-                            twoFingerStartDist = 0f
-                            mode = null
-                            webView.parent?.requestDisallowInterceptTouchEvent(false)
-                        }
+                    android.view.MotionEvent.ACTION_POINTER_UP,
+                    android.view.MotionEvent.ACTION_UP,
+                    android.view.MotionEvent.ACTION_CANCEL -> {
+                        twoFingerActive = false
+                        mode = null
                     }
                 }
+                // Always pass events through to WebView — never consume
                 false
             }
         }
