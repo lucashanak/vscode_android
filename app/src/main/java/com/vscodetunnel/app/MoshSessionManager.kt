@@ -217,6 +217,10 @@ class MoshSessionManager(
         }
     }
 
+    fun resize(cols: Int, rows: Int) {
+        moshProcess?.setWindowSize(rows, cols)
+    }
+
     fun sendInput(data: String) {
         scope.launch {
             try {

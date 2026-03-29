@@ -1145,9 +1145,12 @@ class MainActivity : AppCompatActivity() {
                 @android.webkit.JavascriptInterface
                 fun onTerminalInput(data: String) { mgr.sendInput(data) }
                 @android.webkit.JavascriptInterface
-                fun onTerminalReady(cols: Int, rows: Int) { FileLogger.d(TAG, "Mosh terminal ready: ${cols}x$rows") }
+                fun onTerminalReady(cols: Int, rows: Int) {
+                    FileLogger.d(TAG, "Mosh terminal ready: ${cols}x$rows")
+                    mgr.resize(cols, rows)
+                }
                 @android.webkit.JavascriptInterface
-                fun onTerminalResize(cols: Int, rows: Int) {}
+                fun onTerminalResize(cols: Int, rows: Int) { mgr.resize(cols, rows) }
                 @android.webkit.JavascriptInterface
                 fun copyToClipboard(text: String) {
                     val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
