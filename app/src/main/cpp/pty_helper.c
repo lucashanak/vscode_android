@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
+#include <signal.h>
 #include <termios.h>
 
 /*
@@ -96,4 +97,22 @@ Java_com_vscodetunnel_app_PtyProcess_nativeSetWindowSize(
 {
     struct winsize ws = { .ws_row = rows, .ws_col = cols };
     ioctl(fd, TIOCSWINSZ, &ws);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_vscodetunnel_app_PtyProcess_nativeWaitPid(
+    JNIEnv *env, jclass clazz, jint pid)
+{
+    int status = 0;
+    waitpid((pid_t)pid, &status, 0);
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) return -WTERMSIG(status);
+    return status;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_vscodetunnel_app_PtyProcess_nativeIsAlive(
+    JNIEnv *env, jclass clazz, jint pid)
+{
+    return kill((pid_t)pid, 0) == 0 ? JNI_TRUE : JNI_FALSE;
 }

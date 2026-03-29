@@ -26,18 +26,9 @@ class PtyProcess private constructor(
         try { android.system.Os.kill(pid, 9) } catch (_: Exception) {}
     }
 
-    fun waitFor(): Int {
-        val status = IntArray(1)
-        try {
-            android.system.Os.waitpid(pid, status, 0)
-        } catch (_: Exception) {}
-        return status[0]
-    }
+    fun waitFor(): Int = nativeWaitPid(pid)
 
-    val isAlive: Boolean get() = try {
-        android.system.Os.kill(pid, 0)
-        true
-    } catch (_: Exception) { false }
+    val isAlive: Boolean get() = nativeIsAlive(pid)
 
     companion object {
         init { System.loadLibrary("pty_helper") }
@@ -62,6 +53,12 @@ class PtyProcess private constructor(
 
         @JvmStatic
         external fun nativeSetWindowSize(fd: Int, rows: Int, cols: Int)
+
+        @JvmStatic
+        private external fun nativeWaitPid(pid: Int): Int
+
+        @JvmStatic
+        private external fun nativeIsAlive(pid: Int): Boolean
 
         private fun createFileDescriptor(fd: Int): FileDescriptor {
             val fileDescriptor = FileDescriptor()
