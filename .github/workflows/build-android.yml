@@ -201,14 +201,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ steps.version.outputs.tag }}"
-          SHA="${{ github.sha }}"
 
-          # Create tag via API (avoids workflows permission issue with git push)
-          gh api repos/${{ github.repository }}/git/refs \
-            -f ref="refs/tags/$TAG" -f sha="$SHA"
-
+          # gh release create auto-creates the tag
           ASSETS="VSCodeTunnel.apk ${{ steps.patch.outputs.patch_files }}"
 
           gh release create "$TAG" $ASSETS \
+            --target "${{ github.sha }}" \
             --title "$TAG" \
             --generate-notes
