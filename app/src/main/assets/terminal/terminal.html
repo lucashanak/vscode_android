@@ -31,6 +31,10 @@ html, body { background:#1E1E1E; overflow:hidden; width:100%; height:100%; displ
 /* Selection handles (Android-style teardrops) */
 .sel-handle { position:fixed; width:28px; height:28px; z-index:150; display:none; touch-action:none; }
 .sel-handle svg { width:100%; height:100%; filter:drop-shadow(0 1px 2px rgba(0,0,0,0.5)); }
+/* Selection floating toolbar (Android-style, above selection) */
+#selToolbar { position:fixed; display:none; z-index:250; background:#363636; border-radius:20px; padding:2px 4px; box-shadow:0 2px 12px rgba(0,0,0,0.6); flex-direction:row; align-items:center; gap:0; }
+.sel-action { padding:8px 14px; font-size:13px; font-family:-apple-system,sans-serif; color:#eee; background:none; border:none; cursor:pointer; border-radius:16px; white-space:nowrap; }
+.sel-action:active { background:rgba(255,255,255,0.12); }
 </style>
 </head>
 <body>
@@ -47,6 +51,11 @@ html, body { background:#1E1E1E; overflow:hidden; width:100%; height:100%; displ
 <!-- Selection handles (Android teardrop style) -->
 <div class="sel-handle" id="handleLeft"><svg viewBox="0 0 28 28"><circle cx="14" cy="6" r="6" fill="#007acc"/><rect x="12" y="6" width="4" height="16" rx="2" fill="#007acc"/></svg></div>
 <div class="sel-handle" id="handleRight"><svg viewBox="0 0 28 28"><circle cx="14" cy="6" r="6" fill="#007acc"/><rect x="12" y="6" width="4" height="16" rx="2" fill="#007acc"/></svg></div>
+<div id="selToolbar">
+    <button class="sel-action" id="selCopy">Copy</button>
+    <button class="sel-action" id="selAll">All</button>
+    <button class="sel-action" id="selPaste">Paste</button>
+</div>
 <div id="ctxMenu">
     <button class="ctx-item" id="ctxCopy">Copy</button>
     <button class="ctx-item" id="ctxPaste">Paste</button>
@@ -213,10 +222,20 @@ termEl.addEventListener('touchend', e => {
     if (e.touches.length === 0) twoFingerStart = 0;
 }, {passive:true});
 
-// Dismiss menu on single tap outside
+// Dismiss menu/toolbar on single tap outside
 document.addEventListener('touchstart', e => {
-    if (ctxMenu.style.display === 'block' && !ctxMenu.contains(e.target) && e.touches.length === 1)
-        hideCtxMenu();
+    if (e.touches.length === 1) {
+        if (ctxMenu.style.display === 'block' && !ctxMenu.contains(e.target))
+            hideCtxMenu();
+        if (selToolbar.style.display === 'flex' && !selToolbar.contains(e.target)
+            && e.target !== handleLeft && e.target !== handleRight
+            && !handleLeft.contains(e.target) && !handleRight.contains(e.target)) {
+            // Delay to let xterm process the tap first (may create new selection)
+            setTimeout(() => {
+                if (!term.hasSelection()) { hideSelToolbar(); updateHandles(); }
+            }, 100);
+        }
+    }
 }, {passive:true});
 
 // Context menu actions
@@ -312,10 +331,58 @@ function updateHandles() {
     handleRight.style.display = 'block';
 }
 
+const selToolbar = document.getElementById('selToolbar');
+
+function showSelToolbar() {
+    const pos = term.getSelectionPosition();
+    if (!pos || !term.hasSelection()) { selToolbar.style.display = 'none'; return; }
+    const rect = getScreenRect();
+    const cell = getCellSize();
+    const viewportRow = term.buffer.active.viewportY;
+
+    // Position toolbar above the start of selection
+    const sy = rect.top + (pos.start.y - viewportRow) * cell.h;
+    const sx = rect.left + pos.start.x * cell.w;
+    const ex = rect.left + pos.end.x * cell.w;
+    const midX = (pos.start.y === pos.end.y) ? (sx + ex) / 2 : sx + (rect.width / 2 - sx) / 2;
+
+    selToolbar.style.display = 'flex';
+    const tw = selToolbar.offsetWidth;
+    const toolbarX = Math.max(4, Math.min(midX - tw / 2, window.innerWidth - tw - 4));
+    const toolbarY = Math.max(4, sy - 44);
+    selToolbar.style.left = toolbarX + 'px';
+    selToolbar.style.top = toolbarY + 'px';
+}
+
+function hideSelToolbar() { selToolbar.style.display = 'none'; }
+
 term.onSelectionChange(() => {
+    if (term.hasSelection()) {
+        updateHandles();
+        showSelToolbar();
+    } else {
+        updateHandles();
+        hideSelToolbar();
+    }
+});
+
+// Selection toolbar actions
+document.getElementById('selCopy').addEventListener('click', () => {
     const sel = term.getSelection();
     if (sel && A) { A.copyToClipboard(sel); showToast('Copied'); }
-    updateHandles();
+    term.clearSelection();
+    hideSelToolbar();
+});
+document.getElementById('selAll').addEventListener('click', () => {
+    term.selectAll();
+});
+document.getElementById('selPaste').addEventListener('click', () => {
+    term.clearSelection();
+    hideSelToolbar();
+    if (A) {
+        const text = A.getClipboard();
+        if (text) { A.onTerminalInput(text); showToast('Pasted'); }
+    }
 });
 
 // Handle dragging
@@ -324,8 +391,8 @@ function handleDrag(e, handle) {
     draggingHandle = handle;
 }
 
-handleLeft.addEventListener('touchstart', e => { e.preventDefault(); draggingHandle = 'left'; }, {passive:false});
-handleRight.addEventListener('touchstart', e => { e.preventDefault(); draggingHandle = 'right'; }, {passive:false});
+handleLeft.addEventListener('touchstart', e => { e.preventDefault(); draggingHandle = 'left'; hideSelToolbar(); }, {passive:false});
+handleRight.addEventListener('touchstart', e => { e.preventDefault(); draggingHandle = 'right'; hideSelToolbar(); }, {passive:false});
 
 document.addEventListener('touchmove', e => {
     if (!draggingHandle) return;
@@ -359,7 +426,10 @@ document.addEventListener('touchmove', e => {
 }, {passive:false});
 
 document.addEventListener('touchend', () => {
-    draggingHandle = null;
+    if (draggingHandle) {
+        draggingHandle = null;
+        if (term.hasSelection()) showSelToolbar();
+    }
 }, {passive:true});
 
 // ======================== TOUCHPAD CURSOR (called from Android) ========================
