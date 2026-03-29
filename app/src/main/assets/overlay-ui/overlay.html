@@ -186,6 +186,7 @@ function SEP(cls) { return `<div class="${cls||'fn-sep'}"></div>`; }
 
 // ======================== DIACRITICS MAP ========================
 const DIAC = {
+    // Letters with diacritics
     'a':['á','à','â','ä','ã','å','ą','æ'],
     'c':['č','ć','ç'],
     'd':['ď','đ'],
@@ -200,6 +201,24 @@ const DIAC = {
     'u':['ú','ù','û','ü','ů','ű'],
     'y':['ý','ÿ'],
     'z':['ž','ź','ż'],
+    // Numbers → shift-row symbols
+    '1':['!','¹','½','⅓'],
+    '2':['@','²','⅔'],
+    '3':['#','³','⅛'],
+    '4':['$','€','£','¥'],
+    '5':['%','‰'],
+    '6':['^','¬'],
+    '7':['&','§'],
+    '8':['*','×','•'],
+    '9':['(','[','{','<'],
+    '0':[')',']','}','>'],
+    // Punctuation
+    '.':['…',',',':',';','!','?'],
+    ',':['<',';',':','«','»'],
+    '-':['–','—','_','~','±'],
+    '/':['\\','|','÷'],
+    '=':['≠','≈','±','≤','≥'],
+    "'":['`','"','"',''',''','´'],
 };
 
 // ======================== CLIPBOARD HISTORY ========================
@@ -527,9 +546,9 @@ function attachKeyEvents() {
         if (diacShown) { updateDiacHighlight(e.clientX, e.clientY); commitDiac(); }
     }, {passive:true});
 
-    // Special + symbol keys (data-key) — with haptic
+    // Special + symbol keys (data-key) — with haptic + long-press popup
     kbPanel.querySelectorAll('.key[data-key]:not(.key-mod)').forEach(btn => {
-        const fire = () => {
+        const fireKey = () => {
             const key = btn.dataset.key;
             if (key === 'Space' && !mods.ctrl && !mods.alt && !mods.meta) {
                 A.sendChar(' ');
@@ -539,16 +558,62 @@ function attachKeyEvents() {
                 A.sendChar(key);
             }
         };
+        const key = btn.dataset.key;
+        const hasDiac = DIAC[key] && !SPECIAL_KEYS.has(key) && key !== 'Space';
+        let pendingKey = false;
+
         btn.addEventListener('pointerdown', e => {
             e.preventDefault(); e.stopPropagation();
             haptic();
-            fire();
-            startRepeat(fire);
             btn.classList.add('pressed');
+            if (hasDiac && !mods.ctrl && !mods.alt && !mods.meta) {
+                // Has alternatives: wait for long-press decision
+                pendingKey = true;
+                diacTimer = setTimeout(() => {
+                    pendingKey = false;
+                    stopRepeat();
+                    showDiacPopup(key, btn.getBoundingClientRect());
+                }, 300);
+            } else {
+                pendingKey = false;
+                fireKey();
+                startRepeat(fireKey);
+            }
         });
-        btn.addEventListener('pointerup', e => { stopRepeat(); resetMods(); btn.classList.remove('pressed'); });
-        btn.addEventListener('pointerleave', () => { stopRepeat(); btn.classList.remove('pressed'); });
-        btn.addEventListener('pointercancel', () => { stopRepeat(); btn.classList.remove('pressed'); });
+        btn.addEventListener('pointermove', e => {
+            if (diacShown) updateDiacHighlight(e.clientX, e.clientY);
+        });
+        btn.addEventListener('pointerup', e => {
+            clearTimeout(diacTimer); diacTimer = null;
+            stopRepeat();
+            btn.classList.remove('pressed');
+            if (diacShown) {
+                updateDiacHighlight(e.clientX, e.clientY);
+                commitDiac();
+            } else if (pendingKey) {
+                pendingKey = false;
+                fireKey();
+                resetMods();
+            } else {
+                resetMods();
+            }
+        });
+        btn.addEventListener('pointerleave', e => {
+            if (diacShown) {
+                // Let global handler track
+            } else {
+                clearTimeout(diacTimer); diacTimer = null;
+                stopRepeat();
+                if (pendingKey) { pendingKey = false; fireKey(); resetMods(); }
+                btn.classList.remove('pressed');
+            }
+        });
+        btn.addEventListener('pointercancel', () => {
+            clearTimeout(diacTimer); stopRepeat();
+            pendingKey = false;
+            btn.classList.remove('pressed');
+            hideDiacPopup();
+        });
     });
 
     // Modifiers (no repeat, haptic only)
