@@ -100,9 +100,18 @@ class MoshSessionManager(
                 sess.connect()
                 sshSession = sess
 
+                // Detect available UTF-8 locale on server
+                val localeChannel = sess.openChannel("exec") as ChannelExec
+                localeChannel.setCommand("locale -a 2>/dev/null | grep -i 'utf-\\?8' | head -1")
+                localeChannel.inputStream = null
+                val localeOut = localeChannel.inputStream.bufferedReader().readText().trim()
+                localeChannel.disconnect()
+                val utf8Locale = if (localeOut.isNotEmpty()) localeOut else "C.UTF-8"
+                FileLogger.d(TAG, "Using server locale: $utf8Locale")
+
                 // Run mosh-server new
                 val channel = sess.openChannel("exec") as ChannelExec
-                channel.setCommand("LANG=C.UTF-8 mosh-server new")
+                channel.setCommand("LANG=$utf8Locale mosh-server new")
                 channel.inputStream = null
                 val stdout = channel.inputStream
                 val stderr = channel.errStream
