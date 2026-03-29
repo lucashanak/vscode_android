@@ -198,29 +198,10 @@ function showCtxMenu(x, y) {
 
 function hideCtxMenu() { ctxMenu.style.display = 'none'; }
 
-// 2-finger tap → context menu (keeps single-finger free for xterm text selection)
-// Track 2-finger gesture to distinguish tap from pinch
-let twoFingerStart = 0, twoFingerMoved = false, twoFingerPos = {x:0,y:0};
-termEl.addEventListener('touchstart', e => {
-    if (e.touches.length === 2) {
-        twoFingerStart = Date.now();
-        twoFingerMoved = false;
-        twoFingerPos = {
-            x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-            y: (e.touches[0].clientY + e.touches[1].clientY) / 2
-        };
-    }
-}, {passive:true});
-termEl.addEventListener('touchmove', e => {
-    if (e.touches.length === 2) twoFingerMoved = true;
-}, {passive:true});
-termEl.addEventListener('touchend', e => {
-    // 2-finger short tap without movement → context menu
-    if (twoFingerStart > 0 && !twoFingerMoved && Date.now() - twoFingerStart < 400) {
-        showCtxMenu(twoFingerPos.x, twoFingerPos.y);
-    }
-    if (e.touches.length === 0) twoFingerStart = 0;
-}, {passive:true});
+// 2-finger tap → context menu
+// Detection is integrated with pinch/scroll in the capture-phase handlers below.
+// A 2-finger touch that doesn't move significantly within 400ms = context menu tap.
+let ctxMenuTapStart = 0, ctxMenuTapPos = {x:0,y:0};
 
 // Dismiss menu/toolbar on single tap outside
 document.addEventListener('touchstart', e => {
@@ -537,11 +518,14 @@ const ro = new ResizeObserver(() => {
 ro.observe(termEl);
 
 // ======================== PINCH TO ZOOM + 2-FINGER SCROLL ========================
+// Uses capture phase on document to intercept before xterm.js handles events
 let pinchStartDist = 0, pinchStartSize = 0;
 let twoFingerStartY = 0, twoFingerMode = null; // 'pinch' | 'scroll' | null
-let scrollAccum = 0;
-termEl.addEventListener('touchstart', e => {
+let scrollAccum = 0, twoFingerActive = false;
+
+document.addEventListener('touchstart', e => {
     if (e.touches.length === 2) {
+        twoFingerActive = true;
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         pinchStartDist = Math.sqrt(dx*dx + dy*dy);
@@ -549,45 +533,65 @@ termEl.addEventListener('touchstart', e => {
         twoFingerStartY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
         twoFingerMode = null;
         scrollAccum = 0;
+        // Context menu tap tracking
+        ctxMenuTapStart = Date.now();
+        ctxMenuTapPos = {
+            x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+            y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+        };
     }
-}, {passive:true});
-termEl.addEventListener('touchmove', e => {
-    if (e.touches.length === 2 && pinchStartDist > 0) {
-        e.preventDefault(); // Prevent browser from intercepting 2-finger gestures
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-        const distChange = Math.abs(dist - pinchStartDist);
-        const yChange = Math.abs(midY - twoFingerStartY);
+}, {capture:true, passive:true});
 
-        // Decide mode on first significant movement
-        if (!twoFingerMode && (distChange > 20 || yChange > 20)) {
-            twoFingerMode = distChange > yChange ? 'pinch' : 'scroll';
-        }
+document.addEventListener('touchmove', e => {
+    if (!twoFingerActive || e.touches.length !== 2) return;
+    e.preventDefault();
+    e.stopPropagation();
 
-        if (twoFingerMode === 'pinch') {
-            const scale = dist / pinchStartDist;
-            const newSize = Math.round(pinchStartSize * scale);
-            const clamped = Math.max(8, Math.min(32, newSize));
-            if (clamped !== term.options.fontSize) {
-                term.options.fontSize = clamped;
-                fitAddon.fit();
-            }
-        } else if (twoFingerMode === 'scroll') {
-            const deltaY = twoFingerStartY - midY;
-            const lineHeight = term.options.fontSize * 1.2;
-            scrollAccum += deltaY;
-            const lines = Math.trunc(scrollAccum / lineHeight);
-            if (lines !== 0) {
-                term.scrollLines(lines);
-                scrollAccum -= lines * lineHeight;
-            }
-            twoFingerStartY = midY;
-        }
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    const distChange = Math.abs(dist - pinchStartDist);
+    const yChange = Math.abs(midY - twoFingerStartY);
+
+    // Decide mode on first significant movement
+    if (!twoFingerMode && (distChange > 15 || yChange > 15)) {
+        twoFingerMode = distChange > yChange ? 'pinch' : 'scroll';
     }
-}, {passive:false});
-termEl.addEventListener('touchend', () => { pinchStartDist = 0; twoFingerMode = null; }, {passive:true});
+
+    if (twoFingerMode === 'pinch') {
+        const scale = dist / pinchStartDist;
+        const newSize = Math.round(pinchStartSize * scale);
+        const clamped = Math.max(8, Math.min(32, newSize));
+        if (clamped !== term.options.fontSize) {
+            term.options.fontSize = clamped;
+            fitAddon.fit();
+        }
+    } else if (twoFingerMode === 'scroll') {
+        const deltaY = twoFingerStartY - midY;
+        const lineHeight = term.options.fontSize * 1.2;
+        scrollAccum += deltaY;
+        const lines = Math.trunc(scrollAccum / lineHeight);
+        if (lines !== 0) {
+            term.scrollLines(lines);
+            scrollAccum -= lines * lineHeight;
+        }
+        twoFingerStartY = midY;
+    }
+}, {capture:true, passive:false});
+
+document.addEventListener('touchend', e => {
+    if (twoFingerActive && e.touches.length < 2) {
+        // 2-finger short tap without pinch/scroll → context menu
+        if (!twoFingerMode && ctxMenuTapStart > 0 && Date.now() - ctxMenuTapStart < 400) {
+            showCtxMenu(ctxMenuTapPos.x, ctxMenuTapPos.y);
+        }
+        twoFingerActive = false;
+        pinchStartDist = 0;
+        twoFingerMode = null;
+        ctxMenuTapStart = 0;
+    }
+}, {capture:true, passive:true});
 
 // ======================== SNIPPETS ========================
 function setSnippets(snippets) {
