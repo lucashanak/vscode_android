@@ -22,15 +22,21 @@ class OverlayManager(
 
     enum class InputTarget { VSCODE, SSH_TERMINAL }
 
+    /** Send input to whichever terminal session is active (SSH or Mosh) */
+    private fun sendToTerminal(data: String) {
+        sshSessionManager?.sendInput(data) ?: moshSessionManager?.sendInput(data)
+    }
+
     private var port: WebExtension.Port? = null
     private var cursorX = 0f
     private var cursorY = 0f
     var isVisible = false
         private set
 
-    // SSH terminal routing
+    // SSH/Mosh terminal routing
     var inputTarget = InputTarget.VSCODE
     var sshSessionManager: SshSessionManager? = null
+    var moshSessionManager: MoshSessionManager? = null
     var sshTerminalWebView: WebView? = null
         set(value) { field = value; sshCursorX = -1f; sshCursorY = -1f } // reset cursor on new terminal
     // When true, content script keeps inputmode="none" even when overlay is hidden
@@ -202,7 +208,7 @@ class OverlayManager(
         @JavascriptInterface
         fun sendChar(ch: String) {
             if (inputTarget == InputTarget.SSH_TERMINAL) {
-                sshSessionManager?.sendInput(ch)
+                sendToTerminal(ch)
             } else {
                 sendToContentScript("char", JSONObject().put("char", ch))
             }
@@ -219,7 +225,7 @@ class OverlayManager(
                         obj.optBoolean("alt"),
                         obj.optBoolean("shift")
                     )
-                    if (seq != null) sshSessionManager?.sendInput(seq)
+                    if (seq != null) sendToTerminal(seq)
                 } else {
                     obj.put("type", "key")
                     port?.postMessage(obj)

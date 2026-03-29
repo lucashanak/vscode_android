@@ -971,7 +971,8 @@ class MainActivity : AppCompatActivity() {
         // For Mosh, overlay sends input to mosh process
         overlayManager.inputTarget = OverlayManager.InputTarget.SSH_TERMINAL
         // Create a thin wrapper so overlay can call sendInput on mosh
-        overlayManager.sshSessionManager = null // mosh uses its own manager
+        overlayManager.sshSessionManager = null
+        overlayManager.moshSessionManager = mgr
         overlayManager.sshTerminalWebView = sshTerminalWebView
 
         // Load terminal HTML first, then connect mosh
@@ -1034,6 +1035,7 @@ class MainActivity : AppCompatActivity() {
         currentSshServer = null
         overlayManager.inputTarget = OverlayManager.InputTarget.VSCODE
         overlayManager.sshSessionManager = null
+        overlayManager.moshSessionManager = null
         overlayManager.sshTerminalWebView = null
         sftpManager?.destroy()
         sftpManager = null
@@ -1740,7 +1742,8 @@ class MainActivity : AppCompatActivity() {
     private fun renderSessionList() {
         activeSessionList.removeAllViews()
         val hasSessions = tunnelSessions.isNotEmpty() ||
-            (sshSessionManager?.isConnected == true && sshContainer.visibility != View.VISIBLE)
+            (sshSessionManager?.isConnected == true && sshContainer.visibility != View.VISIBLE) ||
+            (moshSessionManager?.isConnected == true && sshContainer.visibility != View.VISIBLE)
 
         if (!hasSessions) {
             activeSessionsSection.visibility = View.GONE
@@ -1792,8 +1795,10 @@ class MainActivity : AppCompatActivity() {
             activeSessionList.addView(item)
         }
 
-        // SSH session
-        if (sshSessionManager?.isConnected == true && sshContainer.visibility != View.VISIBLE) {
+        // SSH or Mosh session
+        val hasTerminalSession = (sshSessionManager?.isConnected == true || moshSessionManager?.isConnected == true) &&
+            sshContainer.visibility != View.VISIBLE
+        if (hasTerminalSession) {
             val item = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -1807,7 +1812,8 @@ class MainActivity : AppCompatActivity() {
 
             val label = TextView(this).apply {
                 val s = currentSshServer
-                text = "SSH: ${s?.username ?: ""}@${s?.host ?: ""}"
+                val proto = if (moshSessionManager?.isConnected == true) "Mosh" else "SSH"
+                text = "$proto: ${s?.username ?: ""}@${s?.host ?: ""}"
                 setTextColor(resources.getColor(R.color.text_white, theme))
                 textSize = 13f
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
