@@ -43,7 +43,7 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 .shifted .char-key { text-transform:uppercase; }
 
 /* Modifier keys: darker, distinct */
-.key-mod { background:rgba(255,255,255,0.05); font-size:13px; color:#999; }
+.key-mod { background:rgba(255,255,255,0.05); font-size:15px; color:#999; }
 .key-mod.mod-active { background:#007acc; color:#fff; }
 
 /* Number row: shorter keys */
@@ -97,15 +97,16 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
     .toolbar .tab-btn { display:none; }
     .panels { display:flex; flex-direction:row; align-items:stretch; }
     .panel { display:block; }
-    .kb-panel { flex:2; min-width:0; padding:4px 2px 6px 2px; }
+    .kb-panel { flex:4; min-width:0; padding:4px 2px 6px 2px; }
     .tp-panel { display:flex; flex-direction:column; flex:1; min-width:0; border-left:1px solid rgba(255,255,255,0.08); }
     .tp-area { min-height:0; }
-    .key { height:46px; font-size:14px; }
-    .fn-row .key { height:32px; font-size:10px; }
-    .row-scroll .key { height:38px; font-size:12px; }
-    .nav-key { width:42px; height:46px; font-size:10px; }
+    .key { height:46px; font-size:16px; }
+    .fn-row .key { height:32px; font-size:11px; }
+    .row-scroll .key { height:38px; font-size:13px; }
+    .nav-key { width:44px; height:46px; font-size:11px; }
     .row { gap:3px; padding:2px 2px; }
     .row-home { padding-left:3%; padding-right:3%; }
+    .tp-btn.mid { flex:0.5; }
 }
 
 /* Landscape narrow */
@@ -137,7 +138,7 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
         <div class="tp-area" id="tpArea"><div class="tp-hint">Drag to move cursor</div></div>
         <div class="tp-buttons">
             <button class="tp-btn" id="tpLeft">Left</button>
-            <button class="tp-btn" id="tpMid">Mid</button>
+            <button class="tp-btn mid" id="tpMid">Mid</button>
             <button class="tp-btn" id="tpRight">Right</button>
         </div>
     </div>
@@ -301,15 +302,15 @@ function fullKB() {
         </div>
         <div class="row">
             ${K('`','`')} ${'1234567890'.split('').map(d=>K(d)).join('')} ${K('-','-')} ${K('=','=')} ${K('Bksp','\u232B','xwide-key')}
-            ${SEP('nav-sep')} ${K('Home','Home','nav-key')} ${K('PgUp','PgUp','nav-key')}
+            ${SEP('nav-sep')} ${K('Home','Hm','nav-key')} ${K('PgUp','PU','nav-key')}
         </div>
         <div class="row">
             ${K('Tab','Tab','wide-key')} ${C('q')}${C('w')}${C('e')}${C('r')}${C('t')}${C('y')}${C('u')}${C('i')}${C('o')}${C('p')}
             ${K('[','[')} ${K(']',']')} ${K('\\','\\')}
-            ${SEP('nav-sep')} ${K('End','End','nav-key')} ${K('PgDn','PgDn','nav-key')}
+            ${SEP('nav-sep')} ${K('End','End','nav-key')} ${K('PgDn','PD','nav-key')}
         </div>
         <div class="row">
-            ${M('ctrl','Ctrl','xwide-key')} ${C('a')}${C('s')}${C('d')}${C('f')}${C('g')}${C('h')}${C('j')}${C('k')}${C('l')}
+            <div class="key xwide-key key-mod" style="opacity:0.3;font-size:11px">Caps</div> ${C('a')}${C('s')}${C('d')}${C('f')}${C('g')}${C('h')}${C('j')}${C('k')}${C('l')}
             ${K(';',';')} ${K("'","'")} ${K('Enter','\u21B5','xwide-key')}
         </div>
         <div class="row">
@@ -318,9 +319,9 @@ function fullKB() {
             ${SEP('nav-sep')} ${K('Up','\u25B2','nav-key')}
         </div>
         <div class="row">
-            ${M('alt','Alt','wide-key')} ${M('meta','Meta','wide-key')}
+            ${M('ctrl','Ctrl','wide-key')} ${M('alt','Alt','wide-key')} ${M('meta','Win','wide-key')}
             <button class="key space-key" data-key="Space">&nbsp;</button>
-            ${M('alt','Alt','wide-key')} ${M('meta','Meta','wide-key')}
+            ${M('alt','Alt','wide-key')} ${M('ctrl','Ctrl','wide-key')}
             ${SEP('nav-sep')} ${K('Left','\u25C0','nav-key')} ${K('Down','\u25BC','nav-key')} ${K('Right','\u25B6','nav-key')}
         </div>`;
 }
