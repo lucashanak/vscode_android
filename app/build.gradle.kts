@@ -57,4 +57,6 @@ dependencies {
     implementation("com.github.mwiede:jsch:0.2.21")
     // Biometric auth
     implementation("androidx.biometric:biometric:1.1.0")
+    // Binary delta patching for updates
+    implementation("io.sigpipe:jbsdiff:1.0")
 }

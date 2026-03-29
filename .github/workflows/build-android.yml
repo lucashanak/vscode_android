@@ -144,6 +144,42 @@ jobs:
             --out VSCodeTunnel.apk /tmp/aligned.apk
           ${BT}/apksigner verify VSCodeTunnel.apk
 
+      - name: Generate delta patch
+        id: patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sudo apt-get install -y -qq bsdiff
+
+          # Get previous release tag
+          PREV_TAG=$(gh release list --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
+          echo "Previous release: $PREV_TAG"
+
+          if [ -n "$PREV_TAG" ]; then
+            mkdir -p /tmp/prev
+            gh release download "$PREV_TAG" --pattern "VSCodeTunnel.apk" --dir /tmp/prev/ || true
+
+            if [ -f /tmp/prev/VSCodeTunnel.apk ]; then
+              PREV_VER="${PREV_TAG#v}"
+              NEW_VER="${{ steps.version.outputs.version }}"
+              PATCH_NAME="patch-${PREV_VER}-to-${NEW_VER}.bspatch"
+
+              bsdiff /tmp/prev/VSCodeTunnel.apk VSCodeTunnel.apk "$PATCH_NAME"
+
+              PATCH_SIZE=$(stat -c%s "$PATCH_NAME")
+              APK_SIZE=$(stat -c%s "VSCodeTunnel.apk")
+              echo "Patch: ${PATCH_SIZE} bytes ($(( PATCH_SIZE * 100 / APK_SIZE ))% of full APK)"
+
+              # Only include if patch saves >20%
+              if [ "$PATCH_SIZE" -lt "$((APK_SIZE * 80 / 100))" ]; then
+                echo "patch_file=$PATCH_NAME" >> "$GITHUB_OUTPUT"
+              else
+                echo "Patch too large, skipping"
+                rm "$PATCH_NAME"
+              fi
+            fi
+          fi
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -157,6 +193,12 @@ jobs:
           TAG="${{ steps.version.outputs.tag }}"
           git tag "$TAG"
           git push origin "$TAG"
-          gh release create "$TAG" VSCodeTunnel.apk \
+
+          ASSETS="VSCodeTunnel.apk"
+          if [ -n "${{ steps.patch.outputs.patch_file }}" ]; then
+            ASSETS="$ASSETS ${{ steps.patch.outputs.patch_file }}"
+          fi
+
+          gh release create "$TAG" $ASSETS \
             --title "$TAG" \
             --generate-notes

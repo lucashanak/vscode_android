@@ -1923,50 +1923,69 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
-                val release = TunnelApi.checkUpdate(APP_VERSION) ?: return@launch
-                val version = release.optString("tag_name", "").trimStart('v')
-                val assets = release.optJSONArray("assets")
-                val downloadUrl = assets?.let {
-                    for (i in 0 until it.length()) {
-                        val name = it.getJSONObject(i).optString("name", "")
-                        if (name.endsWith(".apk")) {
-                            return@let it.getJSONObject(i).optString("browser_download_url")
-                        }
-                    }
-                    null
-                } ?: return@launch
+                val update = TunnelApi.checkUpdate(APP_VERSION) ?: return@launch
 
-                updateText.text = "Update available: v$version"
+                val patchInfo = if (update.patchUrl != null) " (delta)" else ""
+                updateText.text = "Update available: v${update.version}$patchInfo"
                 updateLink.setOnClickListener {
-                    downloadAndInstallUpdate(downloadUrl, version)
+                    downloadAndInstallUpdate(update)
                 }
                 updateBanner.visibility = View.VISIBLE
             } catch (_: Exception) {}
         }
     }
 
-    private fun downloadAndInstallUpdate(url: String, version: String) {
+    private fun downloadAndInstallUpdate(update: TunnelApi.UpdateInfo) {
         updateLink.visibility = View.GONE
         updateProgress.visibility = View.VISIBLE
         updateProgress.isIndeterminate = false
         updateProgress.progress = 0
-        updateText.text = "Downloading v$version..."
 
         lifecycleScope.launch {
             try {
-                val apkFile = downloadApk(url) { progress ->
-                    runOnUiThread {
-                        if (progress < 0) {
+                val apkFile = if (update.patchUrl != null) {
+                    try {
+                        // Delta update: download small patch, apply to current APK
+                        runOnUiThread { updateText.text = "Downloading patch..." }
+                        val patchFile = downloadFile(update.patchUrl, "update.patch") { progress ->
+                            runOnUiThread {
+                                if (progress < 0) updateProgress.isIndeterminate = true
+                                else { updateProgress.isIndeterminate = false; updateProgress.progress = progress }
+                            }
+                        }
+
+                        runOnUiThread {
+                            updateText.text = "Applying patch..."
                             updateProgress.isIndeterminate = true
-                        } else {
-                            updateProgress.isIndeterminate = false
-                            updateProgress.progress = progress
+                        }
+                        val patched = applyBsPatch(patchFile)
+                        patchFile.delete()
+                        FileLogger.d(TAG, "Delta update applied: ${patched.length()} bytes")
+                        patched
+                    } catch (e: Throwable) {
+                        // Fallback to full APK on any error (including OutOfMemoryError)
+                        FileLogger.e(TAG, "Delta update failed, falling back to full APK: $e")
+                        runOnUiThread { updateText.text = "Patch failed, downloading full APK..." }
+                        downloadFile(update.apkUrl, "update.apk") { progress ->
+                            runOnUiThread {
+                                if (progress < 0) updateProgress.isIndeterminate = true
+                                else { updateProgress.isIndeterminate = false; updateProgress.progress = progress }
+                            }
+                        }
+                    }
+                } else {
+                    // No patch available, download full APK
+                    runOnUiThread { updateText.text = "Downloading v${update.version}..." }
+                    downloadFile(update.apkUrl, "update.apk") { progress ->
+                        runOnUiThread {
+                            if (progress < 0) updateProgress.isIndeterminate = true
+                            else { updateProgress.isIndeterminate = false; updateProgress.progress = progress }
                         }
                     }
                 }
 
                 runOnUiThread {
-                    updateText.text = "Installing v$version..."
+                    updateText.text = "Installing v${update.version}..."
                     updateProgress.visibility = View.GONE
                     installApk(apkFile)
                 }
@@ -1982,13 +2001,33 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun downloadApk(
+    private suspend fun applyBsPatch(patchFile: java.io.File): java.io.File =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val oldApk = java.io.File(applicationInfo.sourceDir)
+            val newApk = java.io.File(cacheDir, "updates/update.apk")
+            if (newApk.exists()) newApk.delete()
+            newApk.parentFile?.mkdirs()
+
+            io.sigpipe.jbsdiff.Patch.patch(
+                oldApk.readBytes(),
+                patchFile.readBytes(),
+                newApk.outputStream()
+            )
+
+            if (newApk.length() < 1_000_000) {
+                throw Exception("Patched APK too small (${newApk.length()} bytes)")
+            }
+            newApk
+        }
+
+    private suspend fun downloadFile(
         url: String,
+        filename: String,
         onProgress: (Int) -> Unit
     ): java.io.File = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val dir = java.io.File(cacheDir, "updates")
         dir.mkdirs()
-        val file = java.io.File(dir, "update.apk")
+        val file = java.io.File(dir, filename)
         if (file.exists()) file.delete()
 
         val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
@@ -2030,7 +2069,7 @@ class MainActivity : AppCompatActivity() {
         }
         actualConn.disconnect()
 
-        FileLogger.d(TAG, "APK downloaded: ${file.length()} bytes")
+        FileLogger.d(TAG, "Downloaded $filename: ${file.length()} bytes")
         file
     }
 

@@ -102,7 +102,13 @@ object TunnelApi {
         return "https://vscode.dev/tunnel/${URLEncoder.encode(tunnelName, "UTF-8")}"
     }
 
-    suspend fun checkUpdate(currentVersion: String): JSONObject? = withContext(Dispatchers.IO) {
+    data class UpdateInfo(
+        val version: String,
+        val apkUrl: String,
+        val patchUrl: String?
+    )
+
+    suspend fun checkUpdate(currentVersion: String): UpdateInfo? = withContext(Dispatchers.IO) {
         try {
             val conn = (URL("https://api.github.com/repos/lucashanak/vscode_android/releases/latest").openConnection() as HttpURLConnection).apply {
                 setRequestProperty("User-Agent", "VSCodeTunnel-Android/2.0")
@@ -113,7 +119,28 @@ object TunnelApi {
             val release = JSONObject(body)
             val tag = release.optString("tag_name", "").trimStart('v')
             val current = currentVersion.trimStart('v')
-            if (tag.isNotBlank() && tag != current) release else null
+            if (tag.isBlank() || tag == current) return@withContext null
+
+            val assets = release.optJSONArray("assets") ?: return@withContext null
+            var apkUrl: String? = null
+            var patchUrl: String? = null
+
+            for (i in 0 until assets.length()) {
+                val asset = assets.getJSONObject(i)
+                val name = asset.optString("name", "")
+                val url = asset.optString("browser_download_url", "")
+                when {
+                    name.endsWith(".apk") -> apkUrl = url
+                    name.endsWith(".bspatch") -> {
+                        val match = Regex("patch-(.*)-to-(.*)\\.bspatch").find(name)
+                        if (match != null && match.groupValues[1] == current) {
+                            patchUrl = url
+                        }
+                    }
+                }
+            }
+
+            apkUrl?.let { UpdateInfo(tag, it, patchUrl) }
         } catch (_: Exception) {
             null
         }
