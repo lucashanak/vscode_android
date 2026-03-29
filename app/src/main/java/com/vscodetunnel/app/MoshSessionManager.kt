@@ -52,8 +52,11 @@ class MoshSessionManager(
         scope.launch {
             try {
                 writeInfo("Starting Mosh session to ${server.host}...\r\n")
+                FileLogger.d(TAG, "connect() started for ${server.host}")
 
                 // Step 1: Check if mosh-client binary exists
+                val bin = moshBin(context)
+                FileLogger.d(TAG, "Mosh binary: ${bin.absolutePath}, exists=${bin.exists()}, exec=${bin.canExecute()}")
                 if (!isAvailable(context)) {
                     writeInfo("\u001B[31mMosh client binary not found.\u001B[0m\r\n")
                     writeInfo("Expected at: ${moshBin(context).absolutePath}\r\n")
@@ -66,6 +69,7 @@ class MoshSessionManager(
 
                 // Step 2: SSH to run mosh-server
                 writeInfo("Connecting via SSH to start mosh-server...\r\n")
+                FileLogger.d(TAG, "SSH connecting to ${server.host}:${server.port}")
                 val jsch = JSch()
                 if (server.authMethod == SshServer.AuthMethod.KEY && server.privateKey.isNotBlank()) {
                     jsch.addIdentity("key", server.privateKey.toByteArray(), null, null)
@@ -78,12 +82,16 @@ class MoshSessionManager(
                 sess.timeout = 15000
                 sess.connect()
                 sshSession = sess
+                FileLogger.d(TAG, "SSH connected")
 
                 // Detect available UTF-8 locale on server
+                FileLogger.d(TAG, "Detecting server locale...")
                 val localeChannel = sess.openChannel("exec") as ChannelExec
                 localeChannel.setCommand("locale -a 2>/dev/null | grep -i 'utf-\\?8' | head -1")
                 localeChannel.inputStream = null
-                val localeOut = localeChannel.inputStream.bufferedReader().readText().trim()
+                val localeStream = localeChannel.inputStream
+                localeChannel.connect()
+                val localeOut = localeStream.bufferedReader().readText().trim()
                 localeChannel.disconnect()
                 val utf8Locale = if (localeOut.isNotEmpty()) localeOut else "C.UTF-8"
                 FileLogger.d(TAG, "Using server locale: $utf8Locale")
