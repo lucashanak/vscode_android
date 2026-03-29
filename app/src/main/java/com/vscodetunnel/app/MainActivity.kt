@@ -1120,6 +1120,7 @@ class MainActivity : AppCompatActivity() {
         sshTerminalWebView.setOnLongClickListener { true }
         sshTerminalWebView.isLongClickable = false
         sshTerminalWebView.isHapticFeedbackEnabled = false
+        SshSessionManager.setupTwoFingerScroll(sshTerminalWebView)
 
         val mgr = MoshSessionManager(this, sshTerminalWebView) { reason ->
             runOnUiThread {
