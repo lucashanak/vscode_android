@@ -717,12 +717,19 @@ tpArea.addEventListener('touchend', e => {
     const isTap = tp.tapStart > 0 && el < 300 && tp.totalMove < TAP_MOVE_THRESHOLD;
     if (isTap) {
         const now = Date.now();
-        if (tp.fingers >= 2) { haptic(); A.click(2); }
-        else if (now - tp.lastTap < 300) { haptic(); A.doubleClick(); tp.lastTap = 0; }
-        else {
-            tp.lastTap = now;
-            clearTimeout(tp.tapTimeout);
-            tp.tapTimeout = setTimeout(() => { if (tp.lastTap > 0) { haptic(); A.click(0); tp.lastTap = 0; } }, 300);
+        if (tp.fingers >= 2) {
+            // 2-finger tap → right click
+            haptic(); A.click(2);
+        } else {
+            // Single tap → immediate left click
+            haptic(); A.click(0);
+            // If second tap within 200ms → also double-click
+            if (now - tp.lastTap < 200) {
+                A.doubleClick();
+                tp.lastTap = 0;
+            } else {
+                tp.lastTap = now;
+            }
         }
     }
     tp.fingers = 0;
