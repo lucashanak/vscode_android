@@ -2100,6 +2100,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        // Save session URLs before closing (for auto-reconnect on restart)
+        saveOpenSessionUrls()
         super.onDestroy()
         pollJob?.cancel()
         authDialog?.dismiss()
@@ -2109,6 +2111,12 @@ class MainActivity : AppCompatActivity() {
         tunnelSessions.clear()
         sshSessionManager?.destroy()
         sshSessionManager = null
+    }
+
+    override fun onStop() {
+        // Persist URLs when app goes to background (in case of kill)
+        saveOpenSessionUrls()
+        super.onStop()
     }
 
     // --- Auto Reconnect ---
@@ -2171,19 +2179,31 @@ class MainActivity : AppCompatActivity() {
             }
 
             val capturedUrl = url
-            openBtn.setOnClickListener {
-                sessionPrefs.edit().remove(KEY_LAST_URL).apply()
-                activeSessionsSection.visibility = View.GONE
+            val openAction = {
+                // Remove this URL from saved list, keep others
+                val remaining = urls.filter { it != capturedUrl && it.isNotBlank() }
+                if (remaining.isEmpty()) {
+                    sessionPrefs.edit().remove(KEY_LAST_URL).apply()
+                } else {
+                    sessionPrefs.edit().putString(KEY_LAST_URL, org.json.JSONArray(remaining).toString()).apply()
+                }
                 connectTo(capturedUrl)
+                // Refresh the reconnect list (remove opened item)
+                item.visibility = View.GONE
+                if (remaining.isEmpty()) activeSessionsSection.visibility = View.GONE
             }
+            openBtn.setOnClickListener { openAction() }
+            item.setOnClickListener { openAction() }
             dismissBtn.setOnClickListener {
-                sessionPrefs.edit().remove(KEY_LAST_URL).apply()
-                activeSessionsSection.visibility = View.GONE
-            }
-            item.setOnClickListener {
-                sessionPrefs.edit().remove(KEY_LAST_URL).apply()
-                activeSessionsSection.visibility = View.GONE
-                connectTo(capturedUrl)
+                // Remove just this URL
+                val remaining = urls.filter { it != capturedUrl && it.isNotBlank() }
+                if (remaining.isEmpty()) {
+                    sessionPrefs.edit().remove(KEY_LAST_URL).apply()
+                    activeSessionsSection.visibility = View.GONE
+                } else {
+                    sessionPrefs.edit().putString(KEY_LAST_URL, org.json.JSONArray(remaining).toString()).apply()
+                }
+                item.visibility = View.GONE
             }
 
             item.addView(tv)
