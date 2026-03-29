@@ -62,71 +62,92 @@ class SshSessionManager(
         private const val MAX_RECONNECT_ATTEMPTS = 3
 
         /** Attach 2-finger scroll/pinch handling at native Android level */
+        /**
+         * Intercept 2-finger gestures on WebView for scroll/pinch.
+         * Uses requestDisallowInterceptTouchEvent + overrides onTouchEvent
+         * to fully consume 2-finger gestures while passing 1-finger through.
+         */
         @SuppressLint("ClickableViewAccessibility")
         fun setupTwoFingerScroll(webView: WebView) {
+            var twoFingerActive = false
             var twoFingerStartY = 0f
             var twoFingerStartDist = 0f
-            var startFontSize = 0
-            var mode: String? = null // "scroll" | "pinch" | null
+            var startFontSize = 14
+            var mode: String? = null
             var scrollAccum = 0f
 
             webView.setOnTouchListener { v, event ->
-                val pointerCount = event.pointerCount
                 when (event.actionMasked) {
                     android.view.MotionEvent.ACTION_POINTER_DOWN -> {
-                        if (pointerCount == 2) {
+                        if (event.pointerCount == 2) {
+                            twoFingerActive = true
                             val dx = event.getX(0) - event.getX(1)
                             val dy = event.getY(0) - event.getY(1)
-                            twoFingerStartDist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+                            twoFingerStartDist = kotlin.math.sqrt(dx * dx + dy * dy)
                             twoFingerStartY = (event.getY(0) + event.getY(1)) / 2f
                             mode = null
                             scrollAccum = 0f
-                            webView.evaluateJavascript("typeof term !== 'undefined' ? term.options.fontSize : 14") { result ->
-                                startFontSize = result?.toIntOrNull() ?: 14
-                            }
+                            webView.evaluateJavascript(
+                                "typeof term!=='undefined'?term.options.fontSize:14"
+                            ) { r -> startFontSize = r?.toIntOrNull() ?: 14 }
+                            // Cancel any WebView gesture tracking
+                            webView.parent?.requestDisallowInterceptTouchEvent(true)
+                            return@setOnTouchListener true
                         }
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
-                        if (pointerCount == 2 && twoFingerStartDist > 0f) {
+                        if (twoFingerActive && event.pointerCount >= 2) {
                             val dx = event.getX(0) - event.getX(1)
                             val dy = event.getY(0) - event.getY(1)
-                            val dist = Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
+                            val dist = kotlin.math.sqrt(dx * dx + dy * dy)
                             val midY = (event.getY(0) + event.getY(1)) / 2f
-                            val distChange = Math.abs(dist - twoFingerStartDist)
-                            val yChange = Math.abs(midY - twoFingerStartY)
+                            val distChange = kotlin.math.abs(dist - twoFingerStartDist)
+                            val yChange = kotlin.math.abs(midY - twoFingerStartY)
 
-                            if (mode == null && (distChange > 30f || yChange > 30f)) {
+                            if (mode == null && (distChange > 25f || yChange > 25f)) {
                                 mode = if (distChange > yChange) "pinch" else "scroll"
                             }
 
-                            if (mode == "scroll") {
-                                val density = v.resources.displayMetrics.density
-                                val lineHeight = 14f * 1.2f * density // approximate
-                                scrollAccum += twoFingerStartY - midY
-                                val lines = (scrollAccum / lineHeight).toInt()
-                                if (lines != 0) {
-                                    webView.evaluateJavascript("term.scrollLines($lines)", null)
-                                    scrollAccum -= lines * lineHeight
+                            when (mode) {
+                                "scroll" -> {
+                                    val density = v.resources.displayMetrics.density
+                                    val lineHeight = startFontSize * 1.2f * density
+                                    scrollAccum += twoFingerStartY - midY
+                                    val lines = (scrollAccum / lineHeight).toInt()
+                                    if (lines != 0) {
+                                        webView.evaluateJavascript("term.scrollLines($lines)", null)
+                                        scrollAccum -= lines * lineHeight
+                                    }
+                                    twoFingerStartY = midY
                                 }
-                                twoFingerStartY = midY
-                                return@setOnTouchListener true
-                            } else if (mode == "pinch") {
-                                val scale = dist / twoFingerStartDist
-                                val newSize = (startFontSize * scale).toInt().coerceIn(8, 32)
-                                webView.evaluateJavascript(
-                                    "if(term.options.fontSize!==$newSize){term.options.fontSize=$newSize;fitAddon.fit()}", null)
-                                return@setOnTouchListener true
+                                "pinch" -> {
+                                    val scale = dist / twoFingerStartDist
+                                    val newSize = (startFontSize * scale).toInt().coerceIn(8, 32)
+                                    webView.evaluateJavascript(
+                                        "if(term.options.fontSize!==$newSize){term.options.fontSize=$newSize;fitAddon.fit()}", null)
+                                }
                             }
+                            return@setOnTouchListener true
                         }
                     }
-                    android.view.MotionEvent.ACTION_POINTER_UP, android.view.MotionEvent.ACTION_UP -> {
-                        if (pointerCount <= 2) {
+                    android.view.MotionEvent.ACTION_POINTER_UP -> {
+                        if (twoFingerActive) {
+                            twoFingerActive = false
                             twoFingerStartDist = 0f
                             mode = null
+                            webView.parent?.requestDisallowInterceptTouchEvent(false)
+                            return@setOnTouchListener true
+                        }
+                    }
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                        if (twoFingerActive) {
+                            twoFingerActive = false
+                            twoFingerStartDist = 0f
+                            mode = null
+                            webView.parent?.requestDisallowInterceptTouchEvent(false)
                         }
                     }
                 }
-                // Let WebView handle all other touches (1-finger, selection, etc.)
                 false
             }
         }
