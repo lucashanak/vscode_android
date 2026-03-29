@@ -40,6 +40,22 @@ class MoshSessionManager(
             val bin = moshBin(context)
             return bin.exists() && bin.canExecute()
         }
+
+        /** Extract terminfo from assets to filesDir (needed for mosh-client) */
+        private fun extractTerminfo(context: Context): String {
+            val destDir = File(context.filesDir, "terminfo/x")
+            val dest = File(destDir, "xterm-256color")
+            if (dest.exists()) return destDir.parentFile!!.absolutePath
+            destDir.mkdirs()
+            try {
+                context.assets.open("terminfo/x/xterm-256color").use { input ->
+                    dest.outputStream().use { out -> input.copyTo(out) }
+                }
+            } catch (e: Exception) {
+                FileLogger.w(TAG, "Failed to extract terminfo: $e")
+            }
+            return destDir.parentFile!!.absolutePath
+        }
     }
 
     private var sshSession: Session? = null
@@ -130,10 +146,12 @@ class MoshSessionManager(
 
                 // Step 3: Launch mosh-client binary
                 val moshBin = moshBin(context).absolutePath
+                val terminfoDir = extractTerminfo(context)
                 val env = arrayOf(
                     "MOSH_KEY=$moshKey",
                     "HOME=${context.filesDir}",
                     "TERM=xterm-256color",
+                    "TERMINFO=$terminfoDir",
                     "LANG=C.UTF-8",
                     "PATH=/system/bin:/vendor/bin",
                     "TMPDIR=${context.cacheDir.absolutePath}"
