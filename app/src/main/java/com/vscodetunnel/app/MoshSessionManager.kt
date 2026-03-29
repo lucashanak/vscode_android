@@ -167,6 +167,25 @@ class MoshSessionManager(
 
                 FileLogger.d(TAG, "Mosh PTY process started, pid=${process.pid}, alive=${process.isAlive}")
 
+                // Send tmux command if enabled
+                if (server.useTmux) {
+                    delay(1000) // wait for mosh + shell to be ready
+                    val tmuxName = server.tmuxSessionName.ifBlank { server.name.ifBlank { "main" } }
+                    val tmuxCmd = TmuxManager.buildAttachCommand(tmuxName)
+                    process.outputStream.write((tmuxCmd + "\n").toByteArray())
+                    process.outputStream.flush()
+                    FileLogger.d(TAG, "Sent tmux command: $tmuxCmd")
+                    if (server.startupCommand.isNotBlank()) {
+                        delay(300)
+                        process.outputStream.write((server.startupCommand + "\n").toByteArray())
+                        process.outputStream.flush()
+                    }
+                } else if (server.startupCommand.isNotBlank()) {
+                    delay(500)
+                    process.outputStream.write((server.startupCommand + "\n").toByteArray())
+                    process.outputStream.flush()
+                }
+
                 // Step 4: Bridge PTY master fd to terminal WebView
                 readJob = scope.launch {
                     try {

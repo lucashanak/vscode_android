@@ -660,6 +660,38 @@ class MainActivity : AppCompatActivity() {
         }
         layout.addView(moshCheck)
 
+        addLabel("Session persistence")
+        val tmuxCheck = CheckBox(this).apply {
+            text = "Use tmux (persistent sessions)"
+            isChecked = existing?.useTmux ?: false
+            setTextColor(resources.getColor(R.color.text_primary, theme))
+            textSize = 14f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(4) }
+        }
+        layout.addView(tmuxCheck)
+
+        val tmuxNameField = EditText(this).apply {
+            hint = "Session name (default: main)"
+            setText(existing?.tmuxSessionName ?: "")
+            setTextColor(resources.getColor(R.color.text_primary, theme))
+            setHintTextColor(resources.getColor(R.color.text_dim, theme))
+            textSize = 14f
+            background = resources.getDrawable(R.drawable.bg_input, theme)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) }
+            visibility = if (existing?.useTmux == true) View.VISIBLE else View.GONE
+        }
+        tmuxCheck.setOnCheckedChangeListener { _, checked ->
+            tmuxNameField.visibility = if (checked) View.VISIBLE else View.GONE
+        }
+        layout.addView(tmuxNameField)
+
         AlertDialog.Builder(this, R.style.AppDialogTheme)
             .setTitle(if (existing != null) "Edit Server" else "Add SSH Server")
             .setView(scroll)
@@ -683,7 +715,9 @@ class MainActivity : AppCompatActivity() {
                     startupCommand = startupField.text.toString().trim(),
                     portForwards = parsePortForwards(portFwdField.text.toString()),
                     snippets = snippetsField.text.toString().split(",").map { it.trim() }.filter { it.isNotBlank() },
-                    useMosh = moshCheck.isChecked
+                    useMosh = moshCheck.isChecked,
+                    useTmux = tmuxCheck.isChecked,
+                    tmuxSessionName = tmuxNameField.text.toString().trim()
                 )
                 ServerStorage.saveServer(this, server)
                 renderSshServers()
@@ -894,6 +928,136 @@ class MainActivity : AppCompatActivity() {
     private var moshSessionManager: MoshSessionManager? = null
 
     private fun connectSsh(server: SshServer) {
+        if (server.useTmux) {
+            showTmuxSessionPicker(server)
+            return
+        }
+        doConnectSsh(server)
+    }
+
+    private fun showTmuxSessionPicker(server: SshServer) {
+        val progressDialog = AlertDialog.Builder(this, R.style.AppDialogTheme)
+            .setTitle("Loading tmux sessions...")
+            .setView(ProgressBar(this).apply {
+                setPadding(dp(24), dp(16), dp(24), dp(16))
+            })
+            .setCancelable(true)
+            .show()
+
+        lifecycleScope.launch {
+            val sessions = TmuxManager.listSessions(server)
+            progressDialog.dismiss()
+
+            val layout = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(24), dp(16), dp(24), dp(0))
+            }
+
+            val dialog = AlertDialog.Builder(this@MainActivity, R.style.AppDialogTheme)
+                .setTitle("tmux sessions on ${server.host}")
+                .setView(layout)
+                .setNegativeButton("Cancel", null)
+                .create()
+
+            if (sessions.isNotEmpty()) {
+                for (s in sessions) {
+                    val item = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = android.view.Gravity.CENTER_VERTICAL
+                        setBackgroundResource(R.drawable.bg_tunnel_item)
+                        setPadding(dp(12), dp(10), dp(12), dp(10))
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        ).apply { bottomMargin = dp(4) }
+                    }
+                    val label = TextView(this@MainActivity).apply {
+                        text = "${s.name}  —  ${s.statusText}"
+                        setTextColor(resources.getColor(R.color.text_white, theme))
+                        textSize = 14f
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    }
+                    val killBtn = TextView(this@MainActivity).apply {
+                        text = "Kill"
+                        setTextColor(resources.getColor(R.color.error, theme))
+                        textSize = 13f
+                        setPadding(dp(8), dp(4), dp(8), dp(4))
+                        setOnClickListener {
+                            lifecycleScope.launch {
+                                TmuxManager.killSession(server, s.name)
+                                dialog.dismiss()
+                                showTmuxSessionPicker(server) // refresh
+                            }
+                        }
+                    }
+                    item.addView(label)
+                    item.addView(killBtn)
+                    item.setOnClickListener {
+                        dialog.dismiss()
+                        doConnectSsh(server.copy(tmuxSessionName = s.name))
+                    }
+                    layout.addView(item)
+                }
+            } else {
+                layout.addView(TextView(this@MainActivity).apply {
+                    text = "No existing tmux sessions"
+                    setTextColor(resources.getColor(R.color.text_dim, theme))
+                    textSize = 14f
+                    setPadding(0, 0, 0, dp(8))
+                })
+            }
+
+            // New session button
+            val newSessionLayout = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(0, dp(8), 0, dp(4))
+            }
+            val nameInput = EditText(this@MainActivity).apply {
+                hint = "Session name"
+                setText(server.tmuxSessionName.ifBlank { "main" })
+                setTextColor(resources.getColor(R.color.text_primary, theme))
+                setHintTextColor(resources.getColor(R.color.text_dim, theme))
+                textSize = 14f
+                background = resources.getDrawable(R.drawable.bg_input, theme)
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginEnd = dp(8)
+                }
+            }
+            val createBtn = Button(this@MainActivity).apply {
+                text = "New"
+                setTextColor(resources.getColor(R.color.primary, theme))
+                textSize = 13f
+                isAllCaps = false
+                background = resources.getDrawable(R.drawable.bg_input, theme)
+                setOnClickListener {
+                    val name = nameInput.text.toString().trim().ifBlank { "main" }
+                    dialog.dismiss()
+                    doConnectSsh(server.copy(tmuxSessionName = name))
+                }
+            }
+            newSessionLayout.addView(nameInput)
+            newSessionLayout.addView(createBtn)
+            layout.addView(newSessionLayout)
+
+            // Without tmux button
+            layout.addView(TextView(this@MainActivity).apply {
+                text = "Connect without tmux"
+                setTextColor(resources.getColor(R.color.text_dim, theme))
+                textSize = 13f
+                setPadding(0, dp(12), 0, dp(8))
+                setOnClickListener {
+                    dialog.dismiss()
+                    doConnectSsh(server.copy(useTmux = false))
+                }
+            })
+
+            dialog.show()
+        }
+    }
+
+    private fun doConnectSsh(server: SshServer) {
         currentSshServer = server
 
         if (server.useMosh) {
@@ -1814,7 +1978,8 @@ class MainActivity : AppCompatActivity() {
             val label = TextView(this).apply {
                 val s = currentSshServer
                 val proto = if (moshSessionManager?.isConnected == true) "Mosh" else "SSH"
-                text = "$proto: ${s?.username ?: ""}@${s?.host ?: ""}"
+                val tmuxInfo = if (s?.useTmux == true) " [tmux: ${s.tmuxSessionName.ifBlank { "main" }}]" else ""
+                text = "$proto: ${s?.username ?: ""}@${s?.host ?: ""}$tmuxInfo"
                 setTextColor(resources.getColor(R.color.text_white, theme))
                 textSize = 13f
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)

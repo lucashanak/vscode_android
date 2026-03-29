@@ -44,7 +44,9 @@ data class SshServer(
     val portForwards: List<PortForward> = emptyList(),
     val colorScheme: String = "default",
     val snippets: List<String> = emptyList(),
-    val useMosh: Boolean = false
+    val useMosh: Boolean = false,
+    val useTmux: Boolean = false,
+    val tmuxSessionName: String = ""
 ) {
     enum class AuthMethod { PASSWORD, KEY }
 
@@ -62,6 +64,8 @@ data class SshServer(
         put("colorScheme", colorScheme)
         put("snippets", JSONArray().apply { snippets.forEach { put(it) } })
         put("useMosh", useMosh)
+        put("useTmux", useTmux)
+        put("tmuxSessionName", tmuxSessionName)
     }
 
     companion object {
@@ -88,6 +92,8 @@ data class SshServer(
             } catch (_: Exception) { emptyList() },
             colorScheme = json.optString("colorScheme", "default"),
             useMosh = json.optBoolean("useMosh", false),
+            useTmux = json.optBoolean("useTmux", false),
+            tmuxSessionName = json.optString("tmuxSessionName", ""),
             snippets = try {
                 val arr = json.optJSONArray("snippets")
                 if (arr != null) (0 until arr.length()).map { arr.getString(it) }

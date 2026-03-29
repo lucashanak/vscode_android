@@ -152,10 +152,23 @@ class SshSessionManager(
                     applyColorScheme(server.colorScheme)
                 }
 
-                // Send startup command
-                if (server.startupCommand.isNotBlank()) {
+                // Send tmux or startup command
+                val tmuxCmd = if (server.useTmux) {
+                    val name = server.tmuxSessionName.ifBlank { server.name.ifBlank { "main" } }
+                    TmuxManager.buildAttachCommand(name)
+                } else null
+
+                if (tmuxCmd != null || server.startupCommand.isNotBlank()) {
                     delay(500) // wait for shell prompt
-                    sendInput(server.startupCommand + "\n")
+                    if (tmuxCmd != null) {
+                        sendInput(tmuxCmd + "\n")
+                        if (server.startupCommand.isNotBlank()) {
+                            delay(300) // wait for tmux to start
+                            sendInput(server.startupCommand + "\n")
+                        }
+                    } else {
+                        sendInput(server.startupCommand + "\n")
+                    }
                 }
 
                 // Read loop
