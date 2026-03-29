@@ -138,7 +138,7 @@ class MoshSessionManager(
                     "PATH=/system/bin:/vendor/bin",
                     "TMPDIR=${context.cacheDir.absolutePath}"
                 )
-                val cmd = arrayOf(moshBin, server.host, moshPort, "--predict=never")
+                val cmd = arrayOf(moshBin, server.host, moshPort)
 
                 writeInfo("Launching mosh-client...\r\n")
                 FileLogger.d(TAG, "Mosh cmd: ${cmd.joinToString(" ")}")
