@@ -1925,7 +1925,9 @@ class MainActivity : AppCompatActivity() {
             try {
                 val update = TunnelApi.checkUpdate(APP_VERSION) ?: return@launch
 
-                val patchInfo = if (update.patchUrl != null) " (delta)" else ""
+                val dlSize = if (update.patchUrl != null) update.patchSize else update.apkSize
+                val sizeStr = formatBytes(dlSize)
+                val patchInfo = if (update.patchUrl != null) " (patch $sizeStr)" else " ($sizeStr)"
                 updateText.text = "Update available: v${update.version}$patchInfo"
                 updateLink.setOnClickListener {
                     downloadAndInstallUpdate(update)
@@ -1947,10 +1949,13 @@ class MainActivity : AppCompatActivity() {
                     try {
                         // Delta update: download small patch, apply to current APK
                         runOnUiThread { updateText.text = "Downloading patch..." }
-                        val patchFile = downloadFile(update.patchUrl, "update.patch") { progress ->
+                        val patchFile = downloadFile(update.patchUrl, "update.patch") { progress, dl, total ->
                             runOnUiThread {
                                 if (progress < 0) updateProgress.isIndeterminate = true
-                                else { updateProgress.isIndeterminate = false; updateProgress.progress = progress }
+                                else {
+                                    updateProgress.isIndeterminate = false; updateProgress.progress = progress
+                                    updateText.text = "Downloading patch ${formatBytes(dl)} / ${formatBytes(total)}"
+                                }
                             }
                         }
 
@@ -1966,20 +1971,26 @@ class MainActivity : AppCompatActivity() {
                         // Fallback to full APK on any error (including OutOfMemoryError)
                         FileLogger.e(TAG, "Delta update failed, falling back to full APK: $e")
                         runOnUiThread { updateText.text = "Patch failed, downloading full APK..." }
-                        downloadFile(update.apkUrl, "update.apk") { progress ->
+                        downloadFile(update.apkUrl, "update.apk") { progress, dl, total ->
                             runOnUiThread {
                                 if (progress < 0) updateProgress.isIndeterminate = true
-                                else { updateProgress.isIndeterminate = false; updateProgress.progress = progress }
+                                else {
+                                    updateProgress.isIndeterminate = false; updateProgress.progress = progress
+                                    updateText.text = "Downloading ${formatBytes(dl)} / ${formatBytes(total)}"
+                                }
                             }
                         }
                     }
                 } else {
                     // No patch available, download full APK
                     runOnUiThread { updateText.text = "Downloading v${update.version}..." }
-                    downloadFile(update.apkUrl, "update.apk") { progress ->
+                    downloadFile(update.apkUrl, "update.apk") { progress, dl, total ->
                         runOnUiThread {
                             if (progress < 0) updateProgress.isIndeterminate = true
-                            else { updateProgress.isIndeterminate = false; updateProgress.progress = progress }
+                            else {
+                                updateProgress.isIndeterminate = false; updateProgress.progress = progress
+                                updateText.text = "Downloading ${formatBytes(dl)} / ${formatBytes(total)}"
+                            }
                         }
                     }
                 }
@@ -2023,7 +2034,7 @@ class MainActivity : AppCompatActivity() {
     private suspend fun downloadFile(
         url: String,
         filename: String,
-        onProgress: (Int) -> Unit
+        onProgress: (progress: Int, downloaded: Long, total: Long) -> Unit
     ): java.io.File = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val dir = java.io.File(cacheDir, "updates")
         dir.mkdirs()
@@ -2060,9 +2071,9 @@ class MainActivity : AppCompatActivity() {
                     output.write(buf, 0, n)
                     downloaded += n
                     if (totalSize > 0) {
-                        onProgress(((downloaded * 100) / totalSize).toInt())
+                        onProgress(((downloaded * 100) / totalSize).toInt(), downloaded, totalSize)
                     } else {
-                        onProgress(-1)
+                        onProgress(-1, downloaded, 0)
                     }
                 }
             }
@@ -2071,6 +2082,12 @@ class MainActivity : AppCompatActivity() {
 
         FileLogger.d(TAG, "Downloaded $filename: ${file.length()} bytes")
         file
+    }
+
+    private fun formatBytes(bytes: Long): String = when {
+        bytes <= 0 -> "?"
+        bytes < 1_048_576 -> "${bytes / 1024} KB"
+        else -> "%.1f MB".format(bytes / 1_048_576.0)
     }
 
     private fun installApk(file: java.io.File) {

@@ -105,7 +105,9 @@ object TunnelApi {
     data class UpdateInfo(
         val version: String,
         val apkUrl: String,
-        val patchUrl: String?
+        val apkSize: Long,
+        val patchUrl: String?,
+        val patchSize: Long
     )
 
     suspend fun checkUpdate(currentVersion: String): UpdateInfo? = withContext(Dispatchers.IO) {
@@ -123,24 +125,27 @@ object TunnelApi {
 
             val assets = release.optJSONArray("assets") ?: return@withContext null
             var apkUrl: String? = null
+            var apkSize = 0L
             var patchUrl: String? = null
+            var patchSize = 0L
 
             for (i in 0 until assets.length()) {
                 val asset = assets.getJSONObject(i)
                 val name = asset.optString("name", "")
                 val url = asset.optString("browser_download_url", "")
+                val size = asset.optLong("size", 0)
                 when {
-                    name.endsWith(".apk") -> apkUrl = url
+                    name.endsWith(".apk") -> { apkUrl = url; apkSize = size }
                     name.endsWith(".bspatch") -> {
                         val match = Regex("patch-(.*)-to-(.*)\\.bspatch").find(name)
                         if (match != null && match.groupValues[1] == current) {
-                            patchUrl = url
+                            patchUrl = url; patchSize = size
                         }
                     }
                 }
             }
 
-            apkUrl?.let { UpdateInfo(tag, it, patchUrl) }
+            apkUrl?.let { UpdateInfo(tag, it, apkSize, patchUrl, patchSize) }
         } catch (_: Exception) {
             null
         }
