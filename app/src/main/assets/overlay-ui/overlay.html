@@ -720,7 +720,7 @@ tpArea.addEventListener('touchend', e => {
         if (tp.fingers >= 2) {
             // 2-finger tap → right click
             haptic(); A.click(2);
-        } else {
+        } else if (tp.fingers === 1) {
             // Single tap → immediate left click
             haptic(); A.click(0);
             // If second tap within 200ms → also double-click
@@ -731,6 +731,8 @@ tpArea.addEventListener('touchend', e => {
                 tp.lastTap = now;
             }
         }
+        // Prevent second touchend from firing another click
+        tp.tapStart = 0;
     }
     tp.fingers = 0;
 }, {passive:false});
