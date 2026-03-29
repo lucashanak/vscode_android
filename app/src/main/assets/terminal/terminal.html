@@ -340,16 +340,29 @@ function showSelToolbar() {
     const cell = getCellSize();
     const viewportRow = term.buffer.active.viewportY;
 
-    // Position toolbar above the start of selection
-    const sy = rect.top + (pos.start.y - viewportRow) * cell.h;
+    // Selection top and bottom edges in screen coordinates
+    const selTop = rect.top + (pos.start.y - viewportRow) * cell.h;
+    const selBottom = rect.top + (pos.end.y - viewportRow + 1) * cell.h;
     const sx = rect.left + pos.start.x * cell.w;
     const ex = rect.left + pos.end.x * cell.w;
-    const midX = (pos.start.y === pos.end.y) ? (sx + ex) / 2 : sx + (rect.width / 2 - sx) / 2;
+    const midX = (pos.start.y === pos.end.y) ? (sx + ex) / 2 : window.innerWidth / 2;
 
     selToolbar.style.display = 'flex';
     const tw = selToolbar.offsetWidth;
+    const th = selToolbar.offsetHeight || 40;
+    const handleHeight = 32; // teardrop handle height
+    const gap = 8; // minimum gap between toolbar and selection/handles
+
+    // Try above selection first (with room for gap)
+    let toolbarY = selTop - th - gap;
+    if (toolbarY < 4) {
+        // Not enough room above → place below selection + handles
+        toolbarY = selBottom + handleHeight + gap;
+    }
+    // Final clamp to viewport
+    toolbarY = Math.max(4, Math.min(toolbarY, window.innerHeight - th - 4));
+
     const toolbarX = Math.max(4, Math.min(midX - tw / 2, window.innerWidth - tw - 4));
-    const toolbarY = Math.max(4, sy - 44);
     selToolbar.style.left = toolbarX + 'px';
     selToolbar.style.top = toolbarY + 'px';
 }

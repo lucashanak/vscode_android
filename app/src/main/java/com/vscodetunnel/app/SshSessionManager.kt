@@ -54,6 +54,10 @@ class SshSessionManager(
         terminalWebView.removeJavascriptInterface("Android")
         terminalWebView.addJavascriptInterface(TerminalBridge(), "Android")
         terminalWebView.webViewClient = object : WebViewClient() {}
+        // Suppress Android's native context menu (we have our own selection toolbar)
+        terminalWebView.setOnLongClickListener { true }
+        terminalWebView.isLongClickable = false
+        terminalWebView.isHapticFeedbackEnabled = false
         terminalWebView.loadUrl("file:///android_asset/terminal/terminal.html")
     }
 

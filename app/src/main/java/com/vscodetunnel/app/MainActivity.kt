@@ -1116,6 +1116,10 @@ class MainActivity : AppCompatActivity() {
             setSupportZoom(false)
         }
         sshTerminalWebView.setBackgroundColor(0xFF1E1E1E.toInt())
+        // Suppress Android's native context menu
+        sshTerminalWebView.setOnLongClickListener { true }
+        sshTerminalWebView.isLongClickable = false
+        sshTerminalWebView.isHapticFeedbackEnabled = false
 
         val mgr = MoshSessionManager(this, sshTerminalWebView) { reason ->
             runOnUiThread {
