@@ -1140,6 +1140,7 @@ class MainActivity : AppCompatActivity() {
         overlayManager.sshTerminalWebView = sshTerminalWebView
 
         // Load terminal HTML first, then connect mosh
+        sshTerminalWebView.removeJavascriptInterface("Android")
         sshTerminalWebView.addJavascriptInterface(
             object {
                 @android.webkit.JavascriptInterface

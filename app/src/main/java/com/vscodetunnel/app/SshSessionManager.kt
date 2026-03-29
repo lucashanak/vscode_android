@@ -51,6 +51,7 @@ class SshSessionManager(
             cacheMode = WebSettings.LOAD_DEFAULT
         }
         terminalWebView.setBackgroundColor(0xFF1E1E1E.toInt())
+        terminalWebView.removeJavascriptInterface("Android")
         terminalWebView.addJavascriptInterface(TerminalBridge(), "Android")
         terminalWebView.webViewClient = object : WebViewClient() {}
         terminalWebView.loadUrl("file:///android_asset/terminal/terminal.html")
