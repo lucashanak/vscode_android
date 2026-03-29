@@ -32,16 +32,16 @@ object TmuxManager {
      */
     suspend fun listSessions(server: SshServer): List<TmuxSession> = withContext(Dispatchers.IO) {
         try {
-            val output = sshExec(server, "tmux list-sessions -F '#{session_name}\t#{session_windows}\t#{session_attached}\t#{session_created_string}' 2>/dev/null")
+            val output = sshExec(server, "tmux list-sessions -F '#{session_name}|||#{session_windows}|||#{session_attached}' 2>/dev/null")
             output.lines()
-                .filter { it.contains('\t') }
+                .filter { it.contains("|||") }
                 .map { line ->
-                    val parts = line.split('\t', limit = 4)
+                    val parts = line.split("|||", limit = 3)
                     TmuxSession(
                         name = parts[0],
                         windows = parts.getOrNull(1)?.toIntOrNull() ?: 1,
-                        attached = parts.getOrNull(2) == "1",
-                        created = parts.getOrNull(3) ?: ""
+                        attached = (parts.getOrNull(2)?.toIntOrNull() ?: 0) > 0,
+                        created = ""
                     )
                 }
         } catch (e: Exception) {
