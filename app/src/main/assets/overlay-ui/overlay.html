@@ -717,20 +717,20 @@ tpArea.addEventListener('touchend', e => {
     const isTap = tp.tapStart > 0 && el < 300 && tp.totalMove < TAP_MOVE_THRESHOLD;
     if (isTap) {
         const now = Date.now();
-        if (tp.fingers >= 2) { A.click(2); }
-        else if (now - tp.lastTap < 300) { A.doubleClick(); tp.lastTap = 0; }
+        if (tp.fingers >= 2) { haptic(); A.click(2); }
+        else if (now - tp.lastTap < 300) { haptic(); A.doubleClick(); tp.lastTap = 0; }
         else {
             tp.lastTap = now;
             clearTimeout(tp.tapTimeout);
-            tp.tapTimeout = setTimeout(() => { if (tp.lastTap > 0) { A.click(0); tp.lastTap = 0; } }, 300);
+            tp.tapTimeout = setTimeout(() => { if (tp.lastTap > 0) { haptic(); A.click(0); tp.lastTap = 0; } }, 300);
         }
     }
     tp.fingers = 0;
 }, {passive:false});
 
-document.getElementById('tpLeft').addEventListener('pointerdown', e => { e.preventDefault(); A.click(0); });
-document.getElementById('tpMid').addEventListener('pointerdown', e => { e.preventDefault(); A.click(1); });
-document.getElementById('tpRight').addEventListener('pointerdown', e => { e.preventDefault(); A.click(2); });
+document.getElementById('tpLeft').addEventListener('pointerdown', e => { e.preventDefault(); haptic(); A.click(0); });
+document.getElementById('tpMid').addEventListener('pointerdown', e => { e.preventDefault(); haptic(); A.click(1); });
+document.getElementById('tpRight').addEventListener('pointerdown', e => { e.preventDefault(); haptic(); A.click(2); });
 
 // ======================== TOOLBAR ========================
 document.getElementById('tpToggle').addEventListener('pointerdown', e => {
