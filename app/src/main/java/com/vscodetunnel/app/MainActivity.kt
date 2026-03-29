@@ -677,7 +677,7 @@ class MainActivity : AppCompatActivity() {
             hint = "Session name (default: main)"
             setText(existing?.tmuxSessionName ?: "")
             setTextColor(resources.getColor(R.color.text_primary, theme))
-            setHintTextColor(resources.getColor(R.color.text_dim, theme))
+            setHintTextColor(resources.getColor(R.color.text_secondary, theme))
             textSize = 14f
             background = resources.getDrawable(R.drawable.bg_input, theme)
             setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -1001,7 +1001,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 layout.addView(TextView(this@MainActivity).apply {
                     text = "No existing tmux sessions"
-                    setTextColor(resources.getColor(R.color.text_dim, theme))
+                    setTextColor(resources.getColor(R.color.text_secondary, theme))
                     textSize = 14f
                     setPadding(0, 0, 0, dp(8))
                 })
@@ -1017,7 +1017,7 @@ class MainActivity : AppCompatActivity() {
                 hint = "Session name"
                 setText(server.tmuxSessionName.ifBlank { "main" })
                 setTextColor(resources.getColor(R.color.text_primary, theme))
-                setHintTextColor(resources.getColor(R.color.text_dim, theme))
+                setHintTextColor(resources.getColor(R.color.text_secondary, theme))
                 textSize = 14f
                 background = resources.getDrawable(R.drawable.bg_input, theme)
                 setPadding(dp(12), dp(8), dp(12), dp(8))
@@ -1044,7 +1044,7 @@ class MainActivity : AppCompatActivity() {
             // Without tmux button
             layout.addView(TextView(this@MainActivity).apply {
                 text = "Connect without tmux"
-                setTextColor(resources.getColor(R.color.text_dim, theme))
+                setTextColor(resources.getColor(R.color.text_secondary, theme))
                 textSize = 13f
                 setPadding(0, dp(12), 0, dp(8))
                 setOnClickListener {
