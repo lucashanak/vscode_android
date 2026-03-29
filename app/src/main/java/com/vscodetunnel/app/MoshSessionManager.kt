@@ -125,16 +125,21 @@ class MoshSessionManager(
                 val env = arrayOf(
                     "MOSH_KEY=$moshKey",
                     "HOME=${context.filesDir}",
-                    "TERM=xterm-256color"
+                    "TERM=xterm-256color",
+                    "LANG=C.UTF-8",
+                    "PATH=/system/bin:/vendor/bin",
+                    "TMPDIR=${context.cacheDir.absolutePath}"
                 )
-                val cmd = arrayOf(moshBin, server.host, moshPort)
+                val cmd = arrayOf(moshBin, server.host, moshPort, "--predict=never")
 
                 writeInfo("Launching mosh-client...\r\n")
+                FileLogger.d(TAG, "Mosh cmd: ${cmd.joinToString(" ")}")
+                FileLogger.d(TAG, "Mosh env: ${env.joinToString(", ") { it.substringBefore('=') }}")
                 val process = Runtime.getRuntime().exec(cmd, env)
                 moshProcess = process
                 isConnected = true
 
-                FileLogger.d(TAG, "Mosh process started: ${cmd.joinToString(" ")}")
+                FileLogger.d(TAG, "Mosh process started, pid alive: ${process.isAlive}")
 
                 // Step 4: Bridge stdin/stdout
                 readJob = scope.launch {
@@ -147,11 +152,14 @@ class MoshSessionManager(
                             if (n == 0) { delay(20); continue }
                             writeOutput(String(buf, 0, n))
                         }
-                    } catch (_: Exception) {
+                    } catch (e: Exception) {
+                        FileLogger.w(TAG, "Mosh read error: $e")
                     } finally {
+                        val exit = try { process.waitFor() } catch (_: Exception) { -1 }
+                        FileLogger.d(TAG, "Mosh process exited with code: $exit")
                         isConnected = false
                         withContext(Dispatchers.Main) {
-                            onDisconnected("Mosh session ended")
+                            onDisconnected("Mosh session ended (exit $exit)")
                         }
                     }
                 }
