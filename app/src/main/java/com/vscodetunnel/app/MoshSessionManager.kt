@@ -102,7 +102,7 @@ class MoshSessionManager(
 
                 // Run mosh-server new
                 val channel = sess.openChannel("exec") as ChannelExec
-                channel.setCommand("mosh-server new")
+                channel.setCommand("LANG=en_US.UTF-8 mosh-server new")
                 channel.inputStream = null
                 val stdout = channel.inputStream
                 val stderr = channel.errStream
