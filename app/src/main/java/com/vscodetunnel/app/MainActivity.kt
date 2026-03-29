@@ -2147,6 +2147,16 @@ class MainActivity : AppCompatActivity() {
                         val patched = applyBsPatch(patchFile)
                         patchFile.delete()
                         FileLogger.d(TAG, "Delta update applied: ${patched.length()} bytes")
+
+                        // Verify patched APK integrity
+                        if (update.apkSha256 != null) {
+                            val actualHash = sha256(patched)
+                            if (actualHash != update.apkSha256) {
+                                FileLogger.e(TAG, "Patch hash mismatch: expected=${update.apkSha256}, got=$actualHash")
+                                throw Exception("Patched APK hash mismatch")
+                            }
+                            FileLogger.d(TAG, "Patch hash verified: $actualHash")
+                        }
                         patched
                     } catch (e: Throwable) {
                         // Fallback to full APK on any error (including OutOfMemoryError)
@@ -2263,6 +2273,19 @@ class MainActivity : AppCompatActivity() {
 
         FileLogger.d(TAG, "Downloaded $filename: ${file.length()} bytes")
         file
+    }
+
+    private fun sha256(file: java.io.File): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buf = ByteArray(8192)
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                digest.update(buf, 0, n)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     private fun formatBytes(bytes: Long): String = when {

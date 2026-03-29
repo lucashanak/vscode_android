@@ -146,6 +146,13 @@ jobs:
             --out VSCodeTunnel.apk /tmp/aligned.apk
           ${BT}/apksigner verify VSCodeTunnel.apk
 
+      - name: Compute APK hash
+        id: hash
+        run: |
+          SHA=$(sha256sum VSCodeTunnel.apk | cut -d' ' -f1)
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "APK SHA-256: $SHA"
+
       - name: Generate delta patches
         id: patch
         env:
@@ -208,4 +215,4 @@ jobs:
           gh release create "$TAG" $ASSETS \
             --target "${{ github.sha }}" \
             --title "$TAG" \
-            --generate-notes
+            --notes "sha256:${{ steps.hash.outputs.sha256 }}"

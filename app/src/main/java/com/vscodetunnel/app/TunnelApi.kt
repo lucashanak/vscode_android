@@ -107,7 +107,8 @@ object TunnelApi {
         val apkUrl: String,
         val apkSize: Long,
         val patchUrl: String?,
-        val patchSize: Long
+        val patchSize: Long,
+        val apkSha256: String?
     )
 
     suspend fun checkUpdate(currentVersion: String): UpdateInfo? = withContext(Dispatchers.IO) {
@@ -145,7 +146,11 @@ object TunnelApi {
                 }
             }
 
-            apkUrl?.let { UpdateInfo(tag, it, apkSize, patchUrl, patchSize) }
+            // Parse sha256 from release body (format: "sha256:<hex>")
+            val releaseBody = release.optString("body", "")
+            val sha256 = Regex("sha256:([a-f0-9]{64})").find(releaseBody)?.groupValues?.get(1)
+
+            apkUrl?.let { UpdateInfo(tag, it, apkSize, patchUrl, patchSize, sha256) }
         } catch (_: Exception) {
             null
         }
