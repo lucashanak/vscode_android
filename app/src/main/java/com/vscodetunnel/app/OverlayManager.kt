@@ -1,6 +1,9 @@
 package com.vscodetunnel.app
 
 import android.annotation.SuppressLint
+import android.os.SystemClock
+import android.view.InputDevice
+import android.view.MotionEvent
 import android.view.View
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
@@ -190,6 +193,54 @@ class OverlayManager(
         return Pair(cursorX / d, cursorY / d)
     }
 
+    // ======================== NATIVE MOUSE INJECTION ========================
+    // Inject MotionEvents through GeckoView's PanZoomController.
+    // These produce isTrusted:true JS events (unlike synthetic content script events).
+    private var nativeMouseDown = false
+    private var nativeDownTime = 0L
+
+    private fun makeMouseProps() = MotionEvent.PointerProperties().apply {
+        id = 0; toolType = MotionEvent.TOOL_TYPE_MOUSE
+    }
+    private fun makeMouseCoords(x: Float, y: Float, pressure: Float = 1f) =
+        MotionEvent.PointerCoords().apply { this.x = x; this.y = y; this.pressure = pressure; size = 1f }
+
+    private fun injectMouseEvent(action: Int, x: Float, y: Float, buttonState: Int) {
+        val session = geckoView.session ?: return
+        val now = SystemClock.uptimeMillis()
+        val dt = if (action == MotionEvent.ACTION_DOWN) now else nativeDownTime
+        if (action == MotionEvent.ACTION_DOWN) nativeDownTime = now
+        val event = MotionEvent.obtain(dt, now, action, 1,
+            arrayOf(makeMouseProps()), arrayOf(makeMouseCoords(x, y, if (action == MotionEvent.ACTION_UP) 0f else 1f)),
+            0, buttonState, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0)
+        session.panZoomController.onTouchEvent(event)
+        event.recycle()
+    }
+
+    private fun injectHoverMove(x: Float, y: Float) {
+        val session = geckoView.session ?: return
+        val now = SystemClock.uptimeMillis()
+        val event = MotionEvent.obtain(now, now, MotionEvent.ACTION_HOVER_MOVE, 1,
+            arrayOf(makeMouseProps()), arrayOf(makeMouseCoords(x, y, 0f)),
+            0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0)
+        session.panZoomController.onMotionEvent(event)
+        event.recycle()
+    }
+
+    private fun injectScroll(x: Float, y: Float, deltaY: Float) {
+        val session = geckoView.session ?: return
+        val now = SystemClock.uptimeMillis()
+        val coords = MotionEvent.PointerCoords().apply {
+            this.x = x; this.y = y
+            setAxisValue(MotionEvent.AXIS_VSCROLL, -deltaY)
+        }
+        val event = MotionEvent.obtain(now, now, MotionEvent.ACTION_SCROLL, 1,
+            arrayOf(makeMouseProps()), arrayOf(coords),
+            0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0)
+        session.panZoomController.onMotionEvent(event)
+        event.recycle()
+    }
+
     // Map overlay key names to terminal escape sequences
     private fun keyToTerminalSequence(key: String, ctrl: Boolean, alt: Boolean, shift: Boolean): String? {
         val base = when (key) {
@@ -272,11 +323,17 @@ class OverlayManager(
             }
         }
 
+        private fun androidButton(button: Int): Int = when (button) {
+            0 -> MotionEvent.BUTTON_PRIMARY
+            1 -> MotionEvent.BUTTON_TERTIARY
+            2 -> MotionEvent.BUTTON_SECONDARY
+            else -> MotionEvent.BUTTON_PRIMARY
+        }
+
         @JavascriptInterface
         fun pointerMove(dx: Float, dy: Float) {
             if (inputTarget == InputTarget.SSH_TERMINAL) {
                 val wv = sshTerminalWebView ?: return
-                // Initialize to center on first use
                 if (sshCursorX < 0) {
                     val density = wv.resources.displayMetrics.density
                     sshCursorX = wv.width / density / 2f
@@ -292,8 +349,12 @@ class OverlayManager(
             val density = geckoView.resources.displayMetrics.density
             geckoView.post {
                 updateCursor(dx * density, dy * density)
-                val (cx, cy) = cursorCssPx()
-                sendToContentScript("pointerMove", JSONObject().put("x", cx).put("y", cy))
+                // Native mouse injection: trusted events via PanZoomController
+                if (nativeMouseDown) {
+                    injectMouseEvent(MotionEvent.ACTION_MOVE, cursorX, cursorY, MotionEvent.BUTTON_PRIMARY)
+                } else {
+                    injectHoverMove(cursorX, cursorY)
+                }
             }
         }
 
@@ -303,8 +364,10 @@ class OverlayManager(
                 injectTerminalMouse("mousedown", sshCursorX, sshCursorY, button)
                 return
             }
-            val (cx, cy) = cursorCssPx()
-            sendToContentScript("mouseDown", JSONObject().put("button", button).put("x", cx).put("y", cy))
+            geckoView.post {
+                nativeMouseDown = true
+                injectMouseEvent(MotionEvent.ACTION_DOWN, cursorX, cursorY, androidButton(button))
+            }
         }
 
         @JavascriptInterface
@@ -313,8 +376,10 @@ class OverlayManager(
                 injectTerminalMouse("mouseup", sshCursorX, sshCursorY, button)
                 return
             }
-            val (cx, cy) = cursorCssPx()
-            sendToContentScript("mouseUp", JSONObject().put("button", button).put("x", cx).put("y", cy))
+            geckoView.post {
+                nativeMouseDown = false
+                injectMouseEvent(MotionEvent.ACTION_UP, cursorX, cursorY, 0)
+            }
         }
 
         @JavascriptInterface
@@ -325,8 +390,11 @@ class OverlayManager(
                 injectTerminalMouse("click", sshCursorX, sshCursorY, button)
                 return
             }
-            val (cx, cy) = cursorCssPx()
-            sendToContentScript("click", JSONObject().put("button", button).put("x", cx).put("y", cy))
+            val btn = androidButton(button)
+            geckoView.post {
+                injectMouseEvent(MotionEvent.ACTION_DOWN, cursorX, cursorY, btn)
+                injectMouseEvent(MotionEvent.ACTION_UP, cursorX, cursorY, 0)
+            }
         }
 
         @JavascriptInterface
@@ -341,8 +409,13 @@ class OverlayManager(
                 injectTerminalMouse("dblclick", sshCursorX, sshCursorY)
                 return
             }
-            val (cx, cy) = cursorCssPx()
-            sendToContentScript("doubleClick", JSONObject().put("x", cx).put("y", cy))
+            geckoView.post {
+                val btn = MotionEvent.BUTTON_PRIMARY
+                injectMouseEvent(MotionEvent.ACTION_DOWN, cursorX, cursorY, btn)
+                injectMouseEvent(MotionEvent.ACTION_UP, cursorX, cursorY, 0)
+                injectMouseEvent(MotionEvent.ACTION_DOWN, cursorX, cursorY, btn)
+                injectMouseEvent(MotionEvent.ACTION_UP, cursorX, cursorY, 0)
+            }
         }
 
         @JavascriptInterface
@@ -351,8 +424,9 @@ class OverlayManager(
                 injectTerminalWheel(sshCursorX, sshCursorY, deltaY)
                 return
             }
-            val (cx, cy) = cursorCssPx()
-            sendToContentScript("scroll", JSONObject().put("deltaY", deltaY).put("x", cx).put("y", cy))
+            geckoView.post {
+                injectScroll(cursorX, cursorY, deltaY)
+            }
         }
 
         @JavascriptInterface

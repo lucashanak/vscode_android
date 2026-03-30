@@ -95,65 +95,8 @@
     }
 
     // ====================== POINTER / MOUSE ======================
-    // buttons bitmask: 1=left, 2=right, 4=middle
-    function btnMask(button) { return button===0?1:button===1?4:button===2?2:0; }
-
-    function dispatchPointer(type, button, pressed) {
-        const t = document.elementFromPoint(cursorX, cursorY); if (!t) return;
-        t.dispatchEvent(new PointerEvent(type, {
-            clientX:cursorX, clientY:cursorY,
-            button:button||0, buttons:pressed ? btnMask(button) : 0,
-            bubbles:true, cancelable:true, composed:true, view:window,
-            pointerId:1, pointerType:'mouse', isPrimary:true,
-            width:1, height:1, pressure:pressed?0.5:0
-        }));
-    }
-    function dispatchMouse(type, button, pressed) {
-        const t = document.elementFromPoint(cursorX, cursorY); if (!t) return;
-        t.dispatchEvent(new MouseEvent(type, {
-            clientX:cursorX, clientY:cursorY,
-            button:button||0, buttons:pressed ? btnMask(button) : 0,
-            bubbles:true, cancelable:true, view:window
-        }));
-    }
-    function clickAt(button) {
-        const t = document.elementFromPoint(cursorX, cursorY);
-        dispatchPointer('pointermove',0,false); dispatchMouse('mousemove',0,false);
-        dispatchPointer('pointerdown',button,true); dispatchMouse('mousedown',button,true);
-        dispatchPointer('pointerup',button,false); dispatchMouse('mouseup',button,false);
-        if (button === 0) {
-            dispatchMouse('click',0,false);
-        } else {
-            // Non-primary buttons: browser uses 'auxclick', not 'click'
-            if (t) t.dispatchEvent(new MouseEvent('auxclick', {
-                clientX:cursorX, clientY:cursorY,
-                button:button, buttons:0,
-                bubbles:true, cancelable:true, view:window
-            }));
-            // Right-click: also dispatch contextmenu
-            if (button === 2 && t) {
-                t.dispatchEvent(new MouseEvent('contextmenu', {
-                    clientX:cursorX, clientY:cursorY,
-                    button:2, buttons:0,
-                    bubbles:true, cancelable:true, view:window
-                }));
-            }
-        }
-    }
-    function doubleClickAt() {
-        clickAt(0); clickAt(0);
-        const t = document.elementFromPoint(cursorX, cursorY);
-        if (t) t.dispatchEvent(new MouseEvent('dblclick',{
-            clientX:cursorX, clientY:cursorY, bubbles:true, view:window
-        }));
-    }
-    function scrollAt(deltaY) {
-        const t = document.elementFromPoint(cursorX, cursorY);
-        if (t) t.dispatchEvent(new WheelEvent('wheel',{
-            deltaY, deltaX:0, clientX:cursorX, clientY:cursorY,
-            bubbles:true, cancelable:true, view:window
-        }));
-    }
+    // Mouse events are now injected natively via GeckoView PanZoomController
+    // (produces isTrusted:true events). No synthetic dispatch needed here.
 
     // ====================== CURSOR TYPE DETECTION ======================
     let cursorCheckRaf = 0;
@@ -223,39 +166,12 @@
             activePort = port;
             port.onMessage.addListener(msg => {
                 switch (msg.type) {
+                    // Keyboard input — still via content script (no native API for this)
                     case 'char':
                         insertChar(msg.char);
                         break;
                     case 'key':
                         dispatchSpecialKey(msg);
-                        break;
-                    case 'pointerMove':
-                        cursorX = msg.x; cursorY = msg.y;
-                        dispatchPointer('pointermove', 0);
-                        dispatchMouse('mousemove', 0);
-                        scheduleCursorCheck();
-                        break;
-                    case 'mouseDown':
-                        cursorX = msg.x; cursorY = msg.y;
-                        dispatchPointer('pointerdown', msg.button || 0, true);
-                        dispatchMouse('mousedown', msg.button || 0, true);
-                        break;
-                    case 'mouseUp':
-                        cursorX = msg.x; cursorY = msg.y;
-                        dispatchPointer('pointerup', msg.button || 0, false);
-                        dispatchMouse('mouseup', msg.button || 0, false);
-                        break;
-                    case 'click':
-                        cursorX = msg.x; cursorY = msg.y;
-                        clickAt(msg.button || 0);
-                        break;
-                    case 'doubleClick':
-                        cursorX = msg.x; cursorY = msg.y;
-                        doubleClickAt();
-                        break;
-                    case 'scroll':
-                        cursorX = msg.x; cursorY = msg.y;
-                        scrollAt(msg.deltaY);
                         break;
                     case 'overlayActive':
                         setInputModeNone(!!msg.active);
@@ -275,5 +191,13 @@
     // ====================== INIT ======================
     cursorX = window.innerWidth / 2;
     cursorY = window.innerHeight / 2;
+
+    // Cursor type detection: listen for real (trusted) mousemove events
+    // from native PanZoomController injection
+    document.addEventListener('mousemove', e => {
+        cursorX = e.clientX; cursorY = e.clientY;
+        scheduleCursorCheck();
+    }, {passive: true});
+
     connect();
 })();
