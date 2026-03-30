@@ -13,8 +13,9 @@
 
     // ====================== TARGET ======================
     function getTarget() {
-        return document.querySelector('.monaco-editor .inputarea') ||
-               document.activeElement || document.body;
+        // Use activeElement so keyboard input goes to whichever panel has focus
+        // (editor, terminal, search box, etc.) — not hardcoded to editor textarea
+        return document.activeElement || document.body;
     }
 
     // ====================== TEXT INSERTION ======================
