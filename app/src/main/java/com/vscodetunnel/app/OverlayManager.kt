@@ -101,12 +101,6 @@ class OverlayManager(
         if (inputTarget == InputTarget.VSCODE && (isVisible || alwaysSuppressInput)) {
             sendToContentScript("overlayActive", JSONObject().put("active", true))
         }
-        // Apply saved VSCode zoom level
-        val prefs = geckoView.context.getSharedPreferences("app_settings", android.content.Context.MODE_PRIVATE)
-        val zoom = prefs.getInt("vscode_zoom_percent", 100)
-        if (zoom != 100) {
-            sendToContentScript("zoom", JSONObject().put("zoom", zoom / 100.0))
-        }
     }
 
     /** Sync inputmode suppression state to content script (call after changing alwaysSuppressInput) */

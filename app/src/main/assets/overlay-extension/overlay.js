@@ -212,19 +212,6 @@
                     case 'overlayActive':
                         setInputModeNone(!!msg.active);
                         break;
-                    case 'zoom': {
-                        // Scale body smaller but expand its dimensions so more
-                        // CSS pixels fit → VS Code lays out in larger space
-                        const s = msg.zoom;
-                        const inv = 100 / s;
-                        document.body.style.transform = `scale(${s})`;
-                        document.body.style.transformOrigin = '0 0';
-                        document.body.style.width = inv + 'vw';
-                        document.body.style.height = inv + 'vh';
-                        document.body.style.overflow = 'hidden';
-                        document.body.style.position = 'fixed';
-                        break;
-                    }
                 }
             });
             port.onDisconnect.addListener(() => {

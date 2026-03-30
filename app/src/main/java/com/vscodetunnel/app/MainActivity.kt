@@ -1420,7 +1420,7 @@ class MainActivity : AppCompatActivity() {
         label("Scrollback lines")
         val scrollbackField = field("10000", terminalScrollback.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
         layout.addView(scrollbackField)
-        label("VSCode zoom % (80=more content, 120=larger UI)")
+        label("VSCode zoom % (80=more content, restart required)")
         val zoomField = field("100", vscodeZoomPercent.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
         layout.addView(zoomField)
 
@@ -1473,8 +1473,10 @@ class MainActivity : AppCompatActivity() {
             terminalFontSize = fontField.text.toString().toIntOrNull() ?: 14
             terminalScrollback = scrollbackField.text.toString().toIntOrNull() ?: 10000
             val newZoom = (zoomField.text.toString().toIntOrNull() ?: 100).coerceIn(50, 200)
-            vscodeZoomPercent = newZoom
-            overlayManager.sendToContentScript("zoom", org.json.JSONObject().put("zoom", newZoom / 100.0))
+            if (newZoom != vscodeZoomPercent) {
+                vscodeZoomPercent = newZoom
+                android.widget.Toast.makeText(this, "Restart app to apply zoom change", android.widget.Toast.LENGTH_LONG).show()
+            }
             // Keyboard
             suppressSystemKeyboard = suppressCheck.isChecked
             overlayManager.alwaysSuppressInput = suppressSystemKeyboard

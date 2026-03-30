@@ -25,10 +25,21 @@ object GeckoManager {
 
     fun getRuntime(context: Context): GeckoRuntime {
         if (runtime == null) {
-            val settings = GeckoRuntimeSettings.Builder()
+            val builder = GeckoRuntimeSettings.Builder()
                 .consoleOutput(true)
                 .remoteDebuggingEnabled(true)
-                .build()
+
+            // Custom DPI: lower density = more CSS pixels = more content visible
+            val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            val zoomPercent = prefs.getInt("vscode_zoom_percent", 100)
+            if (zoomPercent != 100) {
+                val systemDensity = context.resources.displayMetrics.density
+                val newDensity = systemDensity * (zoomPercent / 100f)
+                builder.displayDensityOverride(newDensity)
+                FileLogger.d(TAG, "VSCode zoom: ${zoomPercent}%, density: $systemDensity → $newDensity")
+            }
+
+            val settings = builder.build()
             runtime = GeckoRuntime.create(context.applicationContext, settings)
             FileLogger.d(TAG, "GeckoRuntime created")
         }
