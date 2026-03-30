@@ -206,7 +206,11 @@ function hideCtxMenu() { ctxMenu.style.display = 'none'; }
 // Smart scroll: works in both plain shell and alternate buffer (tmux/vim)
 function scrollTerminal(lines) {
     if (lines === 0) return;
-    if (term.buffer.active.type === 'alternate' && term.modes.mouseTrackingMode !== 'none') {
+    const isAlt = term.buffer.active.type === 'alternate';
+    // term.modes is a proposed API — guard against undefined
+    const mouseMode = (term.modes && term.modes.mouseTrackingMode) || 'none';
+
+    if (isAlt && mouseMode !== 'none') {
         // Alternate buffer with mouse reporting (tmux mouse on, vim, etc.)
         // Send SGR mouse wheel escape sequences
         const btn = lines < 0 ? 64 : 65; // 64=up, 65=down
