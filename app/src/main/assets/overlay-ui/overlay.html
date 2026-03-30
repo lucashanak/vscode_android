@@ -228,9 +228,9 @@ function SEP(cls) { return `<div class="${cls||'fn-sep'}"></div>`; }
 function SK(ch) {
     const s = SWIPE[ch] || [null,null,null,null];
     const labels = [...s];
-    // Fn mode: replace NE number with F-key label
-    if (fnActive && labels[1] && FN_MAP[labels[1]]) {
-        labels[1] = FN_MAP[labels[1]];
+    // Fn mode: replace NW number with F-key label (CZ: numbers are NW)
+    if (fnActive && labels[0] && FN_MAP[labels[0]]) {
+        labels[0] = FN_MAP[labels[0]];
     }
     const [nw,ne,sw,se] = labels.map(v => v ? esc(v) : '');
     return `<button class="key char-key swipe-key" data-char="${ch}">
@@ -240,39 +240,42 @@ function SK(ch) {
     </button>`;
 }
 
-// ======================== SWIPE MAP (Unexpected Keyboard US QWERTY) ========================
+// ======================== SWIPE MAP (Unexpected Keyboard CZ QWERTZ) ========================
 // [nw, ne, sw, se] — null = no swipe char in that direction
+// Key numbering: key1=NW key2=NE key3=SW key4=SE
 const SWIPE = {
-    // Top row: NE = numbers
-    'q': [null,'1',null,'Esc'],
-    'w': ['~','2','@',null],
-    'e': ['!','3','#','\u20AC'],
-    'r': [null,'4','$',null],
-    't': [null,'5','%',null],
-    'y': [null,'6','^',null],
-    'u': [null,'7','&',null],
-    'i': [null,'8','*',null],
-    'o': [null,'9','(',')'],
-    'p': [null,'0','=',null],
+    // Top row: NW = numbers
+    'q': ['1','Esc',null,'~'],
+    'w': ['2','+','|','\\'],
+    'e': ['3','\u00E9','^','\u011B'],
+    'r': ['4',null,null,'\u0159'],
+    't': ['5',null,'\u00B0','\u0165'],
+    'z': ['6',null,null,'\u017E'],
+    'u': ['7','\u00FA','`','\u016F'],
+    'i': ['8','\u00ED','(',')'],
+    'o': ['9','\u00F3','/','%'],
+    'p': ['0',null,'=',null],
     // Home row
-    'a': ['Tab','`',null,null],
-    'g': [null,'-','_',null],
-    'h': [null,'=','+',null],
-    'j': [null,null,'{','}'],
-    'k': [null,null,'[',']'],
-    'l': [null,'|','\\',null],
-    // Bottom letter row
-    'c': [null,'<','.',null],
-    'v': [null,'>',',',null],
-    'b': [null,'?','/',null],
-    'n': [null,':',';',null],
-    'm': [null,'"',"'",null],
+    'a': ['Tab','\u00E1',';',null],
+    's': ['\u00A7',null,null,'\u0161'],
+    'd': [null,null,null,'\u010F'],
+    'f': [null,null,'[',null],
+    'g': [null,null,']',null],
+    'l': ['"',"'",'$','!'],
+    // Bottom letter row (QWERTZ: y is here, not z)
+    'y': [null,'\u00FD',null,null],
+    'x': [null,null,'#',null],
+    'c': [null,null,'&','\u010D'],
+    'v': [null,null,'@',null],
+    'b': ['<','>','{','}'],
+    'n': ['?','.',',','\u0148'],
+    'm': [':','*','-','_'],
 };
 
 // Nav key: 8 directions [N, NE, E, SE, S, SW, W, NW]
 const NAV_SWIPE = ['Up','PgUp','Right','PgDn','Down','End','Left','Home'];
 
-// Fn mode: NE swipe numbers become F-keys
+// Fn mode: NW swipe numbers become F-keys (numbers are in NW position in CZ layout)
 const FN_MAP = {'1':'F1','2':'F2','3':'F3','4':'F4','5':'F5',
                 '6':'F6','7':'F7','8':'F8','9':'F9','0':'F10'};
 
@@ -346,11 +349,11 @@ function quickActions() {
 function compactLetters() {
     return `
         ${quickActions()}
-        <div class="row">${'qwertyuiop'.split('').map(SK).join('')}</div>
+        <div class="row">${'qwertzuiop'.split('').map(SK).join('')}</div>
         <div class="row row-home">${'asdfghjkl'.split('').map(SK).join('')}</div>
         <div class="row row-shift">
             ${M('shift','\u21E7','wide-key')}
-            ${'zxcvbnm'.split('').map(SK).join('')}
+            ${'yxcvbnm'.split('').map(SK).join('')}
             ${K('Bksp','\u232B','wide-key')}
         </div>
         <div class="row row-bottom row-uk">
@@ -676,7 +679,7 @@ function attachKeyEvents() {
                 let target = swipeMap[dir];
 
                 // Fn mode: if NE (dir=1) and target is a number, replace with F-key
-                if (fnActive && dir === 1 && target && FN_MAP[target]) {
+                if (fnActive && dir === 0 && target && FN_MAP[target]) {
                     target = FN_MAP[target];
                     fnActive = false;
                     const fnBtn = document.getElementById('fnToggle');
@@ -709,7 +712,7 @@ function attachKeyEvents() {
                     const dir = getSwipeDirection4(dx, dy);
                     if (dir >= 0 && swipeMap && swipeMap[dir]) {
                         let target = swipeMap[dir];
-                        if (fnActive && dir === 1 && target && FN_MAP[target]) {
+                        if (fnActive && dir === 0 && target && FN_MAP[target]) {
                             target = FN_MAP[target];
                             fnActive = false;
                             const fnBtn = document.getElementById('fnToggle');
