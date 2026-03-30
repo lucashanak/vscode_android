@@ -206,26 +206,16 @@ function hideCtxMenu() { ctxMenu.style.display = 'none'; }
 // Smart scroll: works in both plain shell and alternate buffer (tmux/vim)
 function scrollTerminal(lines) {
     if (lines === 0) return;
-    if (term.buffer.active.type === 'alternate') {
-        // Alternate buffer (tmux/vim/less) — send escape sequences
-        if (term.modes.mouseTrackingMode !== 'none') {
-            // Mouse reporting active — send SGR mouse wheel events
-            const btn = lines < 0 ? 64 : 65; // 64=up, 65=down
-            const count = Math.abs(lines);
-            const col = 1, row = 1; // position doesn't matter for scroll
-            for (let i = 0; i < count; i++) {
-                if (A) A.onTerminalInput('\x1b[<' + btn + ';' + col + ';' + row + 'M');
-            }
-        } else {
-            // No mouse reporting — send arrow keys (works in copy-mode, less, man)
-            const key = lines < 0 ? '\x1b[A' : '\x1b[B';
-            const count = Math.abs(lines);
-            for (let i = 0; i < count; i++) {
-                if (A) A.onTerminalInput(key);
-            }
+    if (term.buffer.active.type === 'alternate' && term.modes.mouseTrackingMode !== 'none') {
+        // Alternate buffer with mouse reporting (tmux mouse on, vim, etc.)
+        // Send SGR mouse wheel escape sequences
+        const btn = lines < 0 ? 64 : 65; // 64=up, 65=down
+        const count = Math.abs(lines);
+        for (let i = 0; i < count; i++) {
+            if (A) A.onTerminalInput('\x1b[<' + btn + ';1;1M');
         }
     } else {
-        // Normal buffer — scroll xterm.js viewport
+        // Normal buffer or alternate without mouse — use xterm.js viewport scroll
         term.scrollLines(lines);
     }
 }
