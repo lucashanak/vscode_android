@@ -242,6 +242,9 @@ class SshSessionManager(
     private fun doConnect(server: SshServer) {
         scope.launch {
             try {
+                // Reset xterm.js terminal state (exit alternate buffer, disable mouse mode)
+                // so stale state from a previous session doesn't leak SGR sequences
+                writeOutput("\u001b[?1049l\u001b[?1002l\u001b[?1003l\u001b[?1006l")
                 writeInfo("Connecting to ${server.host}:${server.port}...\r\n")
 
                 val jsch = JSch()
