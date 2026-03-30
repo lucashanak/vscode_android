@@ -123,22 +123,6 @@
         dispatchPointer('pointerup',button,false); dispatchMouse('mouseup',button,false);
         if (button === 0) {
             dispatchMouse('click',0,false);
-            // Synthetic events don't trigger native browser focus.
-            // VS Code terminal uses a hidden xterm textarea for keyboard input.
-            if (t) {
-                const xterm = t.closest('.xterm');
-                if (xterm) {
-                    // Terminal: focus the hidden xterm textarea (keyboard target)
-                    const ta = xterm.querySelector('.xterm-helper-textarea');
-                    if (ta) { ta.removeAttribute('inputmode'); ta.focus(); }
-                } else {
-                    // General: find nearest focusable, but prefer deep inputs over parent divs
-                    const input = t.querySelector('input,textarea') ||
-                                  t.closest('input,textarea,button,a,[contenteditable]');
-                    if (input) { try { input.focus(); } catch(e) {} }
-                    else { try { t.focus(); } catch(e) {} }
-                }
-            }
         } else {
             // Non-primary buttons: browser uses 'auxclick', not 'click'
             if (t) t.dispatchEvent(new MouseEvent('auxclick', {
