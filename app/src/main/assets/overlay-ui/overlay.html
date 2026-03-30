@@ -158,7 +158,7 @@ let compactPage = 'abc'; // 'abc' or 'sym'
 
 // ======================== ANDROID BRIDGE ========================
 const A = window.Android || {
-    sendChar(){}, sendKey(){}, pointerMove(){}, click(){},
+    sendChar(){}, sendKey(){}, pointerMove(){}, click(){}, mouseDown(){}, mouseUp(){},
     doubleClick(){}, scroll(){}, hideOverlay(){}, sendModifier(){}, backToMenu(){},
     getClipboard(){ return ''; }
 };
@@ -737,7 +737,20 @@ tpArea.addEventListener('touchend', e => {
     tp.fingers = 0;
 }, {passive:false});
 
-document.getElementById('tpLeft').addEventListener('pointerdown', e => { e.preventDefault(); haptic(); A.click(0); });
+// Left button: tap = click, hold = drag (mouseDown on press, mouseUp on release)
+let leftBtnHeld = false;
+document.getElementById('tpLeft').addEventListener('pointerdown', e => {
+    e.preventDefault(); haptic();
+    leftBtnHeld = true;
+    A.mouseDown(0);
+});
+document.getElementById('tpLeft').addEventListener('pointerup', e => {
+    e.preventDefault();
+    if (leftBtnHeld) { leftBtnHeld = false; A.mouseUp(0); }
+});
+document.getElementById('tpLeft').addEventListener('pointercancel', e => {
+    if (leftBtnHeld) { leftBtnHeld = false; A.mouseUp(0); }
+});
 document.getElementById('tpMid').addEventListener('pointerdown', e => { e.preventDefault(); haptic(); A.click(1); });
 document.getElementById('tpRight').addEventListener('pointerdown', e => { e.preventDefault(); haptic(); A.click(2); });
 

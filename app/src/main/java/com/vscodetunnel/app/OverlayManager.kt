@@ -101,12 +101,6 @@ class OverlayManager(
         if (inputTarget == InputTarget.VSCODE && (isVisible || alwaysSuppressInput)) {
             sendToContentScript("overlayActive", JSONObject().put("active", true))
         }
-        // Apply saved VSCode zoom level
-        val prefs = geckoView.context.getSharedPreferences("app_settings", android.content.Context.MODE_PRIVATE)
-        val zoom = prefs.getInt("vscode_zoom_percent", 100)
-        if (zoom != 100) {
-            sendToContentScript("zoom", JSONObject().put("zoom", zoom / 100.0))
-        }
     }
 
     /** Sync inputmode suppression state to content script (call after changing alwaysSuppressInput) */
@@ -265,6 +259,27 @@ class OverlayManager(
                 val (cx, cy) = cursorCssPx()
                 sendToContentScript("pointerMove", JSONObject().put("x", cx).put("y", cy))
             }
+        }
+
+        @JavascriptInterface
+        @JavascriptInterface
+        fun mouseDown(button: Int) {
+            if (inputTarget == InputTarget.SSH_TERMINAL) {
+                injectTerminalMouse("mousedown", sshCursorX, sshCursorY, button)
+                return
+            }
+            val (cx, cy) = cursorCssPx()
+            sendToContentScript("mouseDown", JSONObject().put("button", button).put("x", cx).put("y", cy))
+        }
+
+        @JavascriptInterface
+        fun mouseUp(button: Int) {
+            if (inputTarget == InputTarget.SSH_TERMINAL) {
+                injectTerminalMouse("mouseup", sshCursorX, sshCursorY, button)
+                return
+            }
+            val (cx, cy) = cursorCssPx()
+            sendToContentScript("mouseUp", JSONObject().put("button", button).put("x", cx).put("y", cy))
         }
 
         @JavascriptInterface

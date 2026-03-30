@@ -187,6 +187,16 @@
                         dispatchPointer('pointermove', 0);
                         dispatchMouse('mousemove', 0);
                         break;
+                    case 'mouseDown':
+                        cursorX = msg.x; cursorY = msg.y;
+                        dispatchPointer('pointerdown', msg.button || 0, true);
+                        dispatchMouse('mousedown', msg.button || 0, true);
+                        break;
+                    case 'mouseUp':
+                        cursorX = msg.x; cursorY = msg.y;
+                        dispatchPointer('pointerup', msg.button || 0, false);
+                        dispatchMouse('mouseup', msg.button || 0, false);
+                        break;
                     case 'click':
                         cursorX = msg.x; cursorY = msg.y;
                         clickAt(msg.button || 0);
@@ -201,9 +211,6 @@
                         break;
                     case 'overlayActive':
                         setInputModeNone(!!msg.active);
-                        break;
-                    case 'zoom':
-                        document.documentElement.style.zoom = msg.zoom;
                         break;
                 }
             });
