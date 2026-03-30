@@ -117,18 +117,32 @@
         }));
     }
     function clickAt(button) {
+        const t = document.elementFromPoint(cursorX, cursorY);
         dispatchPointer('pointermove',0,false); dispatchMouse('mousemove',0,false);
         dispatchPointer('pointerdown',button,true); dispatchMouse('mousedown',button,true);
         dispatchPointer('pointerup',button,false); dispatchMouse('mouseup',button,false);
-        dispatchMouse('click',button,false);
-        // Right-click: dispatch contextmenu (browser does this natively for button=2)
-        if (button === 2) {
-            const t = document.elementFromPoint(cursorX, cursorY);
-            if (t) t.dispatchEvent(new MouseEvent('contextmenu', {
+        if (button === 0) {
+            dispatchMouse('click',0,false);
+            // Focus the clicked element (synthetic events don't trigger native focus)
+            if (t) {
+                const focusable = t.closest('[tabindex],input,textarea,button,a,select') || t;
+                try { focusable.focus(); } catch(e) {}
+            }
+        } else {
+            // Non-primary buttons: browser uses 'auxclick', not 'click'
+            if (t) t.dispatchEvent(new MouseEvent('auxclick', {
                 clientX:cursorX, clientY:cursorY,
-                button:2, buttons:0,
+                button:button, buttons:0,
                 bubbles:true, cancelable:true, view:window
             }));
+            // Right-click: also dispatch contextmenu
+            if (button === 2 && t) {
+                t.dispatchEvent(new MouseEvent('contextmenu', {
+                    clientX:cursorX, clientY:cursorY,
+                    button:2, buttons:0,
+                    bubbles:true, cancelable:true, view:window
+                }));
+            }
         }
     }
     function doubleClickAt() {
