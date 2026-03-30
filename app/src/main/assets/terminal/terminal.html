@@ -204,22 +204,23 @@ function hideCtxMenu() { ctxMenu.style.display = 'none'; }
 // This avoids fighting xterm.js's own touch event listeners.
 
 // Smart scroll: works in both plain shell and alternate buffer (tmux/vim)
+// In tmux with mouse on, scroll up enters copy-mode (shows [line/total]
+// indicator) — this is normal tmux behavior, exits when scrolling back down.
 function scrollTerminal(lines) {
     if (lines === 0) return;
+    // Re-check state on every call (async evaluateJavascript means state may change)
     const isAlt = term.buffer.active.type === 'alternate';
-    // term.modes is a proposed API — guard against undefined
     const mouseMode = (term.modes && term.modes.mouseTrackingMode) || 'none';
 
-    if (isAlt && mouseMode !== 'none') {
+    if (isAlt && mouseMode !== 'none' && A) {
         // Alternate buffer with mouse reporting (tmux mouse on, vim, etc.)
-        // Send SGR mouse wheel escape sequences
+        // Send SGR mouse wheel escape sequences via SSH stdin
         const btn = lines < 0 ? 64 : 65; // 64=up, 65=down
-        const count = Math.abs(lines);
-        for (let i = 0; i < count; i++) {
-            if (A) A.onTerminalInput('\x1b[<' + btn + ';1;1M');
-        }
+        const count = Math.min(Math.abs(lines), 15); // cap to prevent flooding
+        const seq = '\x1b[<' + btn + ';1;1M';
+        for (let i = 0; i < count; i++) A.onTerminalInput(seq);
     } else {
-        // Normal buffer or alternate without mouse — use xterm.js viewport scroll
+        // Normal buffer or alternate without mouse — xterm.js viewport scroll
         term.scrollLines(lines);
     }
 }
