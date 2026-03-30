@@ -199,107 +199,30 @@ function showCtxMenu(x, y) {
 function hideCtxMenu() { ctxMenu.style.display = 'none'; }
 
 // ======================== 1-FINGER SCROLL + LONG-PRESS SELECT ========================
-// xterm.js 5.5.0 uses pointer events (pointerdown/pointermove/pointerup),
-// so we must intercept BOTH pointer and touch events to block its selection.
-let longPressTimer = null, longPressPos = null;
-let touchState = 'idle'; // 'idle' | 'pending' | 'scrolling'
-let scrollAccum = 0;
+// Handled natively in Android/Kotlin (setupTouchHandlers) which calls
+// term.scrollLines() / selectWordAt() via evaluateJavascript.
+// This avoids fighting xterm.js's own touch event listeners.
 
-// --- Pointer event interceptors (capture phase, before xterm.js) ---
-termEl.addEventListener('pointerdown', e => {
-    if (e.pointerType === 'touch' && !e.isPrimary) {
-        // Second finger down: cancel 1-finger scroll (let 2-finger gestures through)
-        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
-        touchState = 'idle';
-        return;
-    }
-    if (e.pointerType === 'touch' && e.isPrimary) {
-        longPressPos = { x: e.clientX, y: e.clientY };
-        touchState = 'pending';
-        scrollAccum = 0;
-        longPressTimer = setTimeout(() => {
-            if (!longPressPos || touchState !== 'pending') return;
-            // Long-press: select word at touch position
-            const rect = getScreenRect();
-            const cell = getCellSize();
-            const col = Math.floor((longPressPos.x - rect.left) / cell.w);
-            const row = Math.floor((longPressPos.y - rect.top) / cell.h);
-            const vp = term.buffer.active.viewportY;
+function selectWordAt(px, py) {
+    const rect = getScreenRect();
+    const cell = getCellSize();
+    const col = Math.floor((px - rect.left) / cell.w);
+    const row = Math.floor((py - rect.top) / cell.h);
+    const vp = term.buffer.active.viewportY;
 
-            const line = term.buffer.active.getLine(row + vp);
-            if (!line) return;
-            const lineText = line.translateToString();
-            const wordChars = /[a-zA-Z0-9_\-\.\/~]/;
-            let start = Math.min(col, lineText.length - 1);
-            let end = start;
-            while (start > 0 && wordChars.test(lineText[start - 1])) start--;
-            while (end < lineText.length - 1 && wordChars.test(lineText[end + 1])) end++;
-            const len = end - start + 1;
-            if (len > 0 && wordChars.test(lineText[start] || '')) {
-                term.select(start, row + vp, len);
-            }
-            longPressPos = null;
-            touchState = 'idle';
-        }, 500);
+    const line = term.buffer.active.getLine(row + vp);
+    if (!line) return;
+    const lineText = line.translateToString();
+    const wordChars = /[a-zA-Z0-9_\-\.\/~]/;
+    let start = Math.min(col, lineText.length - 1);
+    let end = start;
+    while (start > 0 && wordChars.test(lineText[start - 1])) start--;
+    while (end < lineText.length - 1 && wordChars.test(lineText[end + 1])) end++;
+    const len = end - start + 1;
+    if (len > 0 && wordChars.test(lineText[start] || '')) {
+        term.select(start, row + vp, len);
     }
-}, {capture:true});
-
-termEl.addEventListener('pointermove', e => {
-    if (e.pointerType !== 'touch' || !e.isPrimary) return;
-    if (touchState === 'pending' && longPressPos) {
-        const dx = e.clientX - longPressPos.x;
-        const dy = e.clientY - longPressPos.y;
-        if (dx*dx + dy*dy > 100) {
-            // Moved > 10px: cancel long-press, start scrolling
-            clearTimeout(longPressTimer);
-            longPressTimer = null;
-            touchState = 'scrolling';
-            scrollAccum = 0;
-            term.clearSelection();
-        }
-    }
-    if (touchState === 'scrolling') {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation(); // Block xterm.js from seeing this
-        const dy = e.clientY - longPressPos.y;
-        longPressPos = { x: e.clientX, y: e.clientY };
-        scrollAccum -= dy;
-        const lineH = term.options.fontSize * 1.2;
-        const lines = Math.trunc(scrollAccum / lineH);
-        if (lines !== 0) {
-            term.scrollLines(lines);
-            scrollAccum -= lines * lineH;
-        }
-    }
-}, {passive:false, capture:true});
-
-termEl.addEventListener('pointerup', e => {
-    if (e.pointerType === 'touch') {
-        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
-        longPressPos = null;
-        touchState = 'idle';
-        scrollAccum = 0;
-    }
-}, {capture:true});
-
-termEl.addEventListener('pointercancel', e => {
-    if (e.pointerType === 'touch') {
-        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
-        longPressPos = null;
-        touchState = 'idle';
-        scrollAccum = 0;
-    }
-}, {capture:true});
-
-// --- Also block touch events during scroll (belt-and-suspenders) ---
-termEl.addEventListener('touchmove', e => {
-    if (touchState === 'scrolling') {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-    }
-}, {passive:false, capture:true});
+}
 
 // 2-finger tap → context menu (scroll/pinch handled natively in Kotlin)
 let ctxMenuTapStart = 0, ctxMenuTapPos = {x:0,y:0}, ctxMenuTapMoved = false;

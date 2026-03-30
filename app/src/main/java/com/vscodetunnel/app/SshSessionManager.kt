@@ -61,26 +61,73 @@ class SshSessionManager(
         private const val TAG = "SshSession"
         private const val MAX_RECONNECT_ATTEMPTS = 3
 
-        /** Attach 2-finger scroll/pinch handling at native Android level */
         /**
-         * Handle 2-finger scroll/pinch on terminal WebView.
+         * Handle all touch gestures on terminal WebView:
+         * - 1-finger drag → scroll terminal (Termux-style)
+         * - 1-finger long-press → select word
+         * - 1-finger tap → pass through to xterm.js (focus/click)
+         * - 2-finger scroll/pinch → scroll or zoom
          *
-         * Strategy: let ACTION_POINTER_DOWN through (false) so xterm.js
-         * 1-finger selection keeps working. Only consume ACTION_MOVE once
-         * a 2-finger mode is detected, preventing WebView from interfering.
+         * 1-finger scroll is handled here (not in JS) because xterm.js's
+         * own touchmove handlers fight with any JS-level interceptors.
+         * Native Android OnTouchListener runs before WebView dispatches
+         * events to JavaScript, so we can reliably consume them.
          */
         @SuppressLint("ClickableViewAccessibility")
         fun setupTwoFingerScroll(webView: WebView) {
+            // 2-finger state
             var twoFingerActive = false
             var twoFingerStartY = 0f
             var twoFingerStartDist = 0f
             var startFontSize = 14
             var mode: String? = null // "scroll" | "pinch"
-            var scrollAccum = 0f
+            var scrollAccum2f = 0f
+
+            // 1-finger state
+            var oneFingerFontSize = 14
+            var oneFingerStartX = 0f
+            var oneFingerStartY = 0f
+            var oneFingerLastY = 0f
+            var oneFingerScrolling = false
+            var scrollAccum1f = 0f
+            var longPressRunnable: Runnable? = null
+            val handler = android.os.Handler(android.os.Looper.getMainLooper())
+            val moveThreshold = 10f // px, before density scaling
 
             webView.setOnTouchListener { v, event ->
+                val density = v.resources.displayMetrics.density
+                val threshold = moveThreshold * density
+
                 when (event.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        // 1-finger down: record start, begin long-press timer
+                        oneFingerStartX = event.x
+                        oneFingerStartY = event.y
+                        oneFingerLastY = event.y
+                        oneFingerScrolling = false
+                        scrollAccum1f = 0f
+                        webView.evaluateJavascript(
+                            "typeof term!=='undefined'?term.options.fontSize:14"
+                        ) { r -> oneFingerFontSize = r?.toIntOrNull() ?: 14 }
+
+                        // Long-press timer (500ms) → select word
+                        longPressRunnable?.let { handler.removeCallbacks(it) }
+                        val px = event.x
+                        val py = event.y
+                        longPressRunnable = Runnable {
+                            if (!oneFingerScrolling && !twoFingerActive) {
+                                webView.evaluateJavascript("selectWordAt($px,$py)", null)
+                            }
+                        }
+                        handler.postDelayed(longPressRunnable!!, 500)
+
+                        false // Let WebView/xterm see ACTION_DOWN for focus
+                    }
                     android.view.MotionEvent.ACTION_POINTER_DOWN -> {
+                        // Second finger: cancel 1-finger state, start 2-finger
+                        longPressRunnable?.let { handler.removeCallbacks(it) }
+                        oneFingerScrolling = false
+
                         if (event.pointerCount == 2) {
                             twoFingerActive = true
                             val dx = event.getX(0) - event.getX(1)
@@ -88,15 +135,15 @@ class SshSessionManager(
                             twoFingerStartDist = kotlin.math.sqrt(dx * dx + dy * dy)
                             twoFingerStartY = (event.getY(0) + event.getY(1)) / 2f
                             mode = null
-                            scrollAccum = 0f
+                            scrollAccum2f = 0f
                             webView.evaluateJavascript(
                                 "typeof term!=='undefined'?term.options.fontSize:14"
                             ) { r -> startFontSize = r?.toIntOrNull() ?: 14 }
                         }
-                        // Don't consume - let WebView/xterm keep tracking pointers
                         false
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
+                        // --- 2-finger move ---
                         if (twoFingerActive && event.pointerCount >= 2) {
                             val dx = event.getX(0) - event.getX(1)
                             val dy = event.getY(0) - event.getY(1)
@@ -105,42 +152,68 @@ class SshSessionManager(
                             val distChange = kotlin.math.abs(dist - twoFingerStartDist)
                             val yChange = kotlin.math.abs(midY - twoFingerStartY)
 
-                            // Detect mode: bias toward scroll (pinch needs 2x distance change)
                             if (mode == null && (distChange > 20f || yChange > 15f)) {
                                 mode = if (distChange > yChange * 2f) "pinch" else "scroll"
                             }
 
                             when (mode) {
                                 "scroll" -> {
-                                    val density = v.resources.displayMetrics.density
                                     val lineHeight = startFontSize * 1.2f * density
-                                    scrollAccum += twoFingerStartY - midY
-                                    val lines = (scrollAccum / lineHeight).toInt()
+                                    scrollAccum2f += twoFingerStartY - midY
+                                    val lines = (scrollAccum2f / lineHeight).toInt()
                                     if (lines != 0) {
                                         webView.evaluateJavascript("term.scrollLines($lines)", null)
-                                        scrollAccum -= lines * lineHeight
+                                        scrollAccum2f -= lines * lineHeight
                                     }
                                     twoFingerStartY = midY
-                                    return@setOnTouchListener true // consume to prevent WebView zoom
+                                    return@setOnTouchListener true
                                 }
                                 "pinch" -> {
                                     val scale = dist / twoFingerStartDist
                                     val newSize = (startFontSize * scale).toInt().coerceIn(8, 32)
                                     webView.evaluateJavascript(
                                         "if(term.options.fontSize!==$newSize){term.options.fontSize=$newSize;fitAddon.fit()}", null)
-                                    return@setOnTouchListener true // consume to prevent WebView zoom
+                                    return@setOnTouchListener true
                                 }
                             }
+                            return@setOnTouchListener false
                         }
-                        false // 1-finger or undecided: pass through
+
+                        // --- 1-finger move ---
+                        if (event.pointerCount == 1 && !twoFingerActive) {
+                            val dx = event.x - oneFingerStartX
+                            val dy = event.y - oneFingerStartY
+                            if (!oneFingerScrolling && (dx * dx + dy * dy > threshold * threshold)) {
+                                // Crossed threshold: start scrolling, cancel long-press
+                                oneFingerScrolling = true
+                                longPressRunnable?.let { handler.removeCallbacks(it) }
+                                webView.evaluateJavascript("term.clearSelection()", null)
+                            }
+                            if (oneFingerScrolling) {
+                                val deltaY = oneFingerLastY - event.y
+                                oneFingerLastY = event.y
+                                val lineHeight = oneFingerFontSize * 1.2f * density
+                                scrollAccum1f += deltaY
+                                val lines = (scrollAccum1f / lineHeight).toInt()
+                                if (lines != 0) {
+                                    webView.evaluateJavascript("term.scrollLines($lines)", null)
+                                    scrollAccum1f -= lines * lineHeight
+                                }
+                                return@setOnTouchListener true // Consume: prevent xterm.js selection
+                            }
+                        }
+                        false
                     }
                     android.view.MotionEvent.ACTION_POINTER_UP,
                     android.view.MotionEvent.ACTION_UP,
                     android.view.MotionEvent.ACTION_CANCEL -> {
+                        longPressRunnable?.let { handler.removeCallbacks(it) }
                         val was2f = twoFingerActive
+                        val was1fScroll = oneFingerScrolling
                         twoFingerActive = false
                         mode = null
-                        if (was2f) return@setOnTouchListener true
+                        oneFingerScrolling = false
+                        if (was2f || was1fScroll) return@setOnTouchListener true
                         false
                     }
                     else -> false
