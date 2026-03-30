@@ -63,9 +63,11 @@ class SshSessionManager(
 
         /** Attach 2-finger scroll/pinch handling at native Android level */
         /**
-         * Observe 2-finger gestures on WebView for scroll/pinch.
-         * NEVER returns true — all events pass through to WebView/xterm.js.
-         * Scroll/pinch are triggered as side effects via evaluateJavascript.
+         * Handle 2-finger scroll/pinch on terminal WebView.
+         *
+         * Strategy: let ACTION_POINTER_DOWN through (false) so xterm.js
+         * 1-finger selection keeps working. Only consume ACTION_MOVE once
+         * a 2-finger mode is detected, preventing WebView from interfering.
          */
         @SuppressLint("ClickableViewAccessibility")
         fun setupTwoFingerScroll(webView: WebView) {
@@ -73,7 +75,7 @@ class SshSessionManager(
             var twoFingerStartY = 0f
             var twoFingerStartDist = 0f
             var startFontSize = 14
-            var mode: String? = null
+            var mode: String? = null // "scroll" | "pinch"
             var scrollAccum = 0f
 
             webView.setOnTouchListener { v, event ->
@@ -91,6 +93,8 @@ class SshSessionManager(
                                 "typeof term!=='undefined'?term.options.fontSize:14"
                             ) { r -> startFontSize = r?.toIntOrNull() ?: 14 }
                         }
+                        // Don't consume - let WebView/xterm keep tracking pointers
+                        false
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
                         if (twoFingerActive && event.pointerCount >= 2) {
@@ -101,8 +105,9 @@ class SshSessionManager(
                             val distChange = kotlin.math.abs(dist - twoFingerStartDist)
                             val yChange = kotlin.math.abs(midY - twoFingerStartY)
 
-                            if (mode == null && (distChange > 25f || yChange > 25f)) {
-                                mode = if (distChange > yChange) "pinch" else "scroll"
+                            // Detect mode: bias toward scroll (pinch needs 2x distance change)
+                            if (mode == null && (distChange > 20f || yChange > 15f)) {
+                                mode = if (distChange > yChange * 2f) "pinch" else "scroll"
                             }
 
                             when (mode) {
@@ -116,25 +121,30 @@ class SshSessionManager(
                                         scrollAccum -= lines * lineHeight
                                     }
                                     twoFingerStartY = midY
+                                    return@setOnTouchListener true // consume to prevent WebView zoom
                                 }
                                 "pinch" -> {
                                     val scale = dist / twoFingerStartDist
                                     val newSize = (startFontSize * scale).toInt().coerceIn(8, 32)
                                     webView.evaluateJavascript(
                                         "if(term.options.fontSize!==$newSize){term.options.fontSize=$newSize;fitAddon.fit()}", null)
+                                    return@setOnTouchListener true // consume to prevent WebView zoom
                                 }
                             }
                         }
+                        false // 1-finger or undecided: pass through
                     }
                     android.view.MotionEvent.ACTION_POINTER_UP,
                     android.view.MotionEvent.ACTION_UP,
                     android.view.MotionEvent.ACTION_CANCEL -> {
+                        val was2f = twoFingerActive
                         twoFingerActive = false
                         mode = null
+                        if (was2f) return@setOnTouchListener true
+                        false
                     }
+                    else -> false
                 }
-                // Always pass events through to WebView — never consume
-                false
             }
         }
     }

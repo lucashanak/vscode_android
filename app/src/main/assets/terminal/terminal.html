@@ -198,6 +198,55 @@ function showCtxMenu(x, y) {
 
 function hideCtxMenu() { ctxMenu.style.display = 'none'; }
 
+// ======================== LONG-PRESS TO SELECT WORD ========================
+let longPressTimer = null, longPressPos = null;
+termEl.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) {
+        const t = e.touches[0];
+        longPressPos = { x: t.clientX, y: t.clientY };
+        longPressTimer = setTimeout(() => {
+            if (!longPressPos) return;
+            // Select word at touch position using xterm.js double-click simulation
+            const rect = getScreenRect();
+            const cell = getCellSize();
+            const col = Math.floor((longPressPos.x - rect.left) / cell.w);
+            const row = Math.floor((longPressPos.y - rect.top) / cell.h);
+            const vp = term.buffer.active.viewportY;
+
+            // Get the line text and find word boundaries
+            const line = term.buffer.active.getLine(row + vp);
+            if (!line) return;
+            const lineText = line.translateToString();
+            const wordChars = /[a-zA-Z0-9_\-\.\/~]/;
+            let start = Math.min(col, lineText.length - 1);
+            let end = start;
+            while (start > 0 && wordChars.test(lineText[start - 1])) start--;
+            while (end < lineText.length - 1 && wordChars.test(lineText[end + 1])) end++;
+            const len = end - start + 1;
+            if (len > 0 && wordChars.test(lineText[start] || '')) {
+                term.select(start, row + vp, len);
+            }
+            longPressPos = null;
+        }, 500);
+    }
+}, {passive:true});
+termEl.addEventListener('touchmove', e => {
+    // Cancel long-press if finger moves > 10px
+    if (longPressTimer && longPressPos && e.touches.length === 1) {
+        const dx = e.touches[0].clientX - longPressPos.x;
+        const dy = e.touches[0].clientY - longPressPos.y;
+        if (dx*dx + dy*dy > 100) {
+            clearTimeout(longPressTimer);
+            longPressTimer = null;
+            longPressPos = null;
+        }
+    }
+}, {passive:true});
+termEl.addEventListener('touchend', () => {
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    longPressPos = null;
+}, {passive:true});
+
 // 2-finger tap → context menu (scroll/pinch handled natively in Kotlin)
 let ctxMenuTapStart = 0, ctxMenuTapPos = {x:0,y:0}, ctxMenuTapMoved = false;
 termEl.addEventListener('touchstart', e => {
@@ -466,8 +515,9 @@ function cellToPx(col, row) {
 }
 
 function dispatchRealMouse(type, x, y, button) {
-    // Dispatch on .xterm for mouse-aware programs, mouseup on document
-    const target = (type === 'mouseup') ? document : document.querySelector('.xterm');
+    // Target the xterm-screen canvas element for best compatibility
+    const target = (type === 'mouseup') ? document :
+        (document.querySelector('.xterm-screen') || document.querySelector('.xterm'));
     if (!target) return;
     const btnMask = (type === 'mouseup') ? 0 : (button === 0 ? 1 : button === 2 ? 2 : 4);
     target.dispatchEvent(new MouseEvent(type, {
