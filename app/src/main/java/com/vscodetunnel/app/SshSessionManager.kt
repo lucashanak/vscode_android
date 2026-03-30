@@ -89,34 +89,40 @@ class SshSessionManager(
             var oneFingerStartY = 0f
             var oneFingerLastY = 0f
             var oneFingerScrolling = false
+            var longPressHandled = false
             var scrollAccum1f = 0f
             var longPressRunnable: Runnable? = null
             val handler = android.os.Handler(android.os.Looper.getMainLooper())
-            val moveThreshold = 10f // px, before density scaling
+            // Dead zone in dp — finger must move this far before scroll starts
+            // (prevents jitter on taps, but we still consume all 1-finger moves
+            // to block xterm.js from seeing touchmove)
+            val deadZoneDp = 5f
 
             webView.setOnTouchListener { v, event ->
                 val density = v.resources.displayMetrics.density
-                val threshold = moveThreshold * density
+                val deadZone = deadZoneDp * density
 
                 when (event.actionMasked) {
                     android.view.MotionEvent.ACTION_DOWN -> {
-                        // 1-finger down: record start, begin long-press timer
+                        // 1-finger down: record start, cache font size, start long-press timer
                         oneFingerStartX = event.x
                         oneFingerStartY = event.y
                         oneFingerLastY = event.y
                         oneFingerScrolling = false
+                        longPressHandled = false
                         scrollAccum1f = 0f
                         webView.evaluateJavascript(
                             "typeof term!=='undefined'?term.options.fontSize:14"
                         ) { r -> oneFingerFontSize = r?.toIntOrNull() ?: 14 }
 
-                        // Long-press timer (500ms) → select word
+                        // Long-press timer (500ms) → select word at CSS pixel coords
                         longPressRunnable?.let { handler.removeCallbacks(it) }
-                        val px = event.x
-                        val py = event.y
+                        val cssX = event.x / density
+                        val cssY = event.y / density
                         longPressRunnable = Runnable {
                             if (!oneFingerScrolling && !twoFingerActive) {
-                                webView.evaluateJavascript("selectWordAt($px,$py)", null)
+                                longPressHandled = true
+                                webView.evaluateJavascript("selectWordAt($cssX,$cssY)", null)
                             }
                         }
                         handler.postDelayed(longPressRunnable!!, 500)
@@ -180,11 +186,13 @@ class SshSessionManager(
                         }
 
                         // --- 1-finger move ---
+                        // ALWAYS consume to prevent xterm.js from receiving touchmove
+                        // (xterm.js uses touchmove for its own scroll/selection logic)
                         if (event.pointerCount == 1 && !twoFingerActive) {
                             val dx = event.x - oneFingerStartX
                             val dy = event.y - oneFingerStartY
-                            if (!oneFingerScrolling && (dx * dx + dy * dy > threshold * threshold)) {
-                                // Crossed threshold: start scrolling, cancel long-press
+                            if (!oneFingerScrolling && (dx * dx + dy * dy > deadZone * deadZone)) {
+                                // Past dead zone: start scrolling, cancel long-press
                                 oneFingerScrolling = true
                                 longPressRunnable?.let { handler.removeCallbacks(it) }
                                 webView.evaluateJavascript("term.clearSelection()", null)
@@ -199,8 +207,8 @@ class SshSessionManager(
                                     webView.evaluateJavascript("term.scrollLines($lines)", null)
                                     scrollAccum1f -= lines * lineHeight
                                 }
-                                return@setOnTouchListener true // Consume: prevent xterm.js selection
                             }
+                            return@setOnTouchListener true // Always consume 1-finger moves
                         }
                         false
                     }
@@ -210,10 +218,13 @@ class SshSessionManager(
                         longPressRunnable?.let { handler.removeCallbacks(it) }
                         val was2f = twoFingerActive
                         val was1fScroll = oneFingerScrolling
+                        val wasLongPress = longPressHandled
                         twoFingerActive = false
                         mode = null
                         oneFingerScrolling = false
-                        if (was2f || was1fScroll) return@setOnTouchListener true
+                        // Consume UP after scroll/long-press to prevent browser
+                        // from synthesizing click that would clear selection
+                        if (was2f || was1fScroll || wasLongPress) return@setOnTouchListener true
                         false
                     }
                     else -> false
