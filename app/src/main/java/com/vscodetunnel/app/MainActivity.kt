@@ -255,7 +255,10 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.btnKeyGen).setOnClickListener { showKeyGenDialog() }
         findViewById<View>(R.id.btnSettings).setOnClickListener { showSettingsDialog() }
         findViewById<View>(R.id.btnCheckUpdate).setOnClickListener { checkForUpdate() }
-        findViewById<View>(R.id.btnExit).setOnClickListener { finishAffinity() }
+        findViewById<View>(R.id.btnExit).setOnClickListener {
+            finishAffinity()
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }
 
         findViewById<Button>(R.id.btnConnect).setOnClickListener {
             connectTo(urlInput.text.toString().trim())
@@ -1476,7 +1479,7 @@ class MainActivity : AppCompatActivity() {
             val newZoom = (zoomField.text.toString().toIntOrNull() ?: 100).coerceIn(50, 200)
             if (newZoom != vscodeZoomPercent) {
                 vscodeZoomPercent = newZoom
-                android.widget.Toast.makeText(this, "Restart app to apply zoom change", android.widget.Toast.LENGTH_LONG).show()
+                android.widget.Toast.makeText(this, "Use Exit button to restart app and apply zoom", android.widget.Toast.LENGTH_LONG).show()
             }
             // Keyboard
             suppressSystemKeyboard = suppressCheck.isChecked
