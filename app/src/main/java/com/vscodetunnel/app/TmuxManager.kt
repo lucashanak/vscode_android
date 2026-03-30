@@ -66,7 +66,8 @@ object TmuxManager {
      */
     fun buildAttachCommand(sessionName: String): String {
         val safeName = sessionName.replace("'", "'\\''")
-        return "tmux new-session -A -s '$safeName'"
+        // Enable mouse so touch scroll works (set-option runs after server starts)
+        return "tmux new-session -A -s '$safeName' \\; set-option -g mouse on"
     }
 
     /**
