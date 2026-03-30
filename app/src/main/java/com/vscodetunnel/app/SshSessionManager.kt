@@ -122,7 +122,7 @@ class SshSessionManager(
                         longPressRunnable = Runnable {
                             if (!oneFingerScrolling && !twoFingerActive) {
                                 longPressHandled = true
-                                webView.evaluateJavascript("selectWordAt($cssX,$cssY)", null)
+                                webView.evaluateJavascript("selectWordAt($cssX,$cssY);if(A)A.haptic()", null)
                             }
                         }
                         handler.postDelayed(longPressRunnable!!, 500)
@@ -168,7 +168,7 @@ class SshSessionManager(
                                     scrollAccum2f += twoFingerStartY - midY
                                     val lines = (scrollAccum2f / lineHeight).toInt()
                                     if (lines != 0) {
-                                        webView.evaluateJavascript("term.scrollLines($lines)", null)
+                                        webView.evaluateJavascript("scrollTerminal($lines)", null)
                                         scrollAccum2f -= lines * lineHeight
                                     }
                                     twoFingerStartY = midY
@@ -204,7 +204,7 @@ class SshSessionManager(
                                 scrollAccum1f += deltaY
                                 val lines = (scrollAccum1f / lineHeight).toInt()
                                 if (lines != 0) {
-                                    webView.evaluateJavascript("term.scrollLines($lines)", null)
+                                    webView.evaluateJavascript("scrollTerminal($lines)", null)
                                     scrollAccum1f -= lines * lineHeight
                                 }
                             }
@@ -464,6 +464,26 @@ class SshSessionManager(
         fun copyToClipboard(text: String) {
             val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
             cm.setPrimaryClip(android.content.ClipData.newPlainText("terminal", text))
+            haptic()
+        }
+
+        @JavascriptInterface
+        fun haptic() {
+            val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            if (!prefs.getBoolean("haptic_feedback", false)) return
+            val vibrator = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as android.os.VibratorManager
+                vm.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                context.getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                vibrator.vibrate(android.os.VibrationEffect.createOneShot(5, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(5)
+            }
         }
 
         @JavascriptInterface

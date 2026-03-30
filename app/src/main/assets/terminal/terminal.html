@@ -203,6 +203,33 @@ function hideCtxMenu() { ctxMenu.style.display = 'none'; }
 // term.scrollLines() / selectWordAt() via evaluateJavascript.
 // This avoids fighting xterm.js's own touch event listeners.
 
+// Smart scroll: works in both plain shell and alternate buffer (tmux/vim)
+function scrollTerminal(lines) {
+    if (lines === 0) return;
+    if (term.buffer.active.type === 'alternate') {
+        // Alternate buffer (tmux/vim/less) — send escape sequences
+        if (term.modes.mouseTrackingMode !== 'none') {
+            // Mouse reporting active — send SGR mouse wheel events
+            const btn = lines < 0 ? 64 : 65; // 64=up, 65=down
+            const count = Math.abs(lines);
+            const col = 1, row = 1; // position doesn't matter for scroll
+            for (let i = 0; i < count; i++) {
+                if (A) A.onTerminalInput('\x1b[<' + btn + ';' + col + ';' + row + 'M');
+            }
+        } else {
+            // No mouse reporting — send arrow keys (works in copy-mode, less, man)
+            const key = lines < 0 ? '\x1b[A' : '\x1b[B';
+            const count = Math.abs(lines);
+            for (let i = 0; i < count; i++) {
+                if (A) A.onTerminalInput(key);
+            }
+        }
+    } else {
+        // Normal buffer — scroll xterm.js viewport
+        term.scrollLines(lines);
+    }
+}
+
 function selectWordAt(px, py) {
     const rect = getScreenRect();
     const cell = getCellSize();
@@ -266,14 +293,14 @@ document.addEventListener('touchstart', e => {
 document.getElementById('ctxCopy').addEventListener('click', () => {
     hideCtxMenu();
     const sel = term.getSelection();
-    if (sel && A) { A.copyToClipboard(sel); showToast('Copied'); }
+    if (sel && A) { A.copyToClipboard(sel); showToast('Copied'); } // haptic in copyToClipboard
 });
 
 document.getElementById('ctxPaste').addEventListener('click', () => {
     hideCtxMenu();
     if (A) {
         const text = A.getClipboard();
-        if (text) { A.onTerminalInput(text); showToast('Pasted'); }
+        if (text) { A.onTerminalInput(text); A.haptic(); showToast('Pasted'); }
     }
 });
 
@@ -406,7 +433,7 @@ term.onSelectionChange(() => {
 // Selection toolbar actions
 document.getElementById('selCopy').addEventListener('click', () => {
     const sel = term.getSelection();
-    if (sel && A) { A.copyToClipboard(sel); showToast('Copied'); }
+    if (sel && A) { A.copyToClipboard(sel); showToast('Copied'); } // haptic in copyToClipboard
     term.clearSelection();
     hideSelToolbar();
 });
@@ -418,7 +445,7 @@ document.getElementById('selPaste').addEventListener('click', () => {
     hideSelToolbar();
     if (A) {
         const text = A.getClipboard();
-        if (text) { A.onTerminalInput(text); showToast('Pasted'); }
+        if (text) { A.onTerminalInput(text); A.haptic(); showToast('Pasted'); }
     }
 });
 
@@ -529,14 +556,8 @@ function injectMouse(type, x, y, button, buttons) {
 }
 
 function injectWheel(x, y, deltaY) {
-    // Direct API scroll (always works) + real WheelEvent for mouse-aware apps
     const lines = Math.round(deltaY / 30);
-    if (lines !== 0) term.scrollLines(lines);
-    const el = document.querySelector('.xterm');
-    if (el) el.dispatchEvent(new WheelEvent('wheel', {
-        deltaY: deltaY, clientX: x, clientY: y,
-        bubbles: true, cancelable: true, view: window
-    }));
+    scrollTerminal(lines);
 }
 
 function injectDragSelect(x, y) {
