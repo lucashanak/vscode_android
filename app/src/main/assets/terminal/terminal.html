@@ -247,10 +247,13 @@ termEl.addEventListener('touchmove', e => {
             longPressTimer = null;
             touchState = 'scrolling';
             scrollAccum = 0;
+            term.clearSelection(); // Cancel any xterm.js selection-in-progress
         }
     }
     if (touchState === 'scrolling') {
-        e.preventDefault(); // Block xterm.js text selection
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation(); // Block xterm.js from seeing this event
         const dy = e.touches[0].clientY - longPressPos.y;
         longPressPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
         scrollAccum -= dy;
@@ -261,7 +264,7 @@ termEl.addEventListener('touchmove', e => {
             scrollAccum -= lines * lineH;
         }
     }
-}, {passive:false});
+}, {passive:false, capture:true});
 
 termEl.addEventListener('touchend', () => {
     if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
