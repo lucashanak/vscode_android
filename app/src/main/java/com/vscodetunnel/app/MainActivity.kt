@@ -1475,7 +1475,7 @@ class MainActivity : AppCompatActivity() {
             val newZoom = (zoomField.text.toString().toIntOrNull() ?: 100).coerceIn(50, 200)
             if (newZoom != vscodeZoomPercent) {
                 vscodeZoomPercent = newZoom
-                showToast("Zoom change requires app restart")
+                android.widget.Toast.makeText(this, "Zoom change requires app restart", android.widget.Toast.LENGTH_SHORT).show()
             }
             // Keyboard
             suppressSystemKeyboard = suppressCheck.isChecked

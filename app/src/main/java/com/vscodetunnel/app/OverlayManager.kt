@@ -262,7 +262,6 @@ class OverlayManager(
         }
 
         @JavascriptInterface
-        @JavascriptInterface
         fun mouseDown(button: Int) {
             if (inputTarget == InputTarget.SSH_TERMINAL) {
                 injectTerminalMouse("mousedown", sshCursorX, sshCursorY, button)
