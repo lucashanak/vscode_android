@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; }
+html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; }
 
 /* Toolbar */
-.toolbar { display:flex; align-items:center; gap:6px; padding:6px 10px; background:#232323; border-bottom:1px solid rgba(255,255,255,0.06); }
-.tool-btn { padding:10px 18px; font-size:15px; font-weight:600; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.08); color:#aaa; border:1px solid rgba(255,255,255,0.1); border-radius:8px; cursor:pointer; touch-action:manipulation; }
-.tool-btn.active { background:#007acc; color:#fff; border-color:#007acc; }
+.toolbar { display:flex; align-items:center; gap:6px; padding:6px 10px; background:#1b1b1b; border-bottom:1px solid #333; }
+.tool-btn { padding:8px 14px; font-size:13px; font-weight:500; font-family:sans-serif; background:#333; color:#ccc; border:none; border-bottom:1px solid #404040; border-radius:5px; cursor:pointer; touch-action:manipulation; }
+.tool-btn.active { background:#1b1b1b; color:#3399ff; }
 .spacer { flex:1; }
 
 /* Panels */
@@ -18,40 +18,39 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 .panel { display:none; }
 .panel.active { display:block; }
 
-/* ============ COMPACT KEYBOARD ============ */
-.kb-panel { padding:6px 3px 10px 3px; }
-.row { display:flex; gap:5px; padding:3px 3px; flex-wrap:nowrap; justify-content:center; }
-/* Row stagger like physical keyboard */
+/* ============ COMPACT KEYBOARD (UK Dark theme) ============ */
+.kb-panel { padding:2px 2px 4px 2px; }
+.row { display:flex; gap:3px; padding:1.5px 2px; flex-wrap:nowrap; justify-content:center; }
 .row-home { padding-left:5%; padding-right:5%; }
 .row-shift { padding-left:2px; padding-right:2px; }
 
 .key {
-    flex:1 1 0; min-width:0; height:62px; padding:0 2px;
-    font-size:24px; font-weight:400;
-    font-family:-apple-system,'SF Pro',system-ui,sans-serif;
-    background:rgba(255,255,255,0.09); color:#e8e8e8;
-    border:none; border-radius:6px;
+    flex:1 1 0; min-width:0; height:48px; padding:0 2px;
+    font-size:18px; font-weight:400;
+    font-family:sans-serif;
+    background:#333; color:#fff;
+    border:none; border-bottom:1px solid #404040; border-radius:5px;
     cursor:pointer; display:flex; align-items:center; justify-content:center;
     touch-action:manipulation; transition:background 0.08s;
     white-space:nowrap;
 }
-.key:active, .key.pressed { background:rgba(0,122,204,0.45); }
-.key.mod-active { background:#007acc; color:#fff; }
-.space-key { flex:5 1 0; background:rgba(255,255,255,0.12); border-radius:8px; font-size:14px; color:#888; }
-.wide-key { flex:1.4 1 0; font-size:16px; }
-.xwide-key { flex:1.8 1 0; font-size:16px; }
+.key:active, .key.pressed { background:#1b1b1b; }
+.key.mod-active { background:#1b1b1b; color:#3399ff; }
+.space-key { flex:5 1 0; font-size:13px; color:#ccc; }
+.wide-key { flex:1.4 1 0; font-size:14px; }
+.xwide-key { flex:1.8 1 0; font-size:14px; }
 .shifted .char-key { text-transform:uppercase; }
 
-/* Modifier keys: darker, distinct */
-.key-mod { background:rgba(255,255,255,0.05); font-size:15px; color:#999; }
-.key-mod.mod-active { background:#007acc; color:#fff; }
+/* Modifier keys */
+.key-mod { background:#333; font-size:13px; color:#ccc; }
+.key-mod.mod-active { background:#1b1b1b; color:#3399ff; }
 
-/* Number row: shorter keys */
-.row-num .key { height:50px; font-size:20px; }
+/* Number row: shorter */
+.row-num .key { height:38px; font-size:16px; }
 
 /* Bottom row */
-.row-bottom { gap:4px; padding:3px 3px; }
-.row-bottom .key { height:56px; }
+.row-bottom { gap:3px; padding:1.5px 2px; }
+.row-bottom .key { height:46px; }
 
 /* F-key row styling (wide layout) */
 .fn-row { gap:1px; padding:1px 2px; }
@@ -61,7 +60,7 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 /* Scrollable rows (symbols) */
 .row-scroll { justify-content:flex-start; overflow-x:auto; scrollbar-width:none; }
 .row-scroll::-webkit-scrollbar { display:none; }
-.row-scroll .key { flex:0 0 auto; min-width:38px; height:48px; padding:0 7px; font-size:18px; }
+.row-scroll .key { flex:0 0 auto; min-width:36px; height:40px; padding:0 6px; font-size:16px; }
 
 /* Nav cluster for wide layout */
 .nav-sep { width:6px; flex:0 0 6px; }
@@ -69,61 +68,61 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 
 /* ============ SWIPE KEYS (Unexpected Keyboard style) ============ */
 .swipe-key {
-    position:relative; flex:1 1 0; height:62px; padding:2px 0;
+    position:relative; flex:1 1 0; height:48px; padding:1px 0;
     display:grid;
     grid-template-areas: "nw ne" "c c" "sw se";
-    grid-template-rows: 14px 1fr 14px;
+    grid-template-rows: 12px 1fr 12px;
     grid-template-columns: 1fr 1fr;
     align-items:center; justify-items:center;
-    background:rgba(255,255,255,0.09); color:#e8e8e8;
-    border:none; border-radius:6px; cursor:pointer;
+    background:#333; color:#fff;
+    border:none; border-bottom:1px solid #404040; border-radius:5px; cursor:pointer;
     touch-action:manipulation; transition:background 0.08s;
-    font-family:-apple-system,'SF Pro',system-ui,sans-serif;
+    font-family:sans-serif;
 }
-.swipe-key:active, .swipe-key.pressed { background:rgba(0,122,204,0.45); }
-.sw-c { grid-area:c; font-size:22px; font-weight:400; pointer-events:none; }
-.sw-nw,.sw-ne,.sw-sw,.sw-se { font-size:10px; color:#888; pointer-events:none; line-height:1; }
-.sw-nw { grid-area:nw; justify-self:start; padding-left:3px; }
-.sw-ne { grid-area:ne; justify-self:end; padding-right:3px; }
-.sw-sw { grid-area:sw; justify-self:start; padding-left:3px; }
-.sw-se { grid-area:se; justify-self:end; padding-right:3px; }
+.swipe-key:active, .swipe-key.pressed { background:#1b1b1b; }
+.sw-c { grid-area:c; font-size:16px; font-weight:400; pointer-events:none; }
+.sw-nw,.sw-ne,.sw-sw,.sw-se { font-size:9px; color:#ccc; pointer-events:none; line-height:1; }
+.sw-nw { grid-area:nw; justify-self:start; padding-left:2px; }
+.sw-ne { grid-area:ne; justify-self:end; padding-right:2px; }
+.sw-sw { grid-area:sw; justify-self:start; padding-left:2px; }
+.sw-se { grid-area:se; justify-self:end; padding-right:2px; }
 .shifted .swipe-key .sw-c { text-transform:uppercase; }
 
 /* Unexpected Keyboard style bottom row */
-.row-uk { gap:4px; padding:3px 3px; }
-.row-uk .key { height:52px; }
-.row-uk .uk-ctrl { flex:1.5 1 0; font-size:14px; }
-.row-uk .uk-fn { flex:1 1 0; font-size:14px; background:rgba(255,255,255,0.05); color:#999; border:none; border-radius:6px; cursor:pointer; touch-action:manipulation; }
-.row-uk .uk-fn.mod-active { background:#007acc; color:#fff; }
-.row-uk .uk-nav { flex:1.1 1 0; font-size:16px; background:rgba(255,255,255,0.05); color:#999; border:none; border-radius:6px; cursor:pointer; touch-action:manipulation; display:flex; align-items:center; justify-content:center; }
-.row-uk .uk-nav.pressed { background:rgba(0,122,204,0.45); }
-.row-uk .uk-enter { flex:1.5 1 0; }
-.row-uk .space-key { flex:3.2 1 0; }
+.row-uk { gap:3px; padding:1.5px 2px; }
+.row-uk .key { height:46px; font-size:13px; }
+.row-uk .uk-ctrl { flex:1.7 1 0; }
+.row-uk .uk-fn { flex:1.1 1 0; font-size:13px; background:#333; color:#ccc; border:none; border-bottom:1px solid #404040; border-radius:5px; cursor:pointer; touch-action:manipulation; }
+.row-uk .uk-fn.mod-active { background:#1b1b1b; color:#3399ff; }
+.row-uk .uk-nav { flex:1.1 1 0; font-size:13px; background:#333; color:#ccc; border:none; border-bottom:1px solid #404040; border-radius:5px; cursor:pointer; touch-action:manipulation; display:flex; align-items:center; justify-content:center; }
+.row-uk .uk-nav.pressed { background:#1b1b1b; }
+.row-uk .uk-enter { flex:1.7 1 0; }
+.row-uk .space-key { flex:4.4 1 0; }
 
 /* ============ TOUCHPAD ============ */
 .tp-panel.active { display:flex; flex-direction:column; }
-.tp-area { flex:1; margin:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; display:flex; align-items:center; justify-content:center; touch-action:none; }
-.tp-hint { color:rgba(255,255,255,0.15); font-size:14px; pointer-events:none; font-family:-apple-system,sans-serif; }
-.tp-buttons { display:flex; gap:5px; padding:6px; }
-.tp-btn { flex:1; height:44px; font-size:14px; font-weight:500; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.08); color:#bbb; border:none; border-radius:8px; cursor:pointer; touch-action:manipulation; }
-.tp-btn:active { background:rgba(0,122,204,0.4); }
+.tp-area { flex:1; margin:6px; background:rgba(255,255,255,0.03); border:1px solid #333; border-radius:5px; display:flex; align-items:center; justify-content:center; touch-action:none; }
+.tp-hint { color:rgba(255,255,255,0.15); font-size:14px; pointer-events:none; font-family:sans-serif; }
+.tp-buttons { display:flex; gap:4px; padding:6px; }
+.tp-btn { flex:1; height:40px; font-size:13px; font-weight:400; font-family:sans-serif; background:#333; color:#ccc; border:none; border-bottom:1px solid #404040; border-radius:5px; cursor:pointer; touch-action:manipulation; }
+.tp-btn:active { background:#1b1b1b; }
 
 /* Quick action bar above keyboard */
-.action-bar { display:flex; gap:3px; padding:2px 3px; overflow-x:auto; scrollbar-width:none; }
+.action-bar { display:flex; gap:3px; padding:2px 2px; overflow-x:auto; scrollbar-width:none; }
 .action-bar::-webkit-scrollbar { display:none; }
-.action-btn { flex:0 0 auto; padding:5px 10px; font-size:11px; font-weight:600; font-family:-apple-system,sans-serif; background:rgba(0,122,204,0.2); color:#6cb6ff; border:none; border-radius:4px; cursor:pointer; white-space:nowrap; touch-action:manipulation; }
-.action-btn:active { background:rgba(0,122,204,0.5); }
+.action-btn { flex:0 0 auto; padding:4px 8px; font-size:10px; font-weight:500; font-family:sans-serif; background:rgba(51,153,255,0.15); color:#3399ff; border:none; border-radius:4px; cursor:pointer; white-space:nowrap; touch-action:manipulation; }
+.action-btn:active { background:rgba(51,153,255,0.35); }
 
 /* Diacritics popup */
-#diacPopup { position:fixed; display:none; background:#3a3a3a; border:1px solid rgba(255,255,255,0.2); border-radius:8px; padding:4px; z-index:300; box-shadow:0 4px 16px rgba(0,0,0,0.6); }
+#diacPopup { position:fixed; display:none; background:#333; border:1px solid #404040; border-radius:5px; padding:4px; z-index:300; box-shadow:0 4px 16px rgba(0,0,0,0.6); }
 #diacPopup .diac-row { display:flex; gap:3px; }
-.diac-key { min-width:40px; padding:0 4px; height:44px; font-size:20px; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.1); color:#e8e8e8; border:none; border-radius:5px; cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation; }
-.diac-key:active { background:#007acc; }
+.diac-key { min-width:38px; padding:0 4px; height:40px; font-size:16px; font-family:sans-serif; background:#1b1b1b; color:#fff; border:none; border-radius:5px; cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation; }
+.diac-key:active { background:#3399ff; }
 
 /* Clipboard history popup */
-#clipPopup { position:fixed; display:none; background:#2d2d2d; border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:4px 0; z-index:300; box-shadow:0 4px 16px rgba(0,0,0,0.5); max-width:280px; max-height:300px; overflow-y:auto; }
-.clip-item { display:block; width:100%; padding:8px 12px; font-size:13px; font-family:monospace; color:#ddd; background:none; border:none; border-bottom:1px solid rgba(255,255,255,0.06); text-align:left; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.clip-item:active { background:rgba(0,122,204,0.3); }
+#clipPopup { position:fixed; display:none; background:#1b1b1b; border:1px solid #404040; border-radius:5px; padding:4px 0; z-index:300; box-shadow:0 4px 16px rgba(0,0,0,0.5); max-width:280px; max-height:300px; overflow-y:auto; }
+.clip-item { display:block; width:100%; padding:8px 12px; font-size:12px; font-family:monospace; color:#ccc; background:none; border:none; border-bottom:1px solid #333; text-align:left; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.clip-item:active { background:rgba(51,153,255,0.3); }
 
 /* ============ WIDE: side-by-side KB + TP ============ */
 @media (min-width:901px) {
@@ -131,7 +130,7 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
     .panels { display:flex; flex-direction:row; align-items:stretch; }
     .panel { display:block; }
     .kb-panel { flex:4; min-width:0; padding:4px 2px 6px 2px; }
-    .tp-panel { display:flex; flex-direction:column; flex:1; min-width:0; border-left:1px solid rgba(255,255,255,0.08); }
+    .tp-panel { display:flex; flex-direction:column; flex:1; min-width:0; border-left:1px solid #333; }
     .tp-area { min-height:0; }
     .key { height:46px; font-size:16px; }
     .fn-row .key { height:32px; font-size:11px; }
@@ -144,19 +143,19 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 
 /* Landscape narrow */
 @media (orientation:landscape) and (max-width:900px) {
-    .key { height:50px; font-size:20px; }
-    .swipe-key { height:50px; }
-    .sw-c { font-size:18px; }
-    .sw-nw,.sw-ne,.sw-sw,.sw-se { font-size:9px; }
-    .swipe-key { grid-template-rows: 12px 1fr 12px; }
-    .row { gap:3px; padding:2px 2px; }
-    .row-scroll .key { height:38px; font-size:14px; }
+    .key { height:42px; font-size:16px; }
+    .swipe-key { height:42px; }
+    .sw-c { font-size:14px; }
+    .sw-nw,.sw-ne,.sw-sw,.sw-se { font-size:8px; }
+    .swipe-key { grid-template-rows: 10px 1fr 10px; }
+    .row { gap:2px; padding:1px 2px; }
+    .row-scroll .key { height:34px; font-size:13px; }
     .tp-btn { height:32px; font-size:12px; }
     .toolbar { padding:4px 6px; }
-    .tool-btn { padding:6px 12px; font-size:13px; }
+    .tool-btn { padding:6px 12px; font-size:12px; }
     .tp-area { min-height:120px; }
-    .kb-panel { padding:4px 2px 6px 2px; }
-    .row-uk .key { height:44px; }
+    .kb-panel { padding:2px 2px 4px 2px; }
+    .row-uk .key { height:38px; }
 }
 </style>
 </head>
@@ -225,9 +224,15 @@ function M(mod, label, cls) {
 function SEP(cls) { return `<div class="${cls||'fn-sep'}"></div>`; }
 
 // Swipe key: renders a key with corner labels (Unexpected Keyboard style)
+// When fnActive, NE corner shows F-key instead of number
 function SK(ch) {
     const s = SWIPE[ch] || [null,null,null,null];
-    const [nw,ne,sw,se] = s.map(v => v ? esc(v) : '');
+    const labels = [...s];
+    // Fn mode: replace NE number with F-key label
+    if (fnActive && labels[1] && FN_MAP[labels[1]]) {
+        labels[1] = FN_MAP[labels[1]];
+    }
+    const [nw,ne,sw,se] = labels.map(v => v ? esc(v) : '');
     return `<button class="key char-key swipe-key" data-char="${ch}">
         <span class="sw-nw">${nw}</span><span class="sw-ne">${ne}</span>
         <span class="sw-c">${ch}</span>
@@ -349,11 +354,19 @@ function compactLetters() {
             ${K('Bksp','\u232B','wide-key')}
         </div>
         <div class="row row-bottom row-uk">
-            ${M('ctrl','Ctrl','uk-ctrl')}
+            <button class="key key-mod uk-ctrl swipe-key" data-mod="ctrl" style="grid-template-rows:10px 1fr 10px">
+                <span class="sw-nw"></span><span class="sw-ne">Meta</span>
+                <span class="sw-c" style="font-size:13px">Ctrl</span>
+                <span class="sw-sw"></span><span class="sw-se">?123</span>
+            </button>
             <button class="key uk-fn" id="fnToggle">Fn</button>
             ${M('alt','Alt')}
-            <button class="key space-key" data-key="Space">space</button>
-            <button class="key uk-nav" id="navKey">\u25C6</button>
+            <button class="key space-key" data-key="Space" style="font-size:0"></button>
+            <button class="key uk-nav swipe-key" id="navKey" style="grid-template-rows:10px 1fr 10px">
+                <span class="sw-nw">Hm</span><span class="sw-ne">PU</span>
+                <span class="sw-c" style="font-size:13px">\u25C6</span>
+                <span class="sw-sw">End</span><span class="sw-se">PD</span>
+            </button>
             ${K('Enter','\u21B5','uk-enter')}
         </div>`;
 }
@@ -421,6 +434,14 @@ const tpPanel = document.getElementById('tpPanel');
 function renderCompact() {
     kbPanel.innerHTML = compactPage === 'abc' ? compactLetters() : compactSymbols();
     attachKeyEvents();
+    // Restore Fn visual state after re-render
+    const fnBtn = document.getElementById('fnToggle');
+    if (fnBtn && fnActive) fnBtn.classList.add('mod-active');
+    // Restore mod visual states
+    document.querySelectorAll('.key-mod').forEach(b => {
+        if (mods[b.dataset.mod]) b.classList.add('mod-active');
+    });
+    if (mods.shift) kbPanel.classList.add('shifted');
     const symBtn = document.getElementById('symToggle');
     if (symBtn) {
         symBtn.addEventListener('pointerdown', e => {
@@ -829,23 +850,44 @@ function attachKeyEvents() {
         });
     });
 
-    // Modifiers (no repeat, haptic only)
+    // Modifiers — Ctrl has swipe support (NE=Meta, SE=?123)
     kbPanel.querySelectorAll('.key-mod').forEach(btn => {
+        const mod = btn.dataset.mod;
+        const isCtrlSwipe = btn.classList.contains('uk-ctrl');
+        let modStartX = 0, modStartY = 0;
+
         btn.addEventListener('pointerdown', e => {
             e.preventDefault(); e.stopPropagation();
             haptic();
-            toggleMod(btn.dataset.mod);
+            modStartX = e.clientX; modStartY = e.clientY;
+        });
+        btn.addEventListener('pointerup', e => {
+            if (isCtrlSwipe) {
+                const dx = e.clientX - modStartX;
+                const dy = e.clientY - modStartY;
+                const dir = getSwipeDirection4(dx, dy);
+                if (dir === 1) { // NE → Meta toggle
+                    toggleMod('meta');
+                    return;
+                }
+                if (dir === 3) { // SE → switch to ?123
+                    compactPage = 'sym';
+                    renderCompact();
+                    return;
+                }
+            }
+            toggleMod(mod);
         });
     });
 
-    // Fn toggle
+    // Fn toggle — re-render to show F-key labels
     const fnBtn = document.getElementById('fnToggle');
     if (fnBtn) {
         fnBtn.addEventListener('pointerdown', e => {
             e.preventDefault(); e.stopPropagation();
             haptic();
             fnActive = !fnActive;
-            fnBtn.classList.toggle('mod-active', fnActive);
+            renderCompact(); // re-render to update corner labels
         });
     }
 
