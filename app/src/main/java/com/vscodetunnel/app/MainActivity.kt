@@ -50,6 +50,7 @@ import com.vscodetunnel.app.AppSettings.sshReconnectAttempts
 import com.vscodetunnel.app.AppSettings.sshConnectTimeout
 import com.vscodetunnel.app.AppSettings.suppressSystemKeyboard
 import com.vscodetunnel.app.AppSettings.biometricLockEnabled
+import com.vscodetunnel.app.AppSettings.vscodeZoomPercent
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 
@@ -1413,6 +1414,9 @@ class MainActivity : AppCompatActivity() {
         label("Scrollback lines")
         val scrollbackField = field("10000", terminalScrollback.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
         layout.addView(scrollbackField)
+        label("VSCode zoom % (e.g. 80 = more content, 120 = larger)")
+        val zoomField = field("100", vscodeZoomPercent.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
+        layout.addView(zoomField)
 
         // === KEYBOARD ===
         section("Keyboard")
@@ -1462,6 +1466,9 @@ class MainActivity : AppCompatActivity() {
             terminalColorScheme = schemes[schemeSpinner.selectedItemPosition]
             terminalFontSize = fontField.text.toString().toIntOrNull() ?: 14
             terminalScrollback = scrollbackField.text.toString().toIntOrNull() ?: 10000
+            val newZoom = (zoomField.text.toString().toIntOrNull() ?: 100).coerceIn(50, 200)
+            vscodeZoomPercent = newZoom
+            applyVscodeZoom(newZoom)
             // Keyboard
             suppressSystemKeyboard = suppressCheck.isChecked
             overlayManager.alwaysSuppressInput = suppressSystemKeyboard
@@ -1499,6 +1506,12 @@ class MainActivity : AppCompatActivity() {
         val overlayWebView = findViewById<WebView>(R.id.overlayWebView)
         overlayWebView.evaluateJavascript(
             "if(typeof updateRepeatSettings==='function')updateRepeatSettings($keyRepeatDelay,$keyRepeatRate)", null)
+    }
+
+    private fun applyVscodeZoom(percent: Int) {
+        // Inject CSS zoom into GeckoView via the overlay extension content script
+        val zoomValue = percent / 100.0
+        overlayManager.sendToContentScript("zoom", org.json.JSONObject().put("zoom", zoomValue))
     }
 
     // --- Navigation ---
@@ -1694,9 +1707,16 @@ class MainActivity : AppCompatActivity() {
         sysKBSuppressed = suppress
         geckoView.suppressIME = suppress
         FileLogger.d(TAG, "Overlay visible: $visible, sysKB suppressed: $suppress")
+        val controller = WindowInsetsControllerCompat(window, geckoView)
         if (suppress) {
-            val controller = WindowInsetsControllerCompat(window, geckoView)
             controller.hide(WindowInsetsCompat.Type.ime())
+        }
+        // When overlay keyboard is visible, hide navigation bar to maximize screen space
+        if (visible) {
+            controller.hide(WindowInsetsCompat.Type.navigationBars())
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            controller.show(WindowInsetsCompat.Type.navigationBars())
         }
         ViewCompat.requestApplyInsets(findViewById(R.id.rootFrame))
     }

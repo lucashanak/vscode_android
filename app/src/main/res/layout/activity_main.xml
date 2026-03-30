@@ -32,11 +32,11 @@
                     android:layout_height="match_parent" />
 
                 <!-- Cursor dot overlaid on GeckoView -->
-                <View
+                <ImageView
                     android:id="@+id/cursorDot"
-                    android:layout_width="12dp"
-                    android:layout_height="12dp"
-                    android:background="@drawable/cursor_dot"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:src="@drawable/cursor_dot"
                     android:visibility="gone"
                     android:elevation="10dp" />
             </FrameLayout>

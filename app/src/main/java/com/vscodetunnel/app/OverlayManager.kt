@@ -101,6 +101,12 @@ class OverlayManager(
         if (inputTarget == InputTarget.VSCODE && (isVisible || alwaysSuppressInput)) {
             sendToContentScript("overlayActive", JSONObject().put("active", true))
         }
+        // Apply saved VSCode zoom level
+        val prefs = geckoView.context.getSharedPreferences("app_settings", android.content.Context.MODE_PRIVATE)
+        val zoom = prefs.getInt("vscode_zoom_percent", 100)
+        if (zoom != 100) {
+            sendToContentScript("zoom", JSONObject().put("zoom", zoom / 100.0))
+        }
     }
 
     /** Sync inputmode suppression state to content script (call after changing alwaysSuppressInput) */
@@ -131,7 +137,7 @@ class OverlayManager(
         }
     }
 
-    private fun sendToContentScript(type: String, data: JSONObject) {
+    fun sendToContentScript(type: String, data: JSONObject) {
         try {
             data.put("type", type)
             port?.postMessage(data)
@@ -144,8 +150,9 @@ class OverlayManager(
         val parent = cursorView.parent as? View ?: return
         cursorX = (cursorX + dx).coerceIn(0f, parent.width.toFloat())
         cursorY = (cursorY + dy).coerceIn(0f, parent.height.toFloat())
-        cursorView.translationX = cursorX - cursorView.width / 2f
-        cursorView.translationY = cursorY - cursorView.height / 2f
+        // Arrow cursor: tip is at top-left corner (no centering offset)
+        cursorView.translationX = cursorX
+        cursorView.translationY = cursorY
     }
 
     private fun cursorCssPx(): Pair<Float, Float> {

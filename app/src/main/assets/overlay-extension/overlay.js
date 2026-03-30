@@ -202,6 +202,9 @@
                     case 'overlayActive':
                         setInputModeNone(!!msg.active);
                         break;
+                    case 'zoom':
+                        document.documentElement.style.zoom = msg.zoom;
+                        break;
                 }
             });
             port.onDisconnect.addListener(() => {

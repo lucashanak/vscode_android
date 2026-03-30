@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="oval">
-    <solid android:color="#CC007ACC" />
-    <stroke android:width="1.5dp" android:color="#E6FFFFFF" />
-</shape>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="16dp"
+    android:height="16dp"
+    android:viewportWidth="16"
+    android:viewportHeight="16">
+    <!-- Arrow pointer: classic cursor shape -->
+    <!-- White outline for visibility on dark backgrounds -->
+    <path
+        android:pathData="M2,1 L2,14 L5.5,10.5 L8.5,15.5 L10.5,14.5 L7.5,9.5 L12,9.5 Z"
+        android:strokeWidth="1.2"
+        android:strokeColor="#E6FFFFFF"
+        android:fillColor="#00000000" />
+    <!-- Blue fill -->
+    <path
+        android:pathData="M2,1 L2,14 L5.5,10.5 L8.5,15.5 L10.5,14.5 L7.5,9.5 L12,9.5 Z"
+        android:fillColor="#CC007ACC" />
+</vector>
