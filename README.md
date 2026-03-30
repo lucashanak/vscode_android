@@ -24,9 +24,9 @@ A native Android client for [VS Code Remote Tunnels](https://code.visualstudio.c
 - **Long-press diacritics** — hold `e` → slide to `ě`, `é`, `ê` (Czech/Slovak/Polish)
 - **Quick action bar** — one-tap shortcuts: Cmd Palette, Save, Undo, Redo, Search, Terminal
 - **Key repeat** — hold any key for auto-repeat (configurable delay/rate)
-- **Haptic feedback** — configurable vibration on key press
+- **Haptic feedback** — configurable vibration on key press, copy, paste, and word select
 - **Clipboard history** — last 10 copied texts, accessible from toolbar
-- **Touchpad** — mouse cursor control, click, right-click, scroll, drag-select
+- **Touchpad** — arrow cursor with dynamic cursor type (resize/text/pointer), click, right-click, scroll, drag via Left button hold or double-tap-and-hold
 
 ### SSH Client
 - **Saved servers** with host, port, username, password/key authentication
@@ -42,13 +42,16 @@ A native Android client for [VS Code Remote Tunnels](https://code.visualstudio.c
 
 ### SSH Terminal (xterm.js)
 - Full terminal emulator with xterm.js 5.5
-- **Text selection** by finger drag + Android-style teardrop handles
+- **1-finger scroll** — Termux-style: drag to scroll, long-press to select word
+- **Tmux scroll support** — automatic `set -g mouse on`, SGR mouse wheel events
+- **Text selection** — long-press to select word + Android-style teardrop handles
 - **Context menu** (2-finger tap) — Copy, Paste, Select All, Clear, Search, Export
 - **Terminal search** — find text in scrollback (xterm addon-search)
 - **Clickable URLs** — detected links open in browser (xterm addon-web-links)
 - **Pinch-to-zoom** — adjust font size with two fingers
+- **2-finger scroll** — scroll terminal with two fingers (native Kotlin handler)
 - **5 color schemes** — Default, Solarized Dark, Dracula, Monokai, Linux
-- **System keyboard suppression** — prevents Android keyboard from interfering
+- **Haptic feedback** — on word select, copy, and paste actions
 
 ### SFTP File Browser
 - Browse remote filesystems with directory navigation
@@ -64,8 +67,14 @@ A native Android client for [VS Code Remote Tunnels](https://code.visualstudio.c
   <img src="docs/screens/settings.jpg" width="280" alt="Settings">
 </p>
 
+### VS Code Enhancements
+- **Custom DPI/zoom** — adjustable zoom level (50-200%) for more content on screen
+- **Arrow cursor** — classic pointer with dynamic type (resize ↔↕, text I-beam, hand pointer)
+- **Panel resize** — drag panel borders with touchpad (Left button hold or double-tap-and-hold)
+- **Immersive mode** — navigation bar hidden globally for maximum screen space
+
 ### Settings
-- **Appearance** — terminal color scheme, font size, scrollback lines
+- **Appearance** — terminal color scheme, font size, scrollback lines, VSCode zoom %
 - **Keyboard** — suppress system keyboard, haptic feedback, key repeat timing
 - **SSH Defaults** — port, username, startup command, auto-reconnect, timeout
 - **Security** — biometric lock (fingerprint/face/PIN) on app start

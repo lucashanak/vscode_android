@@ -9,6 +9,7 @@ Fullscreen settings dialog accessible from **Settings** button on the launcher.
 | Terminal color scheme | `default` | Color theme for SSH terminal. Options: default, solarized-dark, dracula, monokai, linux |
 | Font size | `14` | Terminal font size in pixels (also adjustable via pinch-to-zoom) |
 | Scrollback lines | `10000` | Number of lines kept in terminal scrollback buffer |
+| VSCode zoom % | `100` | Custom DPI for VS Code (50-200%). Lower = more content visible. Uses GeckoView `displayDensityOverride`. **Requires app restart.** |
 
 ## Keyboard
 

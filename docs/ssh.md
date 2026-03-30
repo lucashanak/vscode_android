@@ -79,10 +79,20 @@ UDP-based protocol that survives WiFi switches and high latency.
 
 | Gesture | Action |
 |---------|--------|
-| Finger drag | Select text (auto-copies to clipboard) |
+| 1-finger drag | Scroll terminal (Termux-style) |
+| Long-press (500ms) | Select word at touch position |
+| 2-finger drag | Scroll (native Kotlin handler) |
 | 2-finger tap | Context menu |
 | Pinch | Zoom font size (8-32px) |
 | Selection handles | Drag teardrops to extend selection |
+
+**Haptic feedback** on word select, copy, and paste (when enabled in Settings).
+
+### Tmux Scroll Support
+
+When connecting to a tmux session, mouse mode is automatically enabled (`set -g mouse on`). This allows 1-finger and 2-finger scroll to work inside tmux panes. The terminal sends SGR mouse wheel escape sequences to tmux when in alternate buffer with mouse reporting active.
+
+In tmux, scrolling up enters **copy-mode** (shows `[line/total]` indicator). Scrolling back to the bottom exits copy-mode automatically.
 
 ### Context Menu (2-finger tap)
 

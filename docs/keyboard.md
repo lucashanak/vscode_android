@@ -69,14 +69,35 @@ The **Clip** button in the toolbar shows the last 10 copied texts. The clipboard
 
 Switch to touchpad via **TP** button in the toolbar.
 
+### Cursor
+
+Arrow cursor with dynamic type detection — changes shape based on what's under the cursor in VS Code:
+- **Arrow** (default) — normal pointer
+- **Resize ↔** — on vertical panel borders (col-resize)
+- **Resize ↕** — on horizontal panel borders (row-resize)
+- **I-beam** — on text areas
+- **Hand** — on links and clickable elements
+
+### Gestures
+
 | Gesture | Action |
 |---------|--------|
 | Single-finger drag | Move cursor |
 | Tap | Left click |
-| Double-tap | Double-click |
-| Two-finger tap | Right-click |
+| Double-tap | Double-click (select word) |
+| Double-tap-and-hold + drag | Drag gesture (panel resize, text select, file drag) |
+| Two-finger tap | Right-click (context menu) |
 | Two-finger drag | Scroll |
-| Left/Mid/Right buttons | Mouse button click |
+
+### Buttons
+
+| Button | Tap | Hold + touchpad drag |
+|--------|-----|---------------------|
+| Left | Left click | Drag (mouseDown → move → mouseUp) |
+| Mid | Middle click | — |
+| Right | Right click | — |
+
+Hold the **Left** button with one finger while dragging on the touchpad with another to resize panels, drag files, or select text.
 
 ## Toolbar
 
