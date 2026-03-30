@@ -198,22 +198,26 @@ function showCtxMenu(x, y) {
 
 function hideCtxMenu() { ctxMenu.style.display = 'none'; }
 
-// ======================== LONG-PRESS TO SELECT WORD ========================
+// ======================== 1-FINGER SCROLL + LONG-PRESS SELECT ========================
 let longPressTimer = null, longPressPos = null;
+let touchState = 'idle'; // 'idle' | 'pending' | 'scrolling'
+let scrollAccum = 0;
+
 termEl.addEventListener('touchstart', e => {
     if (e.touches.length === 1) {
         const t = e.touches[0];
         longPressPos = { x: t.clientX, y: t.clientY };
+        touchState = 'pending';
+        scrollAccum = 0;
         longPressTimer = setTimeout(() => {
-            if (!longPressPos) return;
-            // Select word at touch position using xterm.js double-click simulation
+            if (!longPressPos || touchState !== 'pending') return;
+            // Long-press: select word at touch position
             const rect = getScreenRect();
             const cell = getCellSize();
             const col = Math.floor((longPressPos.x - rect.left) / cell.w);
             const row = Math.floor((longPressPos.y - rect.top) / cell.h);
             const vp = term.buffer.active.viewportY;
 
-            // Get the line text and find word boundaries
             const line = term.buffer.active.getLine(row + vp);
             if (!line) return;
             const lineText = line.translateToString();
@@ -227,24 +231,43 @@ termEl.addEventListener('touchstart', e => {
                 term.select(start, row + vp, len);
             }
             longPressPos = null;
+            touchState = 'idle';
         }, 500);
     }
 }, {passive:true});
+
 termEl.addEventListener('touchmove', e => {
-    // Cancel long-press if finger moves > 10px
-    if (longPressTimer && longPressPos && e.touches.length === 1) {
+    if (e.touches.length !== 1) return;
+    if (touchState === 'pending' && longPressPos) {
         const dx = e.touches[0].clientX - longPressPos.x;
         const dy = e.touches[0].clientY - longPressPos.y;
         if (dx*dx + dy*dy > 100) {
+            // Moved > 10px: cancel long-press, start scrolling
             clearTimeout(longPressTimer);
             longPressTimer = null;
-            longPressPos = null;
+            touchState = 'scrolling';
+            scrollAccum = 0;
         }
     }
-}, {passive:true});
+    if (touchState === 'scrolling') {
+        e.preventDefault(); // Block xterm.js text selection
+        const dy = e.touches[0].clientY - longPressPos.y;
+        longPressPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        scrollAccum -= dy;
+        const lineH = term.options.fontSize * 1.2;
+        const lines = Math.trunc(scrollAccum / lineH);
+        if (lines !== 0) {
+            term.scrollLines(lines);
+            scrollAccum -= lines * lineH;
+        }
+    }
+}, {passive:false});
+
 termEl.addEventListener('touchend', () => {
     if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
     longPressPos = null;
+    touchState = 'idle';
+    scrollAccum = 0;
 }, {passive:true});
 
 // 2-finger tap → context menu (scroll/pinch handled natively in Kotlin)
