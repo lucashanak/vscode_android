@@ -147,22 +147,38 @@
     }
 
     // ====================== CURSOR TYPE DETECTION ======================
-    function checkCursorType() {
-        const el = document.elementFromPoint(cursorX, cursorY);
-        if (!el) return;
-        const cursor = window.getComputedStyle(el).cursor || 'default';
-        // Normalize cursor types to categories
-        let type = 'default';
-        if (cursor === 'col-resize' || cursor === 'ew-resize') type = 'col-resize';
-        else if (cursor === 'row-resize' || cursor === 'ns-resize') type = 'row-resize';
-        else if (cursor === 'text' || cursor === 'vertical-text') type = 'text';
-        else if (cursor === 'pointer') type = 'pointer';
-        if (type !== lastCursorType) {
-            lastCursorType = type;
-            if (activePort) {
-                try { activePort.postMessage({type: 'cursorType', cursor: type}); } catch(e) {}
+    let cursorCheckRaf = 0;
+    function scheduleCursorCheck() {
+        if (cursorCheckRaf) return;
+        // Defer to next frame so VS Code has time to process the pointer event
+        // and update cursor styles before we read them
+        cursorCheckRaf = requestAnimationFrame(() => {
+            cursorCheckRaf = 0;
+            const el = document.elementFromPoint(cursorX, cursorY);
+            if (!el) return;
+            // Walk up the DOM to find the effective cursor (some elements inherit)
+            let cursor = 'default';
+            let node = el;
+            while (node && node !== document.documentElement) {
+                const c = node.style.cursor || '';
+                if (c && c !== 'auto' && c !== 'inherit') { cursor = c; break; }
+                const computed = window.getComputedStyle(node).cursor;
+                if (computed && computed !== 'auto') { cursor = computed; break; }
+                node = node.parentElement;
             }
-        }
+            // Normalize to categories
+            let type = 'default';
+            if (cursor === 'col-resize' || cursor === 'ew-resize' || cursor === 'w-resize' || cursor === 'e-resize') type = 'col-resize';
+            else if (cursor === 'row-resize' || cursor === 'ns-resize' || cursor === 'n-resize' || cursor === 's-resize') type = 'row-resize';
+            else if (cursor === 'text' || cursor === 'vertical-text') type = 'text';
+            else if (cursor === 'pointer') type = 'pointer';
+            if (type !== lastCursorType) {
+                lastCursorType = type;
+                if (activePort) {
+                    try { activePort.postMessage({type: 'cursorType', cursor: type}); } catch(e) {}
+                }
+            }
+        });
     }
 
     // ====================== IME SUPPRESSION ======================
@@ -208,7 +224,7 @@
                         cursorX = msg.x; cursorY = msg.y;
                         dispatchPointer('pointermove', 0);
                         dispatchMouse('mousemove', 0);
-                        checkCursorType();
+                        scheduleCursorCheck();
                         break;
                     case 'mouseDown':
                         cursorX = msg.x; cursorY = msg.y;
