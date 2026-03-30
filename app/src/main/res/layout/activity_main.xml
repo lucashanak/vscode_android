@@ -34,8 +34,8 @@
                 <!-- Cursor dot overlaid on GeckoView -->
                 <ImageView
                     android:id="@+id/cursorDot"
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
                     android:src="@drawable/cursor_dot"
                     android:visibility="gone"
                     android:elevation="10dp" />

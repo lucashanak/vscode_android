@@ -90,6 +90,15 @@ class OverlayManager(
         port = p
         FileLogger.d(TAG, "Content script port connected")
         p.setDelegate(object : WebExtension.PortDelegate {
+            override fun onPortMessage(message: Any, port: WebExtension.Port) {
+                try {
+                    val json = message as? org.json.JSONObject ?: return
+                    if (json.optString("type") == "cursorType") {
+                        val cursor = json.optString("cursor", "default")
+                        geckoView.post { updateCursorType(cursor) }
+                    }
+                } catch (_: Exception) {}
+            }
             override fun onDisconnect(port: WebExtension.Port) {
                 if (this@OverlayManager.port === port) {
                     this@OverlayManager.port = null
@@ -144,9 +153,30 @@ class OverlayManager(
         val parent = cursorView.parent as? View ?: return
         cursorX = (cursorX + dx).coerceIn(0f, parent.width.toFloat())
         cursorY = (cursorY + dy).coerceIn(0f, parent.height.toFloat())
-        // Arrow cursor: tip is at top-left corner (no centering offset)
-        cursorView.translationX = cursorX
-        cursorView.translationY = cursorY
+        if (currentCursorType == "default" || currentCursorType == "pointer") {
+            // Arrow/pointer: hotspot at top-left
+            cursorView.translationX = cursorX
+            cursorView.translationY = cursorY
+        } else {
+            // Resize/text: hotspot at center
+            cursorView.translationX = cursorX - cursorView.width / 2f
+            cursorView.translationY = cursorY - cursorView.height / 2f
+        }
+    }
+
+    private var currentCursorType = "default"
+
+    private fun updateCursorType(type: String) {
+        if (type == currentCursorType) return
+        currentCursorType = type
+        val resId = when (type) {
+            "col-resize" -> R.drawable.cursor_col_resize
+            "row-resize" -> R.drawable.cursor_row_resize
+            "text" -> R.drawable.cursor_text
+            "pointer" -> R.drawable.cursor_pointer
+            else -> R.drawable.cursor_dot
+        }
+        (cursorView as? android.widget.ImageView)?.setImageResource(resId)
     }
 
     private fun cursorCssPx(): Pair<Float, Float> {

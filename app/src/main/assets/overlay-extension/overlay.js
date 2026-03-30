@@ -8,6 +8,8 @@
     // =====================================================================
 
     let cursorX = 0, cursorY = 0;
+    let lastCursorType = 'default';
+    let activePort = null;
 
     // ====================== TARGET ======================
     function getTarget() {
@@ -144,6 +146,25 @@
         }));
     }
 
+    // ====================== CURSOR TYPE DETECTION ======================
+    function checkCursorType() {
+        const el = document.elementFromPoint(cursorX, cursorY);
+        if (!el) return;
+        const cursor = window.getComputedStyle(el).cursor || 'default';
+        // Normalize cursor types to categories
+        let type = 'default';
+        if (cursor === 'col-resize' || cursor === 'ew-resize') type = 'col-resize';
+        else if (cursor === 'row-resize' || cursor === 'ns-resize') type = 'row-resize';
+        else if (cursor === 'text' || cursor === 'vertical-text') type = 'text';
+        else if (cursor === 'pointer') type = 'pointer';
+        if (type !== lastCursorType) {
+            lastCursorType = type;
+            if (activePort) {
+                try { activePort.postMessage({type: 'cursorType', cursor: type}); } catch(e) {}
+            }
+        }
+    }
+
     // ====================== IME SUPPRESSION ======================
     let imeObserver = null;
 
@@ -174,6 +195,7 @@
     function connect() {
         try {
             const port = browser.runtime.connectNative('browser');
+            activePort = port;
             port.onMessage.addListener(msg => {
                 switch (msg.type) {
                     case 'char':
@@ -186,6 +208,7 @@
                         cursorX = msg.x; cursorY = msg.y;
                         dispatchPointer('pointermove', 0);
                         dispatchMouse('mousemove', 0);
+                        checkCursorType();
                         break;
                     case 'mouseDown':
                         cursorX = msg.x; cursorY = msg.y;
