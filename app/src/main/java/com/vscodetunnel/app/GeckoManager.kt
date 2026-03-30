@@ -25,24 +25,10 @@ object GeckoManager {
 
     fun getRuntime(context: Context): GeckoRuntime {
         if (runtime == null) {
-            val builder = GeckoRuntimeSettings.Builder()
+            val settings = GeckoRuntimeSettings.Builder()
                 .consoleOutput(true)
                 .remoteDebuggingEnabled(true)
-
-            // Apply custom DPI override for VSCode zoom
-            val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-            val zoomPercent = prefs.getInt("vscode_zoom_percent", 100)
-            if (zoomPercent != 100) {
-                val systemDpr = context.resources.displayMetrics.density
-                val newDpr = systemDpr * (zoomPercent / 100.0)
-                // Write a GeckoView config file to override devicePixelRatio
-                val configFile = java.io.File(context.cacheDir, "gecko_prefs.js")
-                configFile.writeText("pref(\"layout.css.devPixelsPerPx\", \"${String.format("%.2f", newDpr)}\");\n")
-                builder.configFilePath(configFile.absolutePath)
-                FileLogger.d(TAG, "VSCode zoom: ${zoomPercent}%, DPR override: $newDpr")
-            }
-
-            val settings = builder.build()
+                .build()
             runtime = GeckoRuntime.create(context.applicationContext, settings)
             FileLogger.d(TAG, "GeckoRuntime created")
         }
