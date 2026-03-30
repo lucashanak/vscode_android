@@ -18,7 +18,7 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 .panel { display:none; }
 .panel.active { display:block; }
 
-/* ============ COMPACT KEYBOARD (Gboard-style) ============ */
+/* ============ COMPACT KEYBOARD ============ */
 .kb-panel { padding:6px 3px 10px 3px; }
 .row { display:flex; gap:5px; padding:3px 3px; flex-wrap:nowrap; justify-content:center; }
 /* Row stagger like physical keyboard */
@@ -67,6 +67,39 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 .nav-sep { width:6px; flex:0 0 6px; }
 .nav-key { flex:0 0 auto; width:48px; font-size:11px; }
 
+/* ============ SWIPE KEYS (Unexpected Keyboard style) ============ */
+.swipe-key {
+    position:relative; flex:1 1 0; height:62px; padding:2px 0;
+    display:grid;
+    grid-template-areas: "nw ne" "c c" "sw se";
+    grid-template-rows: 14px 1fr 14px;
+    grid-template-columns: 1fr 1fr;
+    align-items:center; justify-items:center;
+    background:rgba(255,255,255,0.09); color:#e8e8e8;
+    border:none; border-radius:6px; cursor:pointer;
+    touch-action:manipulation; transition:background 0.08s;
+    font-family:-apple-system,'SF Pro',system-ui,sans-serif;
+}
+.swipe-key:active, .swipe-key.pressed { background:rgba(0,122,204,0.45); }
+.sw-c { grid-area:c; font-size:22px; font-weight:400; pointer-events:none; }
+.sw-nw,.sw-ne,.sw-sw,.sw-se { font-size:10px; color:#888; pointer-events:none; line-height:1; }
+.sw-nw { grid-area:nw; justify-self:start; padding-left:3px; }
+.sw-ne { grid-area:ne; justify-self:end; padding-right:3px; }
+.sw-sw { grid-area:sw; justify-self:start; padding-left:3px; }
+.sw-se { grid-area:se; justify-self:end; padding-right:3px; }
+.shifted .swipe-key .sw-c { text-transform:uppercase; }
+
+/* Unexpected Keyboard style bottom row */
+.row-uk { gap:4px; padding:3px 3px; }
+.row-uk .key { height:52px; }
+.row-uk .uk-ctrl { flex:1.5 1 0; font-size:14px; }
+.row-uk .uk-fn { flex:1 1 0; font-size:14px; background:rgba(255,255,255,0.05); color:#999; border:none; border-radius:6px; cursor:pointer; touch-action:manipulation; }
+.row-uk .uk-fn.mod-active { background:#007acc; color:#fff; }
+.row-uk .uk-nav { flex:1.1 1 0; font-size:16px; background:rgba(255,255,255,0.05); color:#999; border:none; border-radius:6px; cursor:pointer; touch-action:manipulation; display:flex; align-items:center; justify-content:center; }
+.row-uk .uk-nav.pressed { background:rgba(0,122,204,0.45); }
+.row-uk .uk-enter { flex:1.5 1 0; }
+.row-uk .space-key { flex:3.2 1 0; }
+
 /* ============ TOUCHPAD ============ */
 .tp-panel.active { display:flex; flex-direction:column; }
 .tp-area { flex:1; margin:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:10px; display:flex; align-items:center; justify-content:center; touch-action:none; }
@@ -84,7 +117,7 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 /* Diacritics popup */
 #diacPopup { position:fixed; display:none; background:#3a3a3a; border:1px solid rgba(255,255,255,0.2); border-radius:8px; padding:4px; z-index:300; box-shadow:0 4px 16px rgba(0,0,0,0.6); }
 #diacPopup .diac-row { display:flex; gap:3px; }
-.diac-key { width:40px; height:44px; font-size:20px; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.1); color:#e8e8e8; border:none; border-radius:5px; cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation; }
+.diac-key { min-width:40px; padding:0 4px; height:44px; font-size:20px; font-family:-apple-system,sans-serif; background:rgba(255,255,255,0.1); color:#e8e8e8; border:none; border-radius:5px; cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation; }
 .diac-key:active { background:#007acc; }
 
 /* Clipboard history popup */
@@ -112,6 +145,10 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
 /* Landscape narrow */
 @media (orientation:landscape) and (max-width:900px) {
     .key { height:50px; font-size:20px; }
+    .swipe-key { height:50px; }
+    .sw-c { font-size:18px; }
+    .sw-nw,.sw-ne,.sw-sw,.sw-se { font-size:9px; }
+    .swipe-key { grid-template-rows: 12px 1fr 12px; }
     .row { gap:3px; padding:2px 2px; }
     .row-scroll .key { height:38px; font-size:14px; }
     .tp-btn { height:32px; font-size:12px; }
@@ -119,6 +156,7 @@ html, body { background:#2B2B2B; overflow:hidden; touch-action:none; user-select
     .tool-btn { padding:6px 12px; font-size:13px; }
     .tp-area { min-height:120px; }
     .kb-panel { padding:4px 2px 6px 2px; }
+    .row-uk .key { height:44px; }
 }
 </style>
 </head>
@@ -155,6 +193,7 @@ const mods = { ctrl:false, alt:false, shift:false, meta:false };
 const tp = { tracking:false, lastX:0, lastY:0, startX:0, startY:0, totalMove:0, fingers:0, scrollLastY:0, tapStart:0, lastTap:0, tapTimeout:null };
 const SENSITIVITY = 1.5, SCROLL_SENS = 3;
 let compactPage = 'abc'; // 'abc' or 'sym'
+let fnActive = false;
 
 // ======================== ANDROID BRIDGE ========================
 const A = window.Android || {
@@ -185,6 +224,53 @@ function M(mod, label, cls) {
 }
 function SEP(cls) { return `<div class="${cls||'fn-sep'}"></div>`; }
 
+// Swipe key: renders a key with corner labels (Unexpected Keyboard style)
+function SK(ch) {
+    const s = SWIPE[ch] || [null,null,null,null];
+    const [nw,ne,sw,se] = s.map(v => v ? esc(v) : '');
+    return `<button class="key char-key swipe-key" data-char="${ch}">
+        <span class="sw-nw">${nw}</span><span class="sw-ne">${ne}</span>
+        <span class="sw-c">${ch}</span>
+        <span class="sw-sw">${sw}</span><span class="sw-se">${se}</span>
+    </button>`;
+}
+
+// ======================== SWIPE MAP (Unexpected Keyboard US QWERTY) ========================
+// [nw, ne, sw, se] — null = no swipe char in that direction
+const SWIPE = {
+    // Top row: NE = numbers
+    'q': [null,'1',null,'Esc'],
+    'w': ['~','2','@',null],
+    'e': ['!','3','#','\u20AC'],
+    'r': [null,'4','$',null],
+    't': [null,'5','%',null],
+    'y': [null,'6','^',null],
+    'u': [null,'7','&',null],
+    'i': [null,'8','*',null],
+    'o': [null,'9','(',')'],
+    'p': [null,'0','=',null],
+    // Home row
+    'a': ['Tab','`',null,null],
+    'g': [null,'-','_',null],
+    'h': [null,'=','+',null],
+    'j': [null,null,'{','}'],
+    'k': [null,null,'[',']'],
+    'l': [null,'|','\\',null],
+    // Bottom letter row
+    'c': [null,'<','.',null],
+    'v': [null,'>',',',null],
+    'b': [null,'?','/',null],
+    'n': [null,':',';',null],
+    'm': [null,'"',"'",null],
+};
+
+// Nav key: 8 directions [N, NE, E, SE, S, SW, W, NW]
+const NAV_SWIPE = ['Up','PgUp','Right','PgDn','Down','End','Left','Home'];
+
+// Fn mode: NE swipe numbers become F-keys
+const FN_MAP = {'1':'F1','2':'F2','3':'F3','4':'F4','5':'F5',
+                '6':'F6','7':'F7','8':'F8','9':'F9','0':'F10'};
+
 // ======================== DIACRITICS MAP ========================
 const DIAC = {
     // Letters with diacritics
@@ -202,23 +288,23 @@ const DIAC = {
     'u':['ú','ù','û','ü','ů','ű'],
     'y':['ý','ÿ'],
     'z':['ž','ź','ż'],
-    // Numbers → shift-row symbols
-    '1':['!','¹','½','⅓'],
-    '2':['@','²','⅔'],
-    '3':['#','³','⅛'],
-    '4':['$','€','£','¥'],
-    '5':['%','‰'],
-    '6':['^','¬'],
-    '7':['&','§'],
-    '8':['*','×','•'],
-    '9':['(','[','{','<'],
-    '0':[')',']','}','>'],
+    // Numbers → shift-row symbols + F-keys
+    '1':['!','¹','½','⅓','F1'],
+    '2':['@','²','⅔','F2'],
+    '3':['#','³','⅛','F3'],
+    '4':['$','€','£','¥','F4'],
+    '5':['%','‰','F5'],
+    '6':['^','¬','F6'],
+    '7':['&','§','F7'],
+    '8':['*','×','•','F8'],
+    '9':['(','[','{','<','F9'],
+    '0':[')',']','}','>','F10'],
     // Punctuation
     '.':['…',',',':',';','!','?'],
     ',':['<',';',':','«','»'],
-    '-':['–','—','_','~','±'],
+    '-':['–','—','_','~','±','F11'],
     '/':['\\','|','÷'],
-    '=':['≠','≈','±','≤','≥'],
+    '=':['≠','≈','±','≤','≥','F12'],
     "'":['`','"','\u201C','\u201D','\u2018','\u2019','\u00B4'],
 };
 
@@ -238,7 +324,7 @@ function haptic() {
     try { A.haptic(); } catch(_) {}
 }
 
-// ======================== COMPACT: LETTERS (Gboard-style) ========================
+// ======================== COMPACT: LETTERS (Unexpected Keyboard style) ========================
 function quickActions() {
     return `<div class="action-bar">
         <button class="action-btn" data-action="ctrl+shift+p">Cmd Palette</button>
@@ -255,32 +341,33 @@ function quickActions() {
 function compactLetters() {
     return `
         ${quickActions()}
-        <div class="row row-num">${'1234567890'.split('').map(d=>K(d)).join('')}</div>
-        <div class="row">${C('q')}${C('w')}${C('e')}${C('r')}${C('t')}${C('y')}${C('u')}${C('i')}${C('o')}${C('p')}</div>
-        <div class="row row-home">${C('a')}${C('s')}${C('d')}${C('f')}${C('g')}${C('h')}${C('j')}${C('k')}${C('l')}</div>
-        <div class="row row-shift">${M('shift','\u21E7','wide-key')}${C('z')}${C('x')}${C('c')}${C('v')}${C('b')}${C('n')}${C('m')}${K('Bksp','\u232B','wide-key')}</div>
-        <div class="row row-bottom">
-            <button class="key wide-key" id="symToggle" style="font-size:14px">?123</button>
-            ${M('ctrl','Ctrl')} ${M('alt','Alt')}
+        <div class="row">${'qwertyuiop'.split('').map(SK).join('')}</div>
+        <div class="row row-home">${'asdfghjkl'.split('').map(SK).join('')}</div>
+        <div class="row row-shift">
+            ${M('shift','\u21E7','wide-key')}
+            ${'zxcvbnm'.split('').map(SK).join('')}
+            ${K('Bksp','\u232B','wide-key')}
+        </div>
+        <div class="row row-bottom row-uk">
+            ${M('ctrl','Ctrl','uk-ctrl')}
+            <button class="key uk-fn" id="fnToggle">Fn</button>
+            ${M('alt','Alt')}
             <button class="key space-key" data-key="Space">space</button>
-            ${K('.','.') } ${K('Enter','\u21B5','wide-key')}
+            <button class="key uk-nav" id="navKey">\u25C6</button>
+            ${K('Enter','\u21B5','uk-enter')}
         </div>`;
 }
 
 // ======================== COMPACT: SYMBOLS ========================
 function compactSymbols() {
     return `
-        <div class="row">${'1234567890'.split('').map(d=>K(d)).join('')}</div>
+        <div class="row row-num">${'1234567890'.split('').map(d=>K(d)).join('')}</div>
+        <div class="row">${['-','=','`','~','_','+','\\','|','/','?'].map(s=>K(s)).join('')}</div>
         <div class="row">${['!','@','#','$','%','^','&','*','(',')'].map(s=>K(s)).join('')}</div>
-        <div class="row-scroll row">
-            ${['-','=','`','~','_','+','[',']','{','}','|','\\',';',':',"'",'"','<','>','/','?'].map(s=>K(s)).join('')}
-        </div>
+        <div class="row">${['{','}','[',']',':',';',"'",'"','<','>'].map(s=>K(s)).join('')}</div>
         <div class="row">
             ${K('Left','\u25C0')} ${K('Down','\u25BC')} ${K('Up','\u25B2')} ${K('Right','\u25B6')}
-            ${K('Esc')} ${K('Tab')} ${K('Home','Hm')} ${K('End')} ${K('PgUp','PU')} ${K('PgDn','PD')} ${K('Del')} ${K('Ins')}
-        </div>
-        <div class="row-scroll row">
-            ${'F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12'.split(' ').map(f=>K(f)).join('')}
+            ${K('Esc')} ${K('Tab')} ${K('Home','Hm')} ${K('End')} ${K('Del')}
         </div>
         <div class="row row-bottom">
             <button class="key wide-key" id="symToggle" style="font-size:14px">ABC</button>
@@ -401,9 +488,43 @@ function updateRepeatSettings(delay, rate) {
     REPEAT_RATE = rate || 50;
 }
 
+// ======================== SWIPE HELPERS ========================
+const SWIPE_THRESHOLD = 12; // px minimum swipe distance
+
+function sendSwipeChar(ch) {
+    if (SPECIAL_KEYS.has(ch)) {
+        A.sendKey(JSON.stringify({key:ch, ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+    } else if (mods.ctrl || mods.alt || mods.meta) {
+        A.sendKey(JSON.stringify({key:ch, ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+    } else {
+        A.sendChar(mods.shift ? ch.toUpperCase() : ch);
+    }
+}
+
+function getSwipeDirection4(dx, dy) {
+    // Returns index into [nw, ne, sw, se] or -1 if below threshold
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < SWIPE_THRESHOLD) return -1;
+    const isRight = dx > 0, isUp = dy < 0;
+    if (isUp && !isRight) return 0; // NW
+    if (isUp && isRight) return 1;  // NE
+    if (!isUp && !isRight) return 2; // SW
+    return 3; // SE
+}
+
+function getSwipeDirection8(dx, dy) {
+    // Returns index into NAV_SWIPE [N, NE, E, SE, S, SW, W, NW] or -1
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < SWIPE_THRESHOLD) return -1;
+    const angle = Math.atan2(-dy, dx) * 180 / Math.PI; // -180..180, 0=right
+    // Convert to 0..360 clockwise from N
+    const cw = ((90 - angle) % 360 + 360) % 360;
+    return Math.round(cw / 45) % 8;
+}
+
 // ======================== DIACRITICS POPUP (Gboard-style) ========================
-// Hold key → popup appears → slide finger to char → release = sends that char
-// If released before popup → sends original char (normal tap)
+// Hold key -> popup appears -> slide finger to char -> release = sends that char
+// If released before popup -> sends original char (normal tap)
 const diacPopup = document.getElementById('diacPopup');
 const diacRow = document.getElementById('diacRow');
 let diacTimer = null, diacShown = false, diacChars = [], diacSelected = -1, diacOrigChar = '';
@@ -422,7 +543,7 @@ function showDiacPopup(ch, btnRect) {
         k.dataset.idx = i;
         diacRow.appendChild(k);
     });
-    const pw = alts.length * 43 + 8;
+    const pw = alts.length * 48 + 8;
     let left = btnRect.left + btnRect.width/2 - pw/2;
     left = Math.max(4, Math.min(left, window.innerWidth - pw - 4));
     diacPopup.style.left = left + 'px';
@@ -454,7 +575,11 @@ function updateDiacHighlight(x, y) {
 function commitDiac() {
     if (diacShown && diacSelected >= 0 && diacSelected < diacChars.length) {
         const d = diacChars[diacSelected];
-        A.sendChar(mods.shift ? d.toUpperCase() : d);
+        if (SPECIAL_KEYS.has(d)) {
+            A.sendKey(JSON.stringify({key:d, ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+        } else {
+            A.sendChar(mods.shift ? d.toUpperCase() : d);
+        }
     }
     // If no diac selected and popup was shown, send nothing (original char not sent yet)
     hideDiacPopup();
@@ -469,68 +594,117 @@ function hideDiacPopup() {
 }
 
 function attachKeyEvents() {
-    // Character keys (a-z) — Gboard-style: tap=char, hold=diacritics slide
+    // Character keys (a-z) — swipe for symbols, hold for diacritics
     kbPanel.querySelectorAll('.char-key').forEach(btn => {
+        const ch = btn.dataset.char;
+        const swipeMap = SWIPE[ch]; // [nw, ne, sw, se] or undefined
+
         const fireChar = () => {
-            const ch = mods.shift ? btn.dataset.char.toUpperCase() : btn.dataset.char;
+            const c = mods.shift ? ch.toUpperCase() : ch;
             if (mods.ctrl || mods.alt || mods.meta) {
-                A.sendKey(JSON.stringify({key:ch, ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+                A.sendKey(JSON.stringify({key:c, ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
             } else {
-                A.sendChar(ch);
+                A.sendChar(c);
             }
         };
-        let pendingChar = false; // true = char not yet sent, waiting for long-press decision
+
+        let pendingChar = false;
+        let startX = 0, startY = 0;
+
         btn.addEventListener('pointerdown', e => {
             e.preventDefault(); e.stopPropagation();
             haptic();
             btn.classList.add('pressed');
-            const ch = btn.dataset.char;
+            startX = e.clientX; startY = e.clientY;
+            pendingChar = true;
+
             if (DIAC[ch] && !mods.ctrl && !mods.alt && !mods.meta) {
-                // Has diacritics: DON'T send char yet, wait for long-press
-                pendingChar = true;
+                // Has diacritics: wait for long-press
                 diacTimer = setTimeout(() => {
-                    pendingChar = false; // popup takes over
+                    pendingChar = false;
                     stopRepeat();
                     showDiacPopup(ch, btn.getBoundingClientRect());
                 }, 300);
-            } else {
-                // No diacritics: send immediately + start repeat
-                pendingChar = false;
-                fireChar();
-                startRepeat(fireChar);
             }
+            // No immediate send — wait for pointerup to detect swipe vs tap
         });
+
         btn.addEventListener('pointermove', e => {
             if (diacShown) updateDiacHighlight(e.clientX, e.clientY);
         });
+
         btn.addEventListener('pointerup', e => {
             clearTimeout(diacTimer); diacTimer = null;
             stopRepeat();
             btn.classList.remove('pressed');
+
             if (diacShown) {
-                // Release on diacritics popup → commit selected char
                 updateDiacHighlight(e.clientX, e.clientY);
                 commitDiac();
-            } else if (pendingChar) {
-                // Released before popup → normal tap, send original char
-                pendingChar = false;
-                fireChar();
-                resetMods();
-            } else {
-                resetMods();
+                return;
             }
+            if (!pendingChar) return;
+            pendingChar = false;
+
+            // Check for swipe
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            const dir = getSwipeDirection4(dx, dy);
+
+            if (dir >= 0 && swipeMap) {
+                let target = swipeMap[dir];
+
+                // Fn mode: if NE (dir=1) and target is a number, replace with F-key
+                if (fnActive && dir === 1 && target && FN_MAP[target]) {
+                    target = FN_MAP[target];
+                    fnActive = false;
+                    const fnBtn = document.getElementById('fnToggle');
+                    if (fnBtn) fnBtn.classList.remove('mod-active');
+                }
+
+                if (target) {
+                    sendSwipeChar(target);
+                    resetMods();
+                    return;
+                }
+            }
+
+            // Fallback: normal tap
+            fireChar();
+            resetMods();
         });
+
         btn.addEventListener('pointerleave', e => {
-            // Finger left key area — if popup shown, track position for diac selection
             if (diacShown) {
-                // Don't cancel — let pointermove on document handle it
+                // Let global handler track
             } else {
                 clearTimeout(diacTimer); diacTimer = null;
                 stopRepeat();
-                if (pendingChar) { pendingChar = false; fireChar(); resetMods(); }
+                // Don't auto-fire on leave for swipe keys — user might be swiping
+                if (pendingChar) {
+                    // Check if this was a swipe
+                    const dx = e.clientX - startX;
+                    const dy = e.clientY - startY;
+                    const dir = getSwipeDirection4(dx, dy);
+                    if (dir >= 0 && swipeMap && swipeMap[dir]) {
+                        let target = swipeMap[dir];
+                        if (fnActive && dir === 1 && target && FN_MAP[target]) {
+                            target = FN_MAP[target];
+                            fnActive = false;
+                            const fnBtn = document.getElementById('fnToggle');
+                            if (fnBtn) fnBtn.classList.remove('mod-active');
+                        }
+                        sendSwipeChar(target);
+                    } else {
+                        fireChar();
+                    }
+                    pendingChar = false;
+                    resetMods();
+                }
                 btn.classList.remove('pressed');
             }
         });
+
         btn.addEventListener('pointercancel', () => {
             clearTimeout(diacTimer); stopRepeat();
             pendingChar = false;
@@ -548,7 +722,7 @@ function attachKeyEvents() {
     }, {passive:true});
 
     // Special + symbol keys (data-key) — with haptic + long-press popup
-    kbPanel.querySelectorAll('.key[data-key]:not(.key-mod)').forEach(btn => {
+    kbPanel.querySelectorAll('.key[data-key]:not(.key-mod):not(.uk-nav)').forEach(btn => {
         const fireKey = () => {
             const key = btn.dataset.key;
             if (key === 'Space' && !mods.ctrl && !mods.alt && !mods.meta) {
@@ -561,14 +735,21 @@ function attachKeyEvents() {
         };
         const key = btn.dataset.key;
         const hasDiac = DIAC[key] && !SPECIAL_KEYS.has(key) && key !== 'Space';
+        const isSpace = key === 'Space';
+        const isBksp = key === 'Bksp';
         let pendingKey = false;
+        let startX = 0, startY = 0;
 
         btn.addEventListener('pointerdown', e => {
             e.preventDefault(); e.stopPropagation();
             haptic();
             btn.classList.add('pressed');
-            if (hasDiac && !mods.ctrl && !mods.alt && !mods.meta) {
-                // Has alternatives: wait for long-press decision
+            startX = e.clientX; startY = e.clientY;
+
+            if (isSpace || isBksp) {
+                // Space/Bksp: wait for pointerup to detect swipe
+                pendingKey = true;
+            } else if (hasDiac && !mods.ctrl && !mods.alt && !mods.meta) {
                 pendingKey = true;
                 diacTimer = setTimeout(() => {
                     pendingKey = false;
@@ -588,10 +769,41 @@ function attachKeyEvents() {
             clearTimeout(diacTimer); diacTimer = null;
             stopRepeat();
             btn.classList.remove('pressed');
+
             if (diacShown) {
                 updateDiacHighlight(e.clientX, e.clientY);
                 commitDiac();
-            } else if (pendingKey) {
+                return;
+            }
+
+            if (isSpace && pendingKey) {
+                pendingKey = false;
+                const dx = e.clientX - startX;
+                if (Math.abs(dx) >= SWIPE_THRESHOLD) {
+                    const dir = dx > 0 ? 'Right' : 'Left';
+                    A.sendKey(JSON.stringify({key:dir, ctrl:false, alt:false, shift:false, meta:false}));
+                } else {
+                    fireKey();
+                }
+                resetMods();
+                return;
+            }
+
+            if (isBksp && pendingKey) {
+                pendingKey = false;
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                const dir = getSwipeDirection4(dx, dy);
+                if (dir === 1) { // NE → Delete
+                    A.sendKey(JSON.stringify({key:'Del', ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+                } else {
+                    fireKey();
+                }
+                resetMods();
+                return;
+            }
+
+            if (pendingKey) {
                 pendingKey = false;
                 fireKey();
                 resetMods();
@@ -625,6 +837,45 @@ function attachKeyEvents() {
             toggleMod(btn.dataset.mod);
         });
     });
+
+    // Fn toggle
+    const fnBtn = document.getElementById('fnToggle');
+    if (fnBtn) {
+        fnBtn.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            haptic();
+            fnActive = !fnActive;
+            fnBtn.classList.toggle('mod-active', fnActive);
+        });
+    }
+
+    // Nav key (8-direction swipe for arrows/navigation)
+    const navBtn = document.getElementById('navKey');
+    if (navBtn) {
+        let navStartX = 0, navStartY = 0;
+        navBtn.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            haptic();
+            navBtn.classList.add('pressed');
+            navStartX = e.clientX; navStartY = e.clientY;
+        });
+        navBtn.addEventListener('pointerup', e => {
+            navBtn.classList.remove('pressed');
+            const dx = e.clientX - navStartX;
+            const dy = e.clientY - navStartY;
+            const dir = getSwipeDirection8(dx, dy);
+            if (dir >= 0) {
+                const key = NAV_SWIPE[dir];
+                if (key) {
+                    A.sendKey(JSON.stringify({key, ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+                    resetMods();
+                }
+            }
+            // Tap with no swipe = no action (just a visual press)
+        });
+        navBtn.addEventListener('pointerleave', () => { navBtn.classList.remove('pressed'); });
+        navBtn.addEventListener('pointercancel', () => { navBtn.classList.remove('pressed'); });
+    }
 
     // Quick action buttons
     kbPanel.querySelectorAll('.action-btn').forEach(btn => {
@@ -734,10 +985,10 @@ tpArea.addEventListener('touchend', e => {
     if (isTap) {
         const now = Date.now();
         if (tp.fingers >= 2) {
-            // 2-finger tap → right click
+            // 2-finger tap -> right click
             haptic(); A.click(2);
         } else if (tp.fingers === 1) {
-            // Single tap → immediate left click
+            // Single tap -> immediate left click
             haptic(); A.click(0);
             // Record for double-tap-and-hold detection
             if (now - tp.lastTap < 300) {
