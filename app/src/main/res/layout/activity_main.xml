@@ -160,6 +160,15 @@
                     android:textColor="@color/primary"
                     android:textSize="14sp"
                     android:padding="8dp" />
+
+                <TextView
+                    android:id="@+id/btnExit"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Exit"
+                    android:textColor="@color/error"
+                    android:textSize="14sp"
+                    android:padding="8dp" />
             </LinearLayout>
 
             <!-- Update banner (hidden) -->

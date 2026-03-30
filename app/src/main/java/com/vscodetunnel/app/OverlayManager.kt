@@ -30,6 +30,7 @@ class OverlayManager(
     private var port: WebExtension.Port? = null
     private var cursorX = 0f
     private var cursorY = 0f
+    private var cachedEffectiveDensity = 0f
     var isVisible = false
         private set
 
@@ -56,6 +57,10 @@ class OverlayManager(
         webView.setBackgroundColor(0xFF1E1E1E.toInt())
         webView.addJavascriptInterface(JSInterface(), "Android")
         webView.loadUrl("file:///android_asset/overlay-ui/overlay.html")
+        // Cache effective density for cursor coordinate conversion
+        val prefs = geckoView.context.getSharedPreferences("app_settings", android.content.Context.MODE_PRIVATE)
+        val zoomPercent = prefs.getInt("vscode_zoom_percent", 100)
+        cachedEffectiveDensity = geckoView.resources.displayMetrics.density * (zoomPercent / 100f)
     }
 
     fun show() {
@@ -180,8 +185,9 @@ class OverlayManager(
     }
 
     private fun cursorCssPx(): Pair<Float, Float> {
-        val density = geckoView.resources.displayMetrics.density
-        return Pair(cursorX / density, cursorY / density)
+        val d = if (cachedEffectiveDensity > 0f) cachedEffectiveDensity
+                else geckoView.resources.displayMetrics.density
+        return Pair(cursorX / d, cursorY / d)
     }
 
     // Map overlay key names to terminal escape sequences

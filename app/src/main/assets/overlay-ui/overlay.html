@@ -684,9 +684,12 @@ document.addEventListener('pointerdown', e => {
 // ======================== TOUCHPAD ========================
 const TAP_MOVE_THRESHOLD = 10;
 const tpArea = document.getElementById('tpArea');
+let tpDragging = false; // double-tap-and-hold drag state
+
 tpArea.addEventListener('touchstart', e => {
     e.preventDefault();
-    const t = e.touches;
+    // Use targetTouches (only touches on touchpad, not on buttons)
+    const t = e.targetTouches;
     tp.tracking = true; tp.fingers = t.length;
     tp.lastX = t[0].clientX; tp.lastY = t[0].clientY;
     tp.startX = t[0].clientX; tp.startY = t[0].clientY;
@@ -698,20 +701,33 @@ tpArea.addEventListener('touchstart', e => {
 tpArea.addEventListener('touchmove', e => {
     e.preventDefault();
     if (!tp.tracking) return;
-    const t = e.touches[0];
+    const t = e.targetTouches[0];
+    if (!t) return;
     const dx = t.clientX - tp.lastX, dy = t.clientY - tp.lastY;
     tp.lastX = t.clientX; tp.lastY = t.clientY;
     tp.totalMove += Math.abs(dx) + Math.abs(dy);
-    if (e.touches.length >= 2) {
+    if (e.targetTouches.length >= 2) {
         const sd = t.clientY - tp.scrollLastY; tp.scrollLastY = t.clientY;
         A.scroll(sd * SCROLL_SENS);
     } else {
         A.pointerMove(dx * SENSITIVITY, dy * SENSITIVITY);
+        // Double-tap-and-hold: if moved past threshold, start drag
+        if (!tpDragging && tp.lastTap > 0 && Date.now() - tp.lastTap < 300 && tp.totalMove > TAP_MOVE_THRESHOLD) {
+            tpDragging = true;
+            haptic(); A.mouseDown(0);
+        }
     }
 }, {passive:false});
 
 tpArea.addEventListener('touchend', e => {
     e.preventDefault();
+    // End drag if active
+    if (tpDragging) {
+        tpDragging = false;
+        A.mouseUp(0);
+        tp.tracking = false; tp.fingers = 0; tp.tapStart = 0;
+        return;
+    }
     tp.tracking = false;
     const el = Date.now() - tp.tapStart;
     const isTap = tp.tapStart > 0 && el < 300 && tp.totalMove < TAP_MOVE_THRESHOLD;
@@ -723,16 +739,16 @@ tpArea.addEventListener('touchend', e => {
         } else if (tp.fingers === 1) {
             // Single tap → immediate left click
             haptic(); A.click(0);
-            // If second tap within 200ms → also double-click
-            if (now - tp.lastTap < 200) {
+            // Record for double-tap-and-hold detection
+            if (now - tp.lastTap < 300) {
                 A.doubleClick();
-                tp.lastTap = 0;
-            } else {
-                tp.lastTap = now;
+                // Keep lastTap for potential hold-drag on next touch
             }
+            tp.lastTap = now;
         }
-        // Prevent second touchend from firing another click
         tp.tapStart = 0;
+    } else {
+        tp.lastTap = 0; // Movement broke the tap sequence
     }
     tp.fingers = 0;
 }, {passive:false});

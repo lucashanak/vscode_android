@@ -255,6 +255,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.btnKeyGen).setOnClickListener { showKeyGenDialog() }
         findViewById<View>(R.id.btnSettings).setOnClickListener { showSettingsDialog() }
         findViewById<View>(R.id.btnCheckUpdate).setOnClickListener { checkForUpdate() }
+        findViewById<View>(R.id.btnExit).setOnClickListener { finishAffinity() }
 
         findViewById<Button>(R.id.btnConnect).setOnClickListener {
             connectTo(urlInput.text.toString().trim())
