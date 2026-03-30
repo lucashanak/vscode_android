@@ -25,8 +25,8 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
 .row-shift { padding-left:2px; padding-right:2px; }
 
 .key {
-    flex:1 1 0; min-width:0; height:68px; padding:0 2px;
-    font-size:22px; font-weight:400;
+    flex:1 1 0; min-width:0; height:72px; padding:0 2px;
+    font-size:24px; font-weight:400;
     font-family:sans-serif;
     background:#333; color:#fff;
     border:none; border-bottom:1px solid #404040; border-radius:5px;
@@ -68,10 +68,10 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
 
 /* ============ SWIPE KEYS (Unexpected Keyboard style) ============ */
 .swipe-key {
-    position:relative; flex:1 1 0; height:68px; padding:2px 0;
+    position:relative; flex:1 1 0; height:72px; padding:2px 0;
     display:grid;
     grid-template-areas: "nw ne" "c c" "sw se";
-    grid-template-rows: 16px 1fr 16px;
+    grid-template-rows: 17px 1fr 17px;
     grid-template-columns: 1fr 1fr;
     align-items:center; justify-items:center;
     background:#333; color:#fff;
@@ -80,8 +80,8 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
     font-family:sans-serif;
 }
 .swipe-key:active, .swipe-key.pressed { background:#1b1b1b; }
-.sw-c { grid-area:c; font-size:22px; font-weight:400; pointer-events:none; }
-.sw-nw,.sw-ne,.sw-sw,.sw-se { font-size:12px; color:#ccc; pointer-events:none; line-height:1; }
+.sw-c { grid-area:c; font-size:24px; font-weight:400; pointer-events:none; }
+.sw-nw,.sw-ne,.sw-sw,.sw-se { font-size:13px; color:#ccc; pointer-events:none; line-height:1; }
 .sw-nw { grid-area:nw; justify-self:start; padding-left:3px; }
 .sw-ne { grid-area:ne; justify-self:end; padding-right:3px; }
 .sw-sw { grid-area:sw; justify-self:start; padding-left:3px; }
@@ -90,7 +90,7 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
 
 /* Unexpected Keyboard style bottom row */
 .row-uk { gap:4px; padding:2px 3px; }
-.row-uk .key { height:64px; font-size:14px; }
+.row-uk .key { height:68px; font-size:15px; }
 .row-uk .uk-ctrl { flex:1.7 1 0; }
 .row-uk .uk-fn { flex:1.1 1 0; font-size:14px; background:#333; color:#ccc; border:none; border-bottom:1px solid #404040; border-radius:5px; cursor:pointer; touch-action:manipulation; }
 .row-uk .uk-fn.mod-active { background:#1b1b1b; color:#3399ff; }
@@ -639,15 +639,18 @@ function attachKeyEvents() {
             startX = e.clientX; startY = e.clientY;
             pendingChar = true;
 
+            // Fire char immediately + start repeat
+            fireChar();
+            startRepeat(fireChar);
+
             if (DIAC[ch] && !mods.ctrl && !mods.alt && !mods.meta) {
-                // Has diacritics: wait for long-press
+                // Has diacritics: long-press overrides to popup
                 diacTimer = setTimeout(() => {
                     pendingChar = false;
                     stopRepeat();
                     showDiacPopup(ch, btn.getBoundingClientRect());
                 }, 300);
             }
-            // No immediate send — wait for pointerup to detect swipe vs tap
         });
 
         btn.addEventListener('pointermove', e => {
@@ -667,7 +670,8 @@ function attachKeyEvents() {
             if (!pendingChar) return;
             pendingChar = false;
 
-            // Check for swipe
+            // Check for swipe — char already sent on pointerdown,
+            // swipe sends the corner char additionally
             const dx = e.clientX - startX;
             const dy = e.clientY - startY;
             const dir = getSwipeDirection4(dx, dy);
@@ -675,7 +679,6 @@ function attachKeyEvents() {
             if (dir >= 0 && swipeMap) {
                 let target = swipeMap[dir];
 
-                // Fn mode: if NE (dir=1) and target is a number, replace with F-key
                 if (fnActive && dir === 1 && target && FN_MAP[target]) {
                     target = FN_MAP[target];
                     fnActive = false;
@@ -701,27 +704,8 @@ function attachKeyEvents() {
             } else {
                 clearTimeout(diacTimer); diacTimer = null;
                 stopRepeat();
-                // Don't auto-fire on leave for swipe keys — user might be swiping
-                if (pendingChar) {
-                    // Check if this was a swipe
-                    const dx = e.clientX - startX;
-                    const dy = e.clientY - startY;
-                    const dir = getSwipeDirection4(dx, dy);
-                    if (dir >= 0 && swipeMap && swipeMap[dir]) {
-                        let target = swipeMap[dir];
-                        if (fnActive && dir === 1 && target && FN_MAP[target]) {
-                            target = FN_MAP[target];
-                            fnActive = false;
-                            const fnBtn = document.getElementById('fnToggle');
-                            if (fnBtn) fnBtn.classList.remove('mod-active');
-                        }
-                        sendSwipeChar(target);
-                    } else {
-                        fireChar();
-                    }
-                    pendingChar = false;
-                    resetMods();
-                }
+                pendingChar = false;
+                resetMods();
                 btn.classList.remove('pressed');
             }
         });
@@ -767,8 +751,13 @@ function attachKeyEvents() {
             btn.classList.add('pressed');
             startX = e.clientX; startY = e.clientY;
 
-            if (isSpace || isBksp) {
-                // Space/Bksp: wait for pointerup to detect swipe
+            if (isBksp) {
+                // Bksp: fire immediately + repeat, swipe NE on release → Del
+                pendingKey = true;
+                fireKey();
+                startRepeat(fireKey);
+            } else if (isSpace) {
+                // Space: wait for pointerup to detect swipe left/right
                 pendingKey = true;
             } else if (hasDiac && !mods.ctrl && !mods.alt && !mods.meta) {
                 pendingKey = true;
@@ -811,15 +800,8 @@ function attachKeyEvents() {
             }
 
             if (isBksp && pendingKey) {
+                // Repeat already handled; just reset
                 pendingKey = false;
-                const dx = e.clientX - startX;
-                const dy = e.clientY - startY;
-                const dir = getSwipeDirection4(dx, dy);
-                if (dir === 1) { // NE → Delete
-                    A.sendKey(JSON.stringify({key:'Del', ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
-                } else {
-                    fireKey();
-                }
                 resetMods();
                 return;
             }
