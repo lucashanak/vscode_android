@@ -19,7 +19,7 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
 .panel.active { display:block; }
 
 /* ============ COMPACT KEYBOARD (UK Dark theme) ============ */
-.kb-panel { padding:4px 3px 6px 3px; }
+.kb-panel { padding:4px 3px 6px 3px; min-height:480px; }
 .row { display:flex; gap:4px; padding:2px 3px; flex-wrap:nowrap; justify-content:center; }
 .row-home { padding-left:5%; padding-right:5%; }
 .row-shift { padding-left:2px; padding-right:2px; }
@@ -265,12 +265,25 @@ const A = window.Android || {
     getClipboard(){ return ''; }, requestResize(){}
 };
 
-// Measure actual visible content height (toolbar + active panel) and notify Android
+// Notify Android to resize WebView to match content
 function notifyHeight() {
-    const tb = document.querySelector('.toolbar');
-    const panels = document.querySelector('.panels');
-    const h = (tb ? tb.offsetHeight : 0) + (panels ? panels.offsetHeight : 0);
-    try { A.requestResize(h); } catch(_){}
+    // Temporarily expand body to measure true content height
+    const prev = document.body.style.height;
+    document.body.style.height = 'auto';
+    document.documentElement.style.height = 'auto';
+    const prevOvf = document.documentElement.style.overflow;
+    const prevOvf2 = document.body.style.overflow;
+    document.documentElement.style.overflow = 'auto';
+    document.body.style.overflow = 'auto';
+    void document.body.offsetHeight; // force reflow
+    const h = document.body.scrollHeight;
+    document.documentElement.style.overflow = prevOvf;
+    document.body.style.overflow = prevOvf2;
+    document.body.style.height = prev;
+    document.documentElement.style.height = '';
+    if (h > 0) {
+        try { A.requestResize(h); } catch(_){}
+    }
 }
 
 // Poll clipboard for changes (to populate history when user copies from VS Code)

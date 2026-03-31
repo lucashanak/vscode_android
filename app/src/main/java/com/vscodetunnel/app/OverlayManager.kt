@@ -446,17 +446,18 @@ class OverlayManager(
         }
 
         @JavascriptInterface
-        fun requestResize(contentHeight: Int) {
+        fun requestResize(cssPxHeight: Int) {
             webView.post {
-                // Force WebView to re-measure after HTML content change
-                // contentHeight is CSS px from document.body.scrollHeight
                 val density = webView.resources.displayMetrics.density
-                val heightPx = (contentHeight * density).toInt()
-                val lp = webView.layoutParams
-                if (lp != null && lp.height != heightPx) {
+                // cssPxHeight from JS: actual measured content height in CSS pixels
+                // If 0 or invalid, use WebView's contentHeight as fallback
+                val cssH = if (cssPxHeight > 0) cssPxHeight else webView.contentHeight
+                if (cssH <= 0) return@post
+                val heightPx = (cssH * density).toInt()
+                val lp = webView.layoutParams ?: return@post
+                if (lp.height != heightPx) {
                     lp.height = heightPx
                     webView.layoutParams = lp
-                    webView.parent?.let { (it as? android.view.View)?.requestLayout() }
                 }
             }
         }
