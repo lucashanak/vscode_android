@@ -37,7 +37,7 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
 .key:active, .key.pressed { background:#1b1b1b; }
 .key.mod-active { background:#1b1b1b; color:#3399ff; }
 .space-key { flex:5 1 0; font-size:14px; color:#ccc; }
-.wide-key { flex:1.4 1 0; font-size:16px; }
+.wide-key { flex:1.5 1 0; font-size:16px; }
 .xwide-key { flex:1.8 1 0; font-size:16px; }
 .shifted .char-key { text-transform:uppercase; }
 
@@ -88,16 +88,63 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
 .sw-se { grid-area:se; justify-self:end; padding-right:4px; }
 .shifted .swipe-key .sw-c { text-transform:uppercase; }
 
+/* Swipe-enabled special keys (Shift, Backspace) — UK style */
+.swipe-special {
+    position:relative; height:69px; padding:0;
+    display:grid;
+    grid-template-areas: "nw ne" "c c" "sw se";
+    grid-template-rows: 16px 1fr 16px;
+    grid-template-columns: 1fr 1fr;
+    align-items:center; justify-items:center;
+    background:#333; color:#ccc;
+    border:none; border-bottom:1px solid #404040; border-radius:5px; cursor:pointer;
+    touch-action:manipulation; transition:background 0.08s;
+    font-family:sans-serif; font-size:16px;
+}
+.swipe-special:active, .swipe-special.pressed { background:#1b1b1b; }
+.swipe-special.mod-active { background:#1b1b1b; color:#3399ff; }
+.swipe-special .sw-c { grid-area:c; font-size:16px; font-weight:400; pointer-events:none; }
+.swipe-special .sw-ne { font-size:11px; color:#888; pointer-events:none; line-height:1; grid-area:ne; justify-self:end; padding-right:4px; }
+.uk-shift { flex:1.5 1 0; }
+.uk-bksp { flex:1.5 1 0; }
+
 /* Unexpected Keyboard style bottom row */
 .row-uk { gap:4px; padding:2px 3px; }
 .row-uk .key { height:66px; font-size:14px; }
 .row-uk .uk-ctrl { flex:1.7 1 0; }
 .row-uk .uk-fn { flex:1.1 1 0; font-size:14px; background:#333; color:#ccc; border:none; border-bottom:1px solid #404040; border-radius:5px; cursor:pointer; touch-action:manipulation; }
 .row-uk .uk-fn.mod-active { background:#1b1b1b; color:#3399ff; }
-.row-uk .uk-nav { flex:1.1 1 0; font-size:14px; background:#333; color:#ccc; border:none; border-bottom:1px solid #404040; border-radius:5px; cursor:pointer; touch-action:manipulation; display:flex; align-items:center; justify-content:center; }
+.row-uk .uk-nav {
+    flex:1.1 1 0; padding:0;
+    display:grid;
+    grid-template-areas: "nw n ne" "w c e" "sw s se";
+    grid-template-rows: 1fr 1fr 1fr;
+    grid-template-columns: 1fr 1fr 1fr;
+    align-items:center; justify-items:center;
+    background:#333; color:#ccc;
+    border:none; border-bottom:1px solid #404040; border-radius:5px; cursor:pointer;
+    touch-action:manipulation; font-family:sans-serif;
+}
 .row-uk .uk-nav.pressed { background:#1b1b1b; }
+.nav-n { grid-area:n; font-size:12px; pointer-events:none; }
+.nav-s { grid-area:s; font-size:12px; pointer-events:none; }
+.nav-w { grid-area:w; font-size:12px; pointer-events:none; }
+.nav-e { grid-area:e; font-size:12px; pointer-events:none; }
+.nav-nw { grid-area:nw; font-size:8px; color:#888; pointer-events:none; }
+.nav-ne { grid-area:ne; font-size:8px; color:#888; pointer-events:none; }
+.nav-sw { grid-area:sw; font-size:8px; color:#888; pointer-events:none; }
+.nav-se { grid-area:se; font-size:8px; color:#888; pointer-events:none; }
 .row-uk .uk-enter { flex:1.7 1 0; }
-.row-uk .space-key { flex:4.4 1 0; }
+.row-uk .space-key {
+    flex:4.4 1 0; position:relative;
+}
+.row-uk .space-key .sp-hint-l,
+.row-uk .space-key .sp-hint-r {
+    position:absolute; top:50%; transform:translateY(-50%);
+    font-size:11px; color:#555; pointer-events:none;
+}
+.row-uk .space-key .sp-hint-l { left:10px; }
+.row-uk .space-key .sp-hint-r { right:10px; }
 
 /* ============ TOUCHPAD ============ */
 .tp-panel.active { display:flex; flex-direction:column; }
@@ -141,13 +188,17 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
     .tp-btn.mid { flex:0.5; }
 }
 
-/* Landscape narrow — untouched */
+/* Landscape narrow */
 @media (orientation:landscape) and (max-width:900px) {
     .key { height:50px; font-size:20px; }
     .swipe-key { height:50px; }
+    .swipe-special { height:50px; }
     .sw-c { font-size:18px; }
+    .swipe-special .sw-c { font-size:14px; }
+    .swipe-special .sw-ne { font-size:9px; }
     .sw-nw,.sw-ne,.sw-sw,.sw-se { font-size:10px; }
     .swipe-key { grid-template-rows: 12px 1fr 12px; }
+    .swipe-special { grid-template-rows: 12px 1fr 12px; }
     .row { gap:3px; padding:2px 2px; }
     .row-scroll .key { height:38px; font-size:14px; }
     .tp-btn { height:32px; font-size:12px; }
@@ -156,6 +207,7 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
     .tp-area { min-height:120px; }
     .kb-panel { padding:4px 2px 6px 2px; }
     .row-uk .key { height:46px; }
+    .row-uk .uk-nav { height:46px; }
 }
 </style>
 </head>
@@ -193,6 +245,7 @@ const tp = { tracking:false, lastX:0, lastY:0, startX:0, startY:0, totalMove:0, 
 const SENSITIVITY = 1.5, SCROLL_SENS = 3;
 let compactPage = 'abc'; // 'abc' or 'sym'
 let fnActive = false;
+let capsLock = false;
 
 // ======================== ANDROID BRIDGE ========================
 const A = window.Android || {
@@ -256,12 +309,14 @@ const SWIPE = {
     'p': [null,'0',null,null],
     // Home row
     'a': ['Tab','`',null,null],
+    's': [null,'\u00A7','\u00DF',null],
     'g': [null,'-','_',null],
     'h': [null,'=','+',null],
     'j': [null,null,'{','}'],
     'k': [null,null,'[',']'],
     'l': [null,'|','\\',null],
     // Bottom letter row
+    'x': [null,'\u2020',null,null],
     'c': [null,'<','.',null],
     'v': [null,'>',',',null],
     'b': [null,'?','/',null],
@@ -349,16 +404,26 @@ function compactLetters() {
         <div class="row">${'qwertyuiop'.split('').map(SK).join('')}</div>
         <div class="row row-home">${'asdfghjkl'.split('').map(SK).join('')}</div>
         <div class="row row-shift">
-            ${M('shift','\u21E7','wide-key')}
+            <button class="key swipe-special uk-shift" data-mod="shift" id="shiftKey">
+                <span class="sw-ne">CapsLk</span>
+                <span class="sw-c">\u21E7</span>
+            </button>
             ${'zxcvbnm'.split('').map(SK).join('')}
-            ${K('Bksp','\u232B','wide-key')}
+            <button class="key swipe-special uk-bksp" data-key="Bksp" id="bkspKey">
+                <span class="sw-ne">Del</span>
+                <span class="sw-c">\u232B</span>
+            </button>
         </div>
         <div class="row row-bottom row-uk">
             <button class="key key-mod uk-ctrl" data-mod="ctrl">Ctrl</button>
             <button class="key uk-fn" id="fnToggle">Fn</button>
             ${M('alt','Alt')}
-            <button class="key space-key" data-key="Space"></button>
-            <button class="key uk-nav" id="navKey">\u25C6</button>
+            <button class="key space-key" data-key="Space"><span class="sp-hint-l">\u25C0</span><span class="sp-hint-r">\u25B6</span></button>
+            <button class="key uk-nav" id="navKey">
+                <span class="nav-nw">Hm</span><span class="nav-n">\u25B2</span><span class="nav-ne">PU</span>
+                <span class="nav-w">\u25C0</span><span style="grid-area:c;pointer-events:none"></span><span class="nav-e">\u25B6</span>
+                <span class="nav-sw">End</span><span class="nav-s">\u25BC</span><span class="nav-se">PD</span>
+            </button>
             ${K('Enter','\u21B5','uk-enter')}
         </div>`;
 }
@@ -465,9 +530,19 @@ function updateLayout() {
 
 // ======================== KEY EVENTS ========================
 function resetMods() {
-    mods.ctrl = mods.alt = mods.shift = mods.meta = false;
-    document.querySelectorAll('.key-mod').forEach(b => b.classList.remove('mod-active'));
-    kbPanel.classList.remove('shifted');
+    mods.ctrl = mods.alt = mods.meta = false;
+    mods.shift = capsLock; // Keep shift on if CapsLock active
+    document.querySelectorAll('.key-mod').forEach(b => {
+        if (b.dataset.mod === 'shift') {
+            b.classList.toggle('mod-active', capsLock);
+        } else {
+            b.classList.remove('mod-active');
+        }
+    });
+    // Also update swipe-special shift
+    const shBtn = document.getElementById('shiftKey');
+    if (shBtn) shBtn.classList.toggle('mod-active', capsLock);
+    kbPanel.classList.toggle('shifted', capsLock);
 }
 
 function toggleMod(mod) {
@@ -718,7 +793,7 @@ function attachKeyEvents() {
     }, {passive:true});
 
     // Special + symbol keys (data-key) — with haptic + long-press popup
-    kbPanel.querySelectorAll('.key[data-key]:not(.key-mod):not(.uk-nav)').forEach(btn => {
+    kbPanel.querySelectorAll('.key[data-key]:not(.key-mod):not(.uk-nav):not(.swipe-special)').forEach(btn => {
         const fireKey = () => {
             const key = btn.dataset.key;
             if (key === 'Space' && !mods.ctrl && !mods.alt && !mods.meta) {
@@ -823,14 +898,90 @@ function attachKeyEvents() {
         });
     });
 
-    // Modifiers (tap toggle)
-    kbPanel.querySelectorAll('.key-mod').forEach(btn => {
+    // Modifiers (tap toggle) — excludes swipe-special shift
+    kbPanel.querySelectorAll('.key-mod:not(.swipe-special)').forEach(btn => {
         btn.addEventListener('pointerdown', e => {
             e.preventDefault(); e.stopPropagation();
             haptic();
             toggleMod(btn.dataset.mod);
         });
     });
+
+    // Shift key (swipe-enabled): tap = toggle shift, NE swipe = CapsLock, double-tap = CapsLock
+    const shiftBtn = document.getElementById('shiftKey');
+    if (shiftBtn) {
+        let shStartX = 0, shStartY = 0, shLastTap = 0;
+        shiftBtn.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            haptic();
+            shiftBtn.classList.add('pressed');
+            shStartX = e.clientX; shStartY = e.clientY;
+        });
+        shiftBtn.addEventListener('pointerup', e => {
+            shiftBtn.classList.remove('pressed');
+            const dx = e.clientX - shStartX, dy = e.clientY - shStartY;
+            const dir = getSwipeDirection4(dx, dy);
+            if (dir === 1) {
+                // NE swipe → CapsLock (permanent shift)
+                capsLock = !capsLock;
+                mods.shift = capsLock;
+                shiftBtn.classList.toggle('mod-active', capsLock);
+                kbPanel.classList.toggle('shifted', capsLock);
+                document.querySelectorAll('.key-mod[data-mod="shift"]').forEach(b => b.classList.toggle('mod-active', capsLock));
+            } else {
+                // Tap → toggle shift (one-shot)
+                const now = Date.now();
+                if (now - shLastTap < 300) {
+                    // Double-tap → CapsLock
+                    capsLock = !capsLock;
+                    mods.shift = capsLock;
+                    shiftBtn.classList.toggle('mod-active', capsLock);
+                    kbPanel.classList.toggle('shifted', capsLock);
+                    shLastTap = 0;
+                } else {
+                    capsLock = false;
+                    toggleMod('shift');
+                    shLastTap = now;
+                }
+            }
+        });
+        shiftBtn.addEventListener('pointerleave', () => shiftBtn.classList.remove('pressed'));
+        shiftBtn.addEventListener('pointercancel', () => shiftBtn.classList.remove('pressed'));
+    }
+
+    // Backspace key (swipe-enabled): tap = Bksp + repeat, NE swipe = Delete
+    const bkspBtn = document.getElementById('bkspKey');
+    if (bkspBtn) {
+        let bkStartX = 0, bkStartY = 0, bkFired = false;
+        const fireBksp = () => {
+            A.sendKey(JSON.stringify({key:'Bksp', ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+        };
+        bkspBtn.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            haptic();
+            bkspBtn.classList.add('pressed');
+            bkStartX = e.clientX; bkStartY = e.clientY;
+            bkFired = true;
+            fireBksp();
+            startRepeat(fireBksp);
+        });
+        bkspBtn.addEventListener('pointerup', e => {
+            stopRepeat();
+            bkspBtn.classList.remove('pressed');
+            if (bkFired) {
+                const dx = e.clientX - bkStartX, dy = e.clientY - bkStartY;
+                const dir = getSwipeDirection4(dx, dy);
+                if (dir === 1) {
+                    // NE swipe → Delete (forward delete)
+                    A.sendKey(JSON.stringify({key:'Del', ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+                }
+                bkFired = false;
+                resetMods();
+            }
+        });
+        bkspBtn.addEventListener('pointerleave', () => { stopRepeat(); bkFired = false; bkspBtn.classList.remove('pressed'); });
+        bkspBtn.addEventListener('pointercancel', () => { stopRepeat(); bkFired = false; bkspBtn.classList.remove('pressed'); });
+    }
 
     // Fn toggle — re-render to show F-key labels
     const fnBtn = document.getElementById('fnToggle');
