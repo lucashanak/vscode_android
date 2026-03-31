@@ -55,8 +55,13 @@ class OverlayManager(
             javaScriptEnabled = true
             domStorageEnabled = true
             setSupportZoom(false)
+            builtInZoomControls = false
+            displayZoomControls = false
+            useWideViewPort = true
+            loadWithOverviewMode = false
             cacheMode = WebSettings.LOAD_NO_CACHE
         }
+        webView.setInitialScale(100)
         webView.setBackgroundColor(0xFF1E1E1E.toInt())
         webView.addJavascriptInterface(JSInterface(), "Android")
         webView.webViewClient = object : android.webkit.WebViewClient() {
