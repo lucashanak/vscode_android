@@ -346,8 +346,9 @@ const LAYOUTS = {
             'b': [null,'?','/',null],
             'n': [null,':',';',null],
             'm': [null,'"',"'",null],
-            // Number keys (for wide layout number row)
-            '1': ['Esc','F1','!',null],
+            // Number row keys (wide layout)
+            '`': ['Esc',null,'~',null],
+            '1': [null,'F1','!',null],
             '2': [null,'F2','@',null],
             '3': [null,'F3','#',null],
             '4': [null,'F4','$',null],
@@ -356,7 +357,9 @@ const LAYOUTS = {
             '7': [null,'F7','&',null],
             '8': [null,'F8','*',null],
             '9': [null,'F9','(',null],
-            '0': ['Ins','F10',')',null],
+            '0': [null,'F10',')',null],
+            '-': [null,'F11','_',null],
+            '=': [null,'F12','+',null],
         }
     },
     'cz': {
@@ -385,8 +388,9 @@ const LAYOUTS = {
             'b': ['<','>','{','}'],
             'n': ['?','.',',','\u0148'],
             'm': [':','*','-','_'],
-            // Number keys (for wide layout number row)
-            '1': ['Esc','F1','!',null],
+            // Number row keys (wide layout)
+            '`': ['Esc',null,'~',null],
+            '1': [null,'F1','!',null],
             '2': [null,'F2','@',null],
             '3': [null,'F3','#',null],
             '4': [null,'F4','$',null],
@@ -395,7 +399,9 @@ const LAYOUTS = {
             '7': [null,'F7','&',null],
             '8': [null,'F8','*',null],
             '9': [null,'F9','(',null],
-            '0': ['Ins','F10',')',null],
+            '0': [null,'F10',')',null],
+            '-': [null,'F11','_',null],
+            '=': [null,'F12','+',null],
         }
     }
 };
@@ -533,7 +539,11 @@ function compactSymbols() {
 function fullKB() {
     return `
         <div class="row">
-            ${K('`','`')} ${'1234567890'.split('').map(d=>SK(d)).join('')} ${K('-','-')} ${K('=','=')} ${K('Bksp','\u232B','xwide-key')}
+            ${SK('`')} ${'1234567890'.split('').map(d=>SK(d)).join('')} ${SK('-')} ${SK('=')}
+            <button class="key swipe-special uk-bksp xwide-key" data-key="Bksp" id="wideBkspKey">
+                <span class="sw-nw" style="font-size:12px">Ins</span><span class="sw-ne" style="font-size:12px">Del</span>
+                <span class="sw-c">\u232B</span>
+            </button>
             ${SEP('nav-sep')} ${K('Home','Hm','nav-key')} ${K('PgUp','PU','nav-key')}
         </div>
         <div class="row">
@@ -542,7 +552,7 @@ function fullKB() {
             ${SEP('nav-sep')} ${K('End','End','nav-key')} ${K('PgDn','PD','nav-key')}
         </div>
         <div class="row">
-            <div class="key xwide-key key-mod" style="opacity:0.3;font-size:11px">Caps</div> ${'asdfghjkl'.split('').map(SK).join('')}
+            <button class="key xwide-key key-mod" data-mod="shift" id="wideCapsKey" style="font-size:11px">Caps</button> ${'asdfghjkl'.split('').map(SK).join('')}
             ${K(';',';')} ${K("'","'")} ${K('Enter','\u21B5','xwide-key')}
         </div>
         <div class="row">
@@ -878,7 +888,7 @@ function attachKeyEvents() {
     }, {passive:true});
 
     // Special + symbol keys (data-key) — with haptic + long-press popup
-    kbPanel.querySelectorAll('.key[data-key]:not(.key-mod):not(.uk-nav):not(.swipe-special)').forEach(btn => {
+    kbPanel.querySelectorAll('.key[data-key]:not(.key-mod):not(.uk-nav):not(.swipe-special):not(#wideBkspKey)').forEach(btn => {
         const fireKey = () => {
             const key = btn.dataset.key;
             if (key === 'Space' && !mods.ctrl && !mods.alt && !mods.meta) {
@@ -1000,7 +1010,7 @@ function attachKeyEvents() {
     });
 
     // Modifiers (tap toggle) — excludes swipe-special shift and swipe-enabled ctrl
-    kbPanel.querySelectorAll('.key-mod:not(.swipe-special):not(.uk-ctrl)').forEach(btn => {
+    kbPanel.querySelectorAll('.key-mod:not(.swipe-special):not(.uk-ctrl):not(#wideCapsKey)').forEach(btn => {
         btn.addEventListener('pointerdown', e => {
             e.preventDefault(); e.stopPropagation();
             haptic();
@@ -1112,6 +1122,47 @@ function attachKeyEvents() {
         });
         bkspBtn.addEventListener('pointerleave', () => { stopRepeat(); bkFired = false; bkspBtn.classList.remove('pressed'); });
         bkspBtn.addEventListener('pointercancel', () => { stopRepeat(); bkFired = false; bkspBtn.classList.remove('pressed'); });
+    }
+
+    // Wide layout: Caps key — tap toggles CapsLock
+    const wideCaps = document.getElementById('wideCapsKey');
+    if (wideCaps) {
+        wideCaps.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            haptic();
+            capsLock = !capsLock;
+            mods.shift = capsLock;
+            wideCaps.classList.toggle('mod-active', capsLock);
+            kbPanel.classList.toggle('shifted', capsLock);
+            document.querySelectorAll('.key-mod[data-mod="shift"]').forEach(b => b.classList.toggle('mod-active', capsLock));
+        });
+    }
+
+    // Wide layout: Bksp with NW=Ins, NE=Del swipe
+    const wideBksp = document.getElementById('wideBkspKey');
+    if (wideBksp) {
+        let wbStartX = 0, wbStartY = 0, wbFired = false;
+        const fireWbBksp = () => {
+            A.sendKey(JSON.stringify({key:'Bksp', ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+        };
+        wideBksp.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            haptic(); wideBksp.classList.add('pressed');
+            wbStartX = e.clientX; wbStartY = e.clientY;
+            wbFired = true; fireWbBksp(); startRepeat(fireWbBksp);
+        });
+        wideBksp.addEventListener('pointerup', e => {
+            stopRepeat(); wideBksp.classList.remove('pressed');
+            if (wbFired) {
+                const dx = e.clientX - wbStartX, dy = e.clientY - wbStartY;
+                const dir = getSwipeDirection4(dx, dy);
+                if (dir === 0) A.sendKey(JSON.stringify({key:'Ins', ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+                else if (dir === 1) A.sendKey(JSON.stringify({key:'Del', ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+                wbFired = false; resetMods();
+            }
+        });
+        wideBksp.addEventListener('pointerleave', () => { stopRepeat(); wbFired = false; wideBksp.classList.remove('pressed'); });
+        wideBksp.addEventListener('pointercancel', () => { stopRepeat(); wbFired = false; wideBksp.classList.remove('pressed'); });
     }
 
     // Fn toggle — re-render to show F-key labels
