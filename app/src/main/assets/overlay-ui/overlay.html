@@ -149,13 +149,13 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 .row-uk .space-key {
     flex:4.4 1 0; position:relative;
 }
-.row-uk .space-key .sp-hint-l,
-.row-uk .space-key .sp-hint-r {
+.space-key .sp-hint-l,
+.space-key .sp-hint-r {
     position:absolute; top:50%; transform:translateY(-50%);
     font-size:17px; color:#555; pointer-events:none;
 }
-.row-uk .space-key .sp-hint-l { left:10px; }
-.row-uk .space-key .sp-hint-r { right:10px; }
+.space-key .sp-hint-l { left:10px; }
+.space-key .sp-hint-r { right:10px; }
 
 /* ============ TOUCHPAD ============ */
 .tp-panel.active { display:flex; flex-direction:column; }
@@ -365,6 +365,15 @@ const LAYOUTS = {
             '0': [null,'F10',')',null],
             '-': [null,'F11','_',null],
             '=': [null,'F12','+',null],
+            // Symbol keys (wide layout)
+            '[': [null,'{',null,null],
+            ']': [null,'}',null,null],
+            '\\': [null,'|',null,null],
+            ';': [null,':',null,null],
+            "'": [null,'"','`',null],
+            ',': [null,'<',null,null],
+            '.': [null,'>',null,null],
+            '/': [null,'?',null,null],
         }
     },
     'cz': {
@@ -407,6 +416,15 @@ const LAYOUTS = {
             '0': [null,'F10',')',null],
             '-': [null,'F11','_',null],
             '=': [null,'F12','+',null],
+            // Symbol keys (wide layout)
+            '[': [null,'{',null,null],
+            ']': [null,'}',null,null],
+            '\\': [null,'|',null,null],
+            ';': [null,':',null,null],
+            "'": [null,'"','`',null],
+            ',': [null,'<',null,null],
+            '.': [null,'>',null,null],
+            '/': [null,'?',null,null],
         }
     }
 };
@@ -543,33 +561,40 @@ function compactSymbols() {
 // ======================== WIDE: PC KEYBOARD ========================
 function fullKB() {
     return `
+        ${quickActions()}
         <div class="row">
             ${SK('`')} ${'1234567890'.split('').map(d=>SK(d)).join('')} ${SK('-')} ${SK('=')}
             <button class="key swipe-special uk-bksp xwide-key" data-key="Bksp" id="wideBkspKey">
-                <span class="sw-nw" style="font-size:12px">Ins</span><span class="sw-ne" style="font-size:12px">Del</span>
+                <span class="sw-nw">Ins</span><span class="sw-ne">Del</span>
                 <span class="sw-c">\u232B</span>
+                <span class="sw-sw">Hm</span><span class="sw-se">End</span>
             </button>
-            ${SEP('nav-sep')} ${K('Home','Hm','nav-key')} ${K('PgUp','PU','nav-key')}
         </div>
         <div class="row">
-            ${K('Tab','Tab','wide-key')} ${'qwertyuiop'.split('').map(SK).join('')}
-            ${K('[','[')} ${K(']',']')} ${K('\\','\\')}
-            ${SEP('nav-sep')} ${K('End','End','nav-key')} ${K('PgDn','PD','nav-key')}
+            <button class="key swipe-special wide-key" data-key="Tab" id="wideTabKey">
+                <span class="sw-ne">Esc</span>
+                <span class="sw-c">Tab</span>
+            </button>
+            ${'qwertyuiop'.split('').map(SK).join('')}
+            ${SK('[')} ${SK(']')} ${SK('\\')}
         </div>
         <div class="row">
-            <button class="key xwide-key key-mod" data-mod="shift" id="wideCapsKey" style="font-size:11px">Caps</button> ${'asdfghjkl'.split('').map(SK).join('')}
-            ${K(';',';')} ${K("'","'")} ${K('Enter','\u21B5','xwide-key')}
+            <button class="key xwide-key key-mod" data-mod="shift" id="wideCapsKey">Caps</button> ${'asdfghjkl'.split('').map(SK).join('')}
+            ${SK(';')} ${SK("'")}
         </div>
         <div class="row">
             ${M('shift','\u21E7','xwide-key')} ${'zxcvbnm'.split('').map(SK).join('')}
-            ${K(',',',')} ${K('.','.') } ${K('/','/') } ${M('shift','\u21E7','xwide-key')}
-            ${SEP('nav-sep')} ${K('Up','\u25B2','nav-key')}
+            ${SK(',')} ${SK('.')} ${SK('/')} ${M('shift','\u21E7','xwide-key')}
         </div>
         <div class="row">
             ${M('ctrl','Ctrl','wide-key')} ${M('alt','Alt','wide-key')} ${M('meta','Win','wide-key')}
-            <button class="key space-key" data-key="Space">&nbsp;</button>
-            ${M('alt','Alt','wide-key')} ${M('ctrl','Ctrl','wide-key')}
-            ${SEP('nav-sep')} ${K('Left','\u25C0','nav-key')} ${K('Down','\u25BC','nav-key')} ${K('Right','\u25B6','nav-key')}
+            <button class="key space-key" data-key="Space"><span class="sp-hint-l">\u25C0</span><span class="sp-hint-r">\u25B6</span></button>
+            <button class="key wide-key" id="wideFnToggle" style="font-size:18px;color:#ccc;background:#333">Fn</button>
+            <button class="key swipe-special xwide-key" data-key="Enter" id="wideEnterKey">
+                <span class="sw-nw">PU</span><span class="sw-ne">PD</span>
+                <span class="sw-c">\u21B5</span>
+            </button>
+            ${K('Left','\u25C0','nav-key')} ${K('Down','\u25BC','nav-key')} ${K('Up','\u25B2','nav-key')} ${K('Right','\u25B6','nav-key')}
         </div>`;
 }
 
@@ -893,7 +918,7 @@ function attachKeyEvents() {
     }, {passive:true});
 
     // Special + symbol keys (data-key) — with haptic + long-press popup
-    kbPanel.querySelectorAll('.key[data-key]:not(.key-mod):not(.uk-nav):not(.swipe-special):not(#wideBkspKey)').forEach(btn => {
+    kbPanel.querySelectorAll('.key[data-key]:not(.key-mod):not(.uk-nav):not(.swipe-special):not(#wideBkspKey):not(#wideTabKey):not(#wideEnterKey)').forEach(btn => {
         const fireKey = () => {
             const key = btn.dataset.key;
             if (key === 'Space' && !mods.ctrl && !mods.alt && !mods.meta) {
@@ -1129,27 +1154,31 @@ function attachKeyEvents() {
         bkspBtn.addEventListener('pointercancel', () => { stopRepeat(); bkFired = false; bkspBtn.classList.remove('pressed'); });
     }
 
-    // Wide layout: Caps key — tap toggles CapsLock
+    // Wide layout: Caps key — tap toggles CapsLock with visual text
     const wideCaps = document.getElementById('wideCapsKey');
     if (wideCaps) {
+        // Restore state after re-render
+        if (capsLock) { wideCaps.classList.add('mod-active'); wideCaps.textContent = 'CAPS'; }
         wideCaps.addEventListener('pointerdown', e => {
             e.preventDefault(); e.stopPropagation();
             haptic();
             capsLock = !capsLock;
             mods.shift = capsLock;
             wideCaps.classList.toggle('mod-active', capsLock);
+            wideCaps.textContent = capsLock ? 'CAPS' : 'Caps';
             kbPanel.classList.toggle('shifted', capsLock);
             document.querySelectorAll('.key-mod[data-mod="shift"]').forEach(b => b.classList.toggle('mod-active', capsLock));
         });
     }
 
-    // Wide layout: Bksp with NW=Ins, NE=Del swipe
+    // Wide layout: Bksp with NW=Ins, NE=Del, SW=Home, SE=End
     const wideBksp = document.getElementById('wideBkspKey');
     if (wideBksp) {
         let wbStartX = 0, wbStartY = 0, wbFired = false;
         const fireWbBksp = () => {
             A.sendKey(JSON.stringify({key:'Bksp', ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
         };
+        const WB_SWIPE = ['Ins','Del','Home','End']; // NW, NE, SW, SE
         wideBksp.addEventListener('pointerdown', e => {
             e.preventDefault(); e.stopPropagation();
             haptic(); wideBksp.classList.add('pressed');
@@ -1161,13 +1190,74 @@ function attachKeyEvents() {
             if (wbFired) {
                 const dx = e.clientX - wbStartX, dy = e.clientY - wbStartY;
                 const dir = getSwipeDirection4(dx, dy);
-                if (dir === 0) A.sendKey(JSON.stringify({key:'Ins', ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
-                else if (dir === 1) A.sendKey(JSON.stringify({key:'Del', ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+                if (dir >= 0 && WB_SWIPE[dir]) {
+                    A.sendKey(JSON.stringify({key:WB_SWIPE[dir], ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+                }
                 wbFired = false; resetMods();
             }
         });
         wideBksp.addEventListener('pointerleave', () => { stopRepeat(); wbFired = false; wideBksp.classList.remove('pressed'); });
         wideBksp.addEventListener('pointercancel', () => { stopRepeat(); wbFired = false; wideBksp.classList.remove('pressed'); });
+    }
+
+    // Wide layout: Tab with NE=Esc
+    const wideTab = document.getElementById('wideTabKey');
+    if (wideTab) {
+        let wtStartX = 0, wtStartY = 0;
+        wideTab.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            haptic(); wideTab.classList.add('pressed');
+            wtStartX = e.clientX; wtStartY = e.clientY;
+        });
+        wideTab.addEventListener('pointerup', e => {
+            wideTab.classList.remove('pressed');
+            const dx = e.clientX - wtStartX, dy = e.clientY - wtStartY;
+            const dir = getSwipeDirection4(dx, dy);
+            const key = (dir === 1) ? 'Esc' : 'Tab';
+            A.sendKey(JSON.stringify({key, ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+            resetMods();
+        });
+        wideTab.addEventListener('pointerleave', () => wideTab.classList.remove('pressed'));
+        wideTab.addEventListener('pointercancel', () => wideTab.classList.remove('pressed'));
+    }
+
+    // Wide layout: Enter with NW=PgUp, NE=PgDn + repeat
+    const wideEnter = document.getElementById('wideEnterKey');
+    if (wideEnter) {
+        let weStartX = 0, weStartY = 0;
+        const fireEnter = () => {
+            A.sendKey(JSON.stringify({key:'Enter', ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+        };
+        wideEnter.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            haptic(); wideEnter.classList.add('pressed');
+            weStartX = e.clientX; weStartY = e.clientY;
+            fireEnter(); startRepeat(fireEnter);
+        });
+        wideEnter.addEventListener('pointerup', e => {
+            stopRepeat(); wideEnter.classList.remove('pressed');
+            const dx = e.clientX - weStartX, dy = e.clientY - weStartY;
+            const dir = getSwipeDirection4(dx, dy);
+            if (dir === 0) A.sendKey(JSON.stringify({key:'PgUp', ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+            else if (dir === 1) A.sendKey(JSON.stringify({key:'PgDn', ctrl:mods.ctrl, alt:mods.alt, shift:mods.shift, meta:mods.meta}));
+            resetMods();
+        });
+        wideEnter.addEventListener('pointerleave', () => { stopRepeat(); wideEnter.classList.remove('pressed'); });
+        wideEnter.addEventListener('pointercancel', () => { stopRepeat(); wideEnter.classList.remove('pressed'); });
+    }
+
+    // Wide layout: Fn toggle
+    const wideFn = document.getElementById('wideFnToggle');
+    if (wideFn) {
+        if (fnActive) wideFn.classList.add('mod-active');
+        wideFn.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            haptic();
+            fnActive = !fnActive;
+            // Re-render wide layout to update swipe labels (attachKeyEvents restores Fn visual)
+            kbPanel.innerHTML = fullKB();
+            attachKeyEvents();
+        });
     }
 
     // Fn toggle — re-render to show F-key labels
