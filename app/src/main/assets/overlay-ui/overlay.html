@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; }
+html { background:#1b1b1b; height:auto; overflow:visible; }
+body { background:#1b1b1b; height:auto; overflow:visible; touch-action:none; user-select:none; -webkit-user-select:none; }
 
 /* Toolbar */
 .toolbar { display:flex; align-items:center; gap:6px; padding:6px 10px; background:#1b1b1b; border-bottom:1px solid #333; }
@@ -111,7 +112,17 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
 /* Unexpected Keyboard style bottom row */
 .row-uk { gap:4px; padding:2px 3px; }
 .row-uk .key { height:76px; font-size:14px; }
-.row-uk .uk-ctrl { flex:1.7 1 0; }
+.row-uk .uk-ctrl {
+    flex:1.7 1 0; padding:0;
+    display:grid;
+    grid-template-areas: "nw ne" "c c" "sw se";
+    grid-template-rows: 18px 1fr 18px;
+    grid-template-columns: 1fr 1fr;
+    align-items:center; justify-items:center;
+}
+.row-uk .uk-ctrl .sw-c { grid-area:c; font-size:14px; pointer-events:none; }
+.row-uk .uk-ctrl .sw-sw { grid-area:sw; justify-self:start; padding-left:4px; font-size:10px; color:#888; pointer-events:none; }
+.row-uk .uk-ctrl .sw-se { grid-area:se; justify-self:end; padding-right:4px; font-size:10px; color:#888; pointer-events:none; }
 .row-uk .uk-fn { flex:1.1 1 0; font-size:14px; background:#333; color:#ccc; border:none; border-bottom:1px solid #404040; border-radius:5px; cursor:pointer; touch-action:manipulation; }
 .row-uk .uk-fn.mod-active { background:#1b1b1b; color:#3399ff; }
 .row-uk .uk-nav {
@@ -450,7 +461,11 @@ function compactLetters() {
             </button>
         </div>
         <div class="row row-bottom row-uk">
-            <button class="key key-mod uk-ctrl" data-mod="ctrl">Ctrl</button>
+            <button class="key key-mod uk-ctrl" data-mod="ctrl" id="ctrlKey">
+                <span class="sw-c">Ctrl</span>
+                <span class="sw-sw">Clip</span>
+                <span class="sw-se">?123</span>
+            </button>
             <button class="key uk-fn" id="fnToggle">Fn</button>
             ${M('alt','Alt')}
             <button class="key space-key" data-key="Space"><span class="sp-hint-l">\u25C0</span><span class="sp-hint-r">\u25B6</span></button>
@@ -933,14 +948,44 @@ function attachKeyEvents() {
         });
     });
 
-    // Modifiers (tap toggle) — excludes swipe-special shift
-    kbPanel.querySelectorAll('.key-mod:not(.swipe-special)').forEach(btn => {
+    // Modifiers (tap toggle) — excludes swipe-special shift and swipe-enabled ctrl
+    kbPanel.querySelectorAll('.key-mod:not(.swipe-special):not(.uk-ctrl)').forEach(btn => {
         btn.addEventListener('pointerdown', e => {
             e.preventDefault(); e.stopPropagation();
             haptic();
             toggleMod(btn.dataset.mod);
         });
     });
+
+    // Ctrl key (swipe-enabled): tap = toggle ctrl, SW = clipboard, SE = ?123 symbols
+    const ctrlBtn = document.getElementById('ctrlKey');
+    if (ctrlBtn) {
+        let ctStartX = 0, ctStartY = 0;
+        ctrlBtn.addEventListener('pointerdown', e => {
+            e.preventDefault(); e.stopPropagation();
+            haptic();
+            ctrlBtn.classList.add('pressed');
+            ctStartX = e.clientX; ctStartY = e.clientY;
+        });
+        ctrlBtn.addEventListener('pointerup', e => {
+            ctrlBtn.classList.remove('pressed');
+            const dx = e.clientX - ctStartX, dy = e.clientY - ctStartY;
+            const dir = getSwipeDirection4(dx, dy);
+            if (dir === 2) {
+                // SW swipe → show clipboard popup
+                showClipPopupAt(ctrlBtn.getBoundingClientRect());
+            } else if (dir === 3) {
+                // SE swipe → toggle ?123 symbols page
+                compactPage = compactPage === 'abc' ? 'sym' : 'abc';
+                renderCompact();
+            } else {
+                // Tap → toggle Ctrl modifier
+                toggleMod('ctrl');
+            }
+        });
+        ctrlBtn.addEventListener('pointerleave', () => ctrlBtn.classList.remove('pressed'));
+        ctrlBtn.addEventListener('pointercancel', () => ctrlBtn.classList.remove('pressed'));
+    }
 
     // Shift key (swipe-enabled): tap = toggle shift, NE swipe = CapsLock, double-tap = CapsLock
     const shiftBtn = document.getElementById('shiftKey');
@@ -1083,8 +1128,7 @@ document.addEventListener('pointerdown', e => {
 
 // ======================== CLIPBOARD POPUP ========================
 const clipPopup = document.getElementById('clipPopup');
-document.getElementById('clipBtn').addEventListener('pointerdown', e => {
-    e.preventDefault();
+function showClipPopupAt(rect) {
     if (clipPopup.style.display === 'block') { clipPopup.style.display = 'none'; return; }
     clipPopup.innerHTML = '';
     if (clipHistory.length === 0) {
@@ -1102,14 +1146,18 @@ document.getElementById('clipBtn').addEventListener('pointerdown', e => {
             clipPopup.appendChild(item);
         });
     }
-    const rect = e.target.getBoundingClientRect();
     clipPopup.style.left = Math.max(4, rect.left) + 'px';
-    clipPopup.style.top = (rect.bottom + 4) + 'px';
+    clipPopup.style.top = (rect.top - 8) + 'px';
+    clipPopup.style.transform = 'translateY(-100%)';
     clipPopup.style.display = 'block';
+}
+document.getElementById('clipBtn').addEventListener('pointerdown', e => {
+    e.preventDefault();
+    showClipPopupAt(e.target.getBoundingClientRect());
 });
 document.addEventListener('pointerdown', e => {
-    if (clipPopup.style.display === 'block' && !clipPopup.contains(e.target) && e.target.id !== 'clipBtn')
-        clipPopup.style.display = 'none';
+    if (clipPopup.style.display === 'block' && !clipPopup.contains(e.target) && e.target.id !== 'clipBtn' && e.target.id !== 'ctrlKey' && !e.target.closest('#ctrlKey'))
+        { clipPopup.style.display = 'none'; clipPopup.style.transform = ''; }
 }, {passive:true});
 
 // ======================== TOUCHPAD ========================
