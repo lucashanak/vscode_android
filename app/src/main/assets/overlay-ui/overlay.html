@@ -25,7 +25,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 .row-shift { padding-left:2px; padding-right:2px; }
 
 .key {
-    flex:1 1 0; min-width:0; height:105px; padding:0 2px;
+    flex:1 1 0; min-width:0; height:95px; padding:0 2px;
     font-size:28px; font-weight:400;
     font-family:sans-serif;
     background:#333; color:#fff;
@@ -50,7 +50,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* Bottom row */
 .row-bottom { gap:4px; padding:1px 3px; }
-.row-bottom .key { height:98px; }
+.row-bottom .key { height:88px; }
 
 /* F-key row styling (wide layout) */
 .fn-row { gap:1px; padding:1px 2px; }
@@ -68,7 +68,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* ============ SWIPE KEYS (Unexpected Keyboard style) ============ */
 .swipe-key {
-    position:relative; flex:1 1 0; height:105px; padding:0;
+    position:relative; flex:1 1 0; height:95px; padding:0;
     display:grid;
     grid-template-areas: "nw ne" "c c" "sw se";
     grid-template-rows: 24px 1fr 24px;
@@ -90,7 +90,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* Swipe-enabled special keys (Shift, Backspace) — UK style */
 .swipe-special {
-    position:relative; height:105px; padding:0;
+    position:relative; height:95px; padding:0;
     display:grid;
     grid-template-areas: "nw ne" "c c" "sw se";
     grid-template-rows: 24px 1fr 24px;
@@ -110,7 +110,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* Unexpected Keyboard style bottom row */
 .row-uk { gap:4px; padding:1px 3px; }
-.row-uk .key { height:98px; font-size:22px; }
+.row-uk .key { height:88px; font-size:22px; }
 .row-uk .uk-ctrl {
     flex:1.7 1 0; padding:0;
     display:grid;
@@ -165,9 +165,9 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 .tp-btn:active { background:#1b1b1b; }
 
 /* Quick action bar above keyboard */
-.action-bar { display:flex; gap:4px; padding:3px 3px; overflow-x:auto; scrollbar-width:none; }
+.action-bar { display:flex; gap:4px; padding:3px 3px; overflow-x:auto; scrollbar-width:none; touch-action:pan-x; -webkit-overflow-scrolling:touch; }
 .action-bar::-webkit-scrollbar { display:none; }
-.action-btn { flex:0 0 auto; padding:8px 16px; font-size:18px; font-weight:500; font-family:sans-serif; background:rgba(51,153,255,0.15); color:#3399ff; border:none; border-radius:4px; cursor:pointer; white-space:nowrap; touch-action:manipulation; }
+.action-btn { flex:0 0 auto; padding:8px 16px; font-size:18px; font-weight:500; font-family:sans-serif; background:rgba(51,153,255,0.15); color:#3399ff; border:none; border-radius:4px; cursor:pointer; white-space:nowrap; touch-action:pan-x; }
 .action-btn:active { background:rgba(51,153,255,0.35); }
 
 /* Diacritics popup */
@@ -1289,7 +1289,10 @@ document.getElementById('hideBtn').addEventListener('pointerdown', e => {
 });
 
 // Prevent focus stealing
-document.addEventListener('touchstart', e => e.preventDefault(), {passive:false});
+document.addEventListener('touchstart', e => {
+    if (e.target.closest('.action-bar')) return; // allow scroll on action bar
+    e.preventDefault();
+}, {passive:false});
 document.addEventListener('mousedown', e => e.preventDefault());
 
 // ======================== SYNC TP HEIGHT TO KB HEIGHT ========================
