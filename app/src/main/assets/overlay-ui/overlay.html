@@ -25,8 +25,8 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 .row-shift { padding-left:2px; padding-right:2px; }
 
 .key {
-    flex:1 1 0; min-width:0; height:130px; padding:0 2px;
-    font-size:32px; font-weight:400;
+    flex:1 1 0; min-width:0; height:105px; padding:0 2px;
+    font-size:28px; font-weight:400;
     font-family:sans-serif;
     background:#333; color:#fff;
     border:none; border-bottom:1px solid #404040; border-radius:5px;
@@ -50,7 +50,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* Bottom row */
 .row-bottom { gap:4px; padding:1px 3px; }
-.row-bottom .key { height:120px; }
+.row-bottom .key { height:98px; }
 
 /* F-key row styling (wide layout) */
 .fn-row { gap:1px; padding:1px 2px; }
@@ -68,10 +68,10 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* ============ SWIPE KEYS (Unexpected Keyboard style) ============ */
 .swipe-key {
-    position:relative; flex:1 1 0; height:130px; padding:0;
+    position:relative; flex:1 1 0; height:105px; padding:0;
     display:grid;
     grid-template-areas: "nw ne" "c c" "sw se";
-    grid-template-rows: 28px 1fr 28px;
+    grid-template-rows: 24px 1fr 24px;
     grid-template-columns: 1fr 1fr;
     align-items:center; justify-items:center;
     background:#333; color:#fff;
@@ -80,8 +80,8 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
     font-family:sans-serif;
 }
 .swipe-key:active, .swipe-key.pressed { background:#1b1b1b; }
-.sw-c { grid-area:c; font-size:32px; font-weight:400; pointer-events:none; }
-.sw-nw,.sw-ne,.sw-sw,.sw-se { font-size:20px; color:#ccc; pointer-events:none; line-height:1; }
+.sw-c { grid-area:c; font-size:28px; font-weight:400; pointer-events:none; }
+.sw-nw,.sw-ne,.sw-sw,.sw-se { font-size:18px; color:#ccc; pointer-events:none; line-height:1; }
 .sw-nw { grid-area:nw; justify-self:start; padding-left:4px; }
 .sw-ne { grid-area:ne; justify-self:end; padding-right:4px; }
 .sw-sw { grid-area:sw; justify-self:start; padding-left:4px; }
@@ -90,10 +90,10 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* Swipe-enabled special keys (Shift, Backspace) — UK style */
 .swipe-special {
-    position:relative; height:130px; padding:0;
+    position:relative; height:105px; padding:0;
     display:grid;
     grid-template-areas: "nw ne" "c c" "sw se";
-    grid-template-rows: 28px 1fr 28px;
+    grid-template-rows: 24px 1fr 24px;
     grid-template-columns: 1fr 1fr;
     align-items:center; justify-items:center;
     background:#333; color:#ccc;
@@ -110,12 +110,12 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* Unexpected Keyboard style bottom row */
 .row-uk { gap:4px; padding:1px 3px; }
-.row-uk .key { height:120px; font-size:22px; }
+.row-uk .key { height:98px; font-size:22px; }
 .row-uk .uk-ctrl {
     flex:1.7 1 0; padding:0;
     display:grid;
     grid-template-areas: "nw ne" "c c" "sw se";
-    grid-template-rows: 28px 1fr 28px;
+    grid-template-rows: 24px 1fr 24px;
     grid-template-columns: 1fr 1fr;
     align-items:center; justify-items:center;
 }
@@ -167,13 +167,13 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 /* Quick action bar above keyboard */
 .action-bar { display:flex; gap:4px; padding:3px 3px; overflow-x:auto; scrollbar-width:none; }
 .action-bar::-webkit-scrollbar { display:none; }
-.action-btn { flex:0 0 auto; padding:10px 18px; font-size:20px; font-weight:500; font-family:sans-serif; background:rgba(51,153,255,0.15); color:#3399ff; border:none; border-radius:4px; cursor:pointer; white-space:nowrap; touch-action:manipulation; }
+.action-btn { flex:0 0 auto; padding:8px 16px; font-size:18px; font-weight:500; font-family:sans-serif; background:rgba(51,153,255,0.15); color:#3399ff; border:none; border-radius:4px; cursor:pointer; white-space:nowrap; touch-action:manipulation; }
 .action-btn:active { background:rgba(51,153,255,0.35); }
 
 /* Diacritics popup */
 #diacPopup { position:fixed; display:none; background:#333; border:1px solid #404040; border-radius:5px; padding:4px; z-index:300; box-shadow:0 4px 16px rgba(0,0,0,0.6); }
 #diacPopup .diac-row { display:flex; gap:3px; }
-.diac-key { min-width:44px; padding:0 5px; height:80px; font-size:32px; font-family:sans-serif; background:#1b1b1b; color:#fff; border:none; border-radius:5px; cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation; }
+.diac-key { min-width:44px; padding:0 5px; height:68px; font-size:28px; font-family:sans-serif; background:#1b1b1b; color:#fff; border:none; border-radius:5px; cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation; }
 .diac-key:active { background:#3399ff; }
 
 /* Clipboard history popup */
