@@ -23,6 +23,8 @@ object AppSettings {
     private const val KEY_CONNECT_TIMEOUT = "ssh_connect_timeout"
     private const val KEY_COMPACT_KEY_HEIGHT = "compact_key_height"
     private const val KEY_WIDE_KEY_HEIGHT = "wide_key_height"
+    private const val KEY_TP_SENSITIVITY = "tp_sensitivity"
+    private const val KEY_TP_SCROLL_SPEED = "tp_scroll_speed"
 
     private fun prefs(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -51,6 +53,14 @@ object AppSettings {
     var Context.wideKeyHeight: Int
         get() = prefs(this).getInt(KEY_WIDE_KEY_HEIGHT, 72)
         set(value) = prefs(this).edit().putInt(KEY_WIDE_KEY_HEIGHT, value).apply()
+
+    var Context.tpSensitivity: Int
+        get() = prefs(this).getInt(KEY_TP_SENSITIVITY, 150)
+        set(value) = prefs(this).edit().putInt(KEY_TP_SENSITIVITY, value).apply()
+
+    var Context.tpScrollSpeed: Int
+        get() = prefs(this).getInt(KEY_TP_SCROLL_SPEED, 300)
+        set(value) = prefs(this).edit().putInt(KEY_TP_SCROLL_SPEED, value).apply()
 
     // --- Appearance ---
     var Context.terminalFontSize: Int

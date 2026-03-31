@@ -53,6 +53,8 @@ import com.vscodetunnel.app.AppSettings.biometricLockEnabled
 import com.vscodetunnel.app.AppSettings.vscodeZoomPercent
 import com.vscodetunnel.app.AppSettings.compactKeyHeight
 import com.vscodetunnel.app.AppSettings.wideKeyHeight
+import com.vscodetunnel.app.AppSettings.tpSensitivity
+import com.vscodetunnel.app.AppSettings.tpScrollSpeed
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 
@@ -1448,6 +1450,12 @@ class MainActivity : AppCompatActivity() {
         label("Wide/tablet key height (px, default 72)")
         val wideHeightField = field("72", wideKeyHeight.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
         layout.addView(wideHeightField)
+        label("Touchpad sensitivity % (default 150)")
+        val tpSensField = field("150", tpSensitivity.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
+        layout.addView(tpSensField)
+        label("Touchpad scroll speed % (default 300, lower=slower)")
+        val tpScrollField = field("300", tpScrollSpeed.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
+        layout.addView(tpScrollField)
 
         // === SSH DEFAULTS ===
         section("SSH Defaults")
@@ -1504,6 +1512,8 @@ class MainActivity : AppCompatActivity() {
             keyRepeatRate = repeatRateField.text.toString().toIntOrNull() ?: 50
             compactKeyHeight = (compactHeightField.text.toString().toIntOrNull() ?: 82).coerceIn(40, 200)
             wideKeyHeight = (wideHeightField.text.toString().toIntOrNull() ?: 72).coerceIn(30, 150)
+            tpSensitivity = (tpSensField.text.toString().toIntOrNull() ?: 150).coerceIn(10, 500)
+            tpScrollSpeed = (tpScrollField.text.toString().toIntOrNull() ?: 300).coerceIn(10, 1000)
             // SSH
             defaultSshPort = portField.text.toString().toIntOrNull() ?: 22
             defaultSshUser = userField.text.toString().trim()
@@ -1529,6 +1539,8 @@ class MainActivity : AppCompatActivity() {
             "if(typeof updateRepeatSettings==='function')updateRepeatSettings($keyRepeatDelay,$keyRepeatRate)", null)
         overlayWebView.evaluateJavascript(
             "if(typeof updateKeyHeight==='function')updateKeyHeight($compactKeyHeight,$wideKeyHeight)", null)
+        overlayWebView.evaluateJavascript(
+            "if(typeof updateTouchpad==='function')updateTouchpad($tpSensitivity,$tpScrollSpeed)", null)
     }
 
     // --- Navigation ---

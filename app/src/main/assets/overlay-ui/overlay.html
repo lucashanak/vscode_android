@@ -257,7 +257,12 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 // ======================== STATE ========================
 const mods = { ctrl:false, alt:false, shift:false, meta:false };
 const tp = { tracking:false, lastX:0, lastY:0, startX:0, startY:0, totalMove:0, fingers:0, scrollLastY:0, tapStart:0, lastTap:0, tapTimeout:null };
-const SENSITIVITY = 1.5, SCROLL_SENS = 3;
+let SENSITIVITY = 1.5, SCROLL_SENS = 3;
+// Called from Android when touchpad settings change
+function updateTouchpad(sensPct, scrollPct) {
+    SENSITIVITY = (sensPct || 150) / 100;
+    SCROLL_SENS = (scrollPct || 300) / 100;
+}
 let compactPage = 'abc'; // 'abc' or 'sym'
 let fnActive = false;
 let capsLock = false;
