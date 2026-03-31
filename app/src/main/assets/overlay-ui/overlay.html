@@ -25,7 +25,7 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
 .row-shift { padding-left:2px; padding-right:2px; }
 
 .key {
-    flex:1 1 0; min-width:0; height:69px; padding:0 2px;
+    flex:1 1 0; min-width:0; height:84px; padding:0 2px;
     font-size:20px; font-weight:400;
     font-family:sans-serif;
     background:#333; color:#fff;
@@ -50,7 +50,7 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
 
 /* Bottom row */
 .row-bottom { gap:4px; padding:2px 3px; }
-.row-bottom .key { height:66px; }
+.row-bottom .key { height:76px; }
 
 /* F-key row styling (wide layout) */
 .fn-row { gap:1px; padding:1px 2px; }
@@ -68,10 +68,10 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
 
 /* ============ SWIPE KEYS (Unexpected Keyboard style) ============ */
 .swipe-key {
-    position:relative; flex:1 1 0; height:69px; padding:0;
+    position:relative; flex:1 1 0; height:84px; padding:0;
     display:grid;
     grid-template-areas: "nw ne" "c c" "sw se";
-    grid-template-rows: 16px 1fr 16px;
+    grid-template-rows: 18px 1fr 18px;
     grid-template-columns: 1fr 1fr;
     align-items:center; justify-items:center;
     background:#333; color:#fff;
@@ -90,10 +90,10 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
 
 /* Swipe-enabled special keys (Shift, Backspace) — UK style */
 .swipe-special {
-    position:relative; height:69px; padding:0;
+    position:relative; height:84px; padding:0;
     display:grid;
     grid-template-areas: "nw ne" "c c" "sw se";
-    grid-template-rows: 16px 1fr 16px;
+    grid-template-rows: 18px 1fr 18px;
     grid-template-columns: 1fr 1fr;
     align-items:center; justify-items:center;
     background:#333; color:#ccc;
@@ -110,7 +110,7 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
 
 /* Unexpected Keyboard style bottom row */
 .row-uk { gap:4px; padding:2px 3px; }
-.row-uk .key { height:66px; font-size:14px; }
+.row-uk .key { height:76px; font-size:14px; }
 .row-uk .uk-ctrl { flex:1.7 1 0; }
 .row-uk .uk-fn { flex:1.1 1 0; font-size:14px; background:#333; color:#ccc; border:none; border-bottom:1px solid #404040; border-radius:5px; cursor:pointer; touch-action:manipulation; }
 .row-uk .uk-fn.mod-active { background:#1b1b1b; color:#3399ff; }
@@ -190,9 +190,9 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
 
 /* Landscape narrow */
 @media (orientation:landscape) and (max-width:900px) {
-    .key { height:50px; font-size:20px; }
-    .swipe-key { height:50px; }
-    .swipe-special { height:50px; }
+    .key { height:56px; font-size:20px; }
+    .swipe-key { height:56px; }
+    .swipe-special { height:56px; }
     .sw-c { font-size:18px; }
     .swipe-special .sw-c { font-size:14px; }
     .swipe-special .sw-ne { font-size:9px; }
@@ -206,8 +206,8 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
     .tool-btn { padding:6px 12px; font-size:13px; }
     .tp-area { min-height:120px; }
     .kb-panel { padding:4px 2px 6px 2px; }
-    .row-uk .key { height:46px; }
-    .row-uk .uk-nav { height:46px; }
+    .row-uk .key { height:52px; }
+    .row-uk .uk-nav { height:52px; }
 }
 </style>
 </head>
@@ -216,6 +216,7 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
 <div class="toolbar">
     <button class="tool-btn" id="menuBtn">Menu</button>
     <button class="tool-btn" id="clipBtn" style="font-size:12px">Clip</button>
+    <button class="tool-btn" id="langBtn" style="font-size:12px;min-width:36px">US</button>
     <div class="spacer"></div>
     <button class="tool-btn tab-btn" id="tpToggle">TP</button>
     <button class="tool-btn" id="hideBtn">Hide</button>
@@ -279,11 +280,13 @@ function SEP(cls) { return `<div class="${cls||'fn-sep'}"></div>`; }
 // Swipe key: renders a key with corner labels (Unexpected Keyboard style)
 // When fnActive, NE corner shows F-key instead of number
 function SK(ch) {
-    const s = SWIPE[ch] || [null,null,null,null];
+    const s = SWIPE_MAP()[ch] || [null,null,null,null];
     const labels = [...s];
-    // Fn mode: replace NE number with F-key label
-    if (fnActive && labels[1] && FN_MAP[labels[1]]) {
-        labels[1] = FN_MAP[labels[1]];
+    // Fn mode: replace number corner with F-key label (NW for CZ, NE for US)
+    if (fnActive) {
+        for (let i = 0; i < 4; i++) {
+            if (labels[i] && FN_MAP[labels[i]]) { labels[i] = FN_MAP[labels[i]]; break; }
+        }
     }
     const [nw,ne,sw,se] = labels.map(v => v ? esc(v) : '');
     return `<button class="key char-key swipe-key" data-char="${ch}">
@@ -293,36 +296,68 @@ function SK(ch) {
     </button>`;
 }
 
-// ======================== SWIPE MAP (Unexpected Keyboard US QWERTY) ========================
-// [nw, ne, sw, se] — null = no swipe char in that direction
-const SWIPE = {
-    // Top row: NE = numbers
-    'q': [null,'1',null,'Esc'],
-    'w': ['~','2','@',null],
-    'e': ['!','3','#','\u20AC'],
-    'r': [null,'4','$',null],
-    't': [null,'5','%',null],
-    'y': [null,'6','^',null],
-    'u': [null,'7','&',null],
-    'i': [null,'8','*',null],
-    'o': [null,'9','(',')'],
-    'p': [null,'0',null,null],
-    // Home row
-    'a': ['Tab','`',null,null],
-    's': [null,'\u00A7','\u00DF',null],
-    'g': [null,'-','_',null],
-    'h': [null,'=','+',null],
-    'j': [null,null,'{','}'],
-    'k': [null,null,'[',']'],
-    'l': [null,'|','\\',null],
-    // Bottom letter row
-    'x': [null,'\u2020',null,null],
-    'c': [null,'<','.',null],
-    'v': [null,'>',',',null],
-    'b': [null,'?','/',null],
-    'n': [null,':',';',null],
-    'm': [null,'"',"'",null],
+// ======================== LAYOUTS ========================
+// Each layout: { name, swipe: {char: [nw, ne, sw, se]} }
+const LAYOUTS = {
+    'us': {
+        name: 'US',
+        swipe: {
+            'q': [null,'1',null,'Esc'],
+            'w': ['~','2','@',null],
+            'e': ['!','3','#','\u20AC'],
+            'r': [null,'4','$',null],
+            't': [null,'5','%',null],
+            'y': [null,'6','^',null],
+            'u': [null,'7','&',null],
+            'i': [null,'8','*',null],
+            'o': [null,'9','(',')'],
+            'p': [null,'0',null,null],
+            'a': ['Tab','`',null,null],
+            's': [null,'\u00A7','\u00DF',null],
+            'g': [null,'-','_',null],
+            'h': [null,'=','+',null],
+            'j': [null,null,'{','}'],
+            'k': [null,null,'[',']'],
+            'l': [null,'|','\\',null],
+            'x': [null,'\u2020',null,null],
+            'c': [null,'<','.',null],
+            'v': [null,'>',',',null],
+            'b': [null,'?','/',null],
+            'n': [null,':',';',null],
+            'm': [null,'"',"'",null],
+        }
+    },
+    'cz': {
+        name: 'CZ',
+        swipe: {
+            'q': ['1','Esc',null,'~'],
+            'w': ['2','+','|','\\'],
+            'e': ['3','\u00E9','^','\u011B'],
+            'r': ['4',null,null,'\u0159'],
+            't': ['5',null,'\u00B0','\u0165'],
+            'y': ['6','\u00FD',null,null],
+            'u': ['7','\u00FA','`','\u016F'],
+            'i': ['8','\u00ED','(',')'],
+            'o': ['9','\u00F3','/','%'],
+            'p': ['0',null,'=',null],
+            'a': ['Tab','\u00E1',';',null],
+            's': ['\u00A7',null,null,'\u0161'],
+            'd': [null,null,null,'\u010F'],
+            'f': [null,null,'[',null],
+            'g': [null,null,']',null],
+            'l': ['"',"'",'$','!'],
+            'z': [null,null,null,'\u017E'],
+            'x': ['\u2020',null,'#',null],
+            'c': [null,null,'&','\u010D'],
+            'v': [null,null,'@',null],
+            'b': ['<','>','{','}'],
+            'n': ['?','.',',','\u0148'],
+            'm': [':','*','-','_'],
+        }
+    }
 };
+let currentLang = 'us';
+function SWIPE_MAP() { return LAYOUTS[currentLang].swipe; }
 
 // Nav key: 8 directions [N, NE, E, SE, S, SW, W, NW]
 const NAV_SWIPE = ['Up','PgUp','Right','PgDn','Down','End','Left','Home'];
@@ -685,7 +720,7 @@ function attachKeyEvents() {
     // Character keys (a-z) — swipe for symbols, hold for diacritics
     kbPanel.querySelectorAll('.char-key').forEach(btn => {
         const ch = btn.dataset.char;
-        const swipeMap = SWIPE[ch]; // [nw, ne, sw, se] or undefined
+        const swipeMap = SWIPE_MAP()[ch]; // [nw, ne, sw, se] or undefined
 
         const fireChar = () => {
             const c = mods.shift ? ch.toUpperCase() : ch;
@@ -742,7 +777,7 @@ function attachKeyEvents() {
             if (dir >= 0 && swipeMap) {
                 let target = swipeMap[dir];
 
-                if (fnActive && dir === 1 && target && FN_MAP[target]) {
+                if (fnActive && target && FN_MAP[target]) {
                     target = FN_MAP[target];
                     fnActive = false;
                     const fnBtn = document.getElementById('fnToggle');
@@ -1178,6 +1213,17 @@ document.getElementById('tpToggle').addEventListener('pointerdown', e => {
 document.getElementById('menuBtn').addEventListener('pointerdown', e => {
     e.preventDefault();
     A.backToMenu();
+});
+
+// Language switcher
+const langBtn = document.getElementById('langBtn');
+const LANG_ORDER = Object.keys(LAYOUTS);
+langBtn.addEventListener('pointerdown', e => {
+    e.preventDefault(); haptic();
+    const idx = (LANG_ORDER.indexOf(currentLang) + 1) % LANG_ORDER.length;
+    currentLang = LANG_ORDER[idx];
+    langBtn.textContent = LAYOUTS[currentLang].name;
+    if (currentLayout === 'compact') renderCompact();
 });
 
 document.getElementById('hideBtn').addEventListener('pointerdown', e => {
