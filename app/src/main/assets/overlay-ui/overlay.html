@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; }
+html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-user-select:none; margin:0; padding:0; }
 
 /* Toolbar */
 .toolbar { display:flex; align-items:center; gap:6px; padding:6px 10px; background:#1b1b1b; border-bottom:1px solid #333; }
@@ -19,7 +19,7 @@ html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select
 .panel.active { display:block; }
 
 /* ============ COMPACT KEYBOARD (UK Dark theme) ============ */
-.kb-panel { padding:4px 3px 6px 3px; min-height:480px; }
+.kb-panel { padding:4px 3px 6px 3px; }
 .row { display:flex; gap:4px; padding:2px 3px; flex-wrap:nowrap; justify-content:center; }
 .row-home { padding-left:5%; padding-right:5%; }
 .row-shift { padding-left:2px; padding-right:2px; }
@@ -265,25 +265,10 @@ const A = window.Android || {
     getClipboard(){ return ''; }, requestResize(){}
 };
 
-// Notify Android to resize WebView to match content
+// Notify Android to resize WebView to fit content (no overflow clipping now)
 function notifyHeight() {
-    // Temporarily expand body to measure true content height
-    const prev = document.body.style.height;
-    document.body.style.height = 'auto';
-    document.documentElement.style.height = 'auto';
-    const prevOvf = document.documentElement.style.overflow;
-    const prevOvf2 = document.body.style.overflow;
-    document.documentElement.style.overflow = 'auto';
-    document.body.style.overflow = 'auto';
-    void document.body.offsetHeight; // force reflow
     const h = document.body.scrollHeight;
-    document.documentElement.style.overflow = prevOvf;
-    document.body.style.overflow = prevOvf2;
-    document.body.style.height = prev;
-    document.documentElement.style.height = '';
-    if (h > 0) {
-        try { A.requestResize(h); } catch(_){}
-    }
+    if (h > 0) { try { A.requestResize(h); } catch(_){} }
 }
 
 // Poll clipboard for changes (to populate history when user copies from VS Code)
@@ -1324,8 +1309,10 @@ function syncTpHeight() {
 updateLayout();
 // Sync TP height after layout settles
 setTimeout(syncTpHeight, 100);
-// Initial resize request for Android WebView
-setTimeout(notifyHeight, 200);
+// Initial resize requests — multiple passes to ensure WebView catches up
+setTimeout(notifyHeight, 100);
+setTimeout(notifyHeight, 300);
+setTimeout(notifyHeight, 600);
 window.addEventListener('resize', () => { updateLayout(); setTimeout(syncTpHeight, 50); });
 </script>
 </body>

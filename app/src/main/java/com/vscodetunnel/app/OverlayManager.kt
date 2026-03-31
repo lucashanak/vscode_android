@@ -59,6 +59,14 @@ class OverlayManager(
         }
         webView.setBackgroundColor(0xFF1E1E1E.toInt())
         webView.addJavascriptInterface(JSInterface(), "Android")
+        webView.webViewClient = object : android.webkit.WebViewClient() {
+            override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                // After page load, trigger JS to measure and resize
+                webView.postDelayed({
+                    webView.evaluateJavascript("if(typeof notifyHeight==='function')notifyHeight()", null)
+                }, 300)
+            }
+        }
         webView.loadUrl("file:///android_asset/overlay-ui/overlay.html")
         // Cache effective density for cursor coordinate conversion
         val prefs = geckoView.context.getSharedPreferences("app_settings", android.content.Context.MODE_PRIVATE)
