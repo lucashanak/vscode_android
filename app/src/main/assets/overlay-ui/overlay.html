@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
+:root { --kh:82px; --kh-wide:72px; --kh-bottom:calc(var(--kh) * 0.92); --kh-num:calc(var(--kh) * 0.7); }
 html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-user-select:none; margin:0; padding:0; }
 
 /* Toolbar */
@@ -25,7 +26,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 .row-shift { padding-left:2px; padding-right:2px; }
 
 .key {
-    flex:1 1 0; min-width:0; height:82px; padding:0 2px;
+    flex:1 1 0; min-width:0; height:var(--kh); padding:0 2px;
     font-size:28px; font-weight:400;
     font-family:sans-serif;
     background:#333; color:#fff;
@@ -46,11 +47,11 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 .key-mod.mod-active { background:#1b1b1b; color:#3399ff; }
 
 /* Number row: shorter */
-.row-num .key { height:90px; font-size:28px; }
+.row-num .key { height:var(--kh-num); font-size:28px; }
 
 /* Bottom row */
 .row-bottom { gap:4px; padding:1px 3px; }
-.row-bottom .key { height:76px; }
+.row-bottom .key { height:var(--kh-bottom); }
 
 /* F-key row styling (wide layout) */
 .fn-row { gap:1px; padding:1px 2px; }
@@ -68,7 +69,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* ============ SWIPE KEYS (Unexpected Keyboard style) ============ */
 .swipe-key {
-    position:relative; flex:1 1 0; height:82px; padding:0;
+    position:relative; flex:1 1 0; height:var(--kh); padding:0;
     display:grid;
     grid-template-areas: "nw ne" "c c" "sw se";
     grid-template-rows: 24px 1fr 24px;
@@ -90,7 +91,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* Swipe-enabled special keys (Shift, Backspace) — UK style */
 .swipe-special {
-    position:relative; height:82px; padding:0;
+    position:relative; height:var(--kh); padding:0;
     display:grid;
     grid-template-areas: "nw ne" "c c" "sw se";
     grid-template-rows: 24px 1fr 24px;
@@ -110,7 +111,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* Unexpected Keyboard style bottom row */
 .row-uk { gap:4px; padding:1px 3px; }
-.row-uk .key { height:76px; font-size:22px; }
+.row-uk .key { height:var(--kh-bottom); font-size:22px; }
 .row-uk .uk-ctrl {
     flex:1.7 1 0; padding:0;
     display:grid;
@@ -189,10 +190,10 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
     .kb-panel { flex:4; min-width:0; padding:4px 2px 6px 2px; }
     .tp-panel { display:flex; flex-direction:column; flex:1; min-width:0; border-left:1px solid #333; }
     .tp-area { min-height:0; }
-    .key { height:72px; font-size:24px; }
-    .fn-row .key { height:48px; font-size:17px; }
-    .row-scroll .key { height:60px; font-size:20px; }
-    .nav-key { width:44px; height:72px; font-size:17px; }
+    .key { height:var(--kh-wide); font-size:24px; }
+    .fn-row .key { height:calc(var(--kh-wide) * 0.67); font-size:17px; }
+    .row-scroll .key { height:calc(var(--kh-wide) * 0.83); font-size:20px; }
+    .nav-key { width:44px; height:var(--kh-wide); font-size:17px; }
     .row { gap:3px; padding:2px 2px; }
     .row-home { padding-left:3%; padding-right:3%; }
     .tp-btn.mid { flex:0.5; }
@@ -216,8 +217,8 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
     .tool-btn { padding:6px 12px; font-size:20px; }
     .tp-area { min-height:120px; }
     .kb-panel { padding:2px 2px 4px 2px; }
-    .row-uk .key { height:82px; }
-    .row-uk .uk-nav { height:82px; }
+    .row-uk .key { height:calc(var(--kh) * 0.9); }
+    .row-uk .uk-nav { height:calc(var(--kh) * 0.9); }
 }
 </style>
 </head>
@@ -628,6 +629,12 @@ function startRepeat(action) {
 function stopRepeat() {
     clearTimeout(repeatTimer); clearInterval(repeatInterval);
     repeatTimer = null; repeatInterval = null;
+}
+// Called from Android when key height settings change
+function updateKeyHeight(compactH, wideH) {
+    document.documentElement.style.setProperty('--kh', (compactH || 82) + 'px');
+    document.documentElement.style.setProperty('--kh-wide', (wideH || 72) + 'px');
+    requestAnimationFrame(() => notifyHeight());
 }
 // Called from Android when settings change
 function updateRepeatSettings(delay, rate) {

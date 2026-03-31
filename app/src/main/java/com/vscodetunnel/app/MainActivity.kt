@@ -51,6 +51,8 @@ import com.vscodetunnel.app.AppSettings.sshConnectTimeout
 import com.vscodetunnel.app.AppSettings.suppressSystemKeyboard
 import com.vscodetunnel.app.AppSettings.biometricLockEnabled
 import com.vscodetunnel.app.AppSettings.vscodeZoomPercent
+import com.vscodetunnel.app.AppSettings.compactKeyHeight
+import com.vscodetunnel.app.AppSettings.wideKeyHeight
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 
@@ -1440,6 +1442,12 @@ class MainActivity : AppCompatActivity() {
         label("Key repeat rate (ms)")
         val repeatRateField = field("50", keyRepeatRate.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
         layout.addView(repeatRateField)
+        label("Compact key height (px, default 82)")
+        val compactHeightField = field("82", compactKeyHeight.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
+        layout.addView(compactHeightField)
+        label("Wide/tablet key height (px, default 72)")
+        val wideHeightField = field("72", wideKeyHeight.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
+        layout.addView(wideHeightField)
 
         // === SSH DEFAULTS ===
         section("SSH Defaults")
@@ -1494,6 +1502,8 @@ class MainActivity : AppCompatActivity() {
             hapticFeedback = hapticCheck.isChecked
             keyRepeatDelay = repeatDelayField.text.toString().toIntOrNull() ?: 400
             keyRepeatRate = repeatRateField.text.toString().toIntOrNull() ?: 50
+            compactKeyHeight = (compactHeightField.text.toString().toIntOrNull() ?: 82).coerceIn(40, 200)
+            wideKeyHeight = (wideHeightField.text.toString().toIntOrNull() ?: 72).coerceIn(30, 150)
             // SSH
             defaultSshPort = portField.text.toString().toIntOrNull() ?: 22
             defaultSshUser = userField.text.toString().trim()
@@ -1514,10 +1524,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateOverlaySettings() {
-        // Push key repeat settings to overlay WebView
         val overlayWebView = findViewById<WebView>(R.id.overlayWebView)
         overlayWebView.evaluateJavascript(
             "if(typeof updateRepeatSettings==='function')updateRepeatSettings($keyRepeatDelay,$keyRepeatRate)", null)
+        overlayWebView.evaluateJavascript(
+            "if(typeof updateKeyHeight==='function')updateKeyHeight($compactKeyHeight,$wideKeyHeight)", null)
     }
 
     // --- Navigation ---

@@ -66,8 +66,12 @@ class OverlayManager(
         webView.addJavascriptInterface(JSInterface(), "Android")
         webView.webViewClient = object : android.webkit.WebViewClient() {
             override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
-                // After page load, trigger JS to measure and resize
+                // After page load, push key height settings and trigger resize
+                val prefs = geckoView.context.getSharedPreferences("app_settings", android.content.Context.MODE_PRIVATE)
+                val compactH = prefs.getInt("compact_key_height", 82)
+                val wideH = prefs.getInt("wide_key_height", 72)
                 webView.postDelayed({
+                    webView.evaluateJavascript("if(typeof updateKeyHeight==='function')updateKeyHeight($compactH,$wideH)", null)
                     webView.evaluateJavascript("if(typeof notifyHeight==='function')notifyHeight()", null)
                 }, 300)
             }

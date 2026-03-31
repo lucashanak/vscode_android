@@ -21,6 +21,8 @@ object AppSettings {
     private const val KEY_AUTO_RECONNECT = "ssh_auto_reconnect"
     private const val KEY_RECONNECT_ATTEMPTS = "ssh_reconnect_attempts"
     private const val KEY_CONNECT_TIMEOUT = "ssh_connect_timeout"
+    private const val KEY_COMPACT_KEY_HEIGHT = "compact_key_height"
+    private const val KEY_WIDE_KEY_HEIGHT = "wide_key_height"
 
     private fun prefs(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -41,6 +43,14 @@ object AppSettings {
     var Context.keyRepeatRate: Int
         get() = prefs(this).getInt(KEY_REPEAT_RATE, 50)
         set(value) = prefs(this).edit().putInt(KEY_REPEAT_RATE, value).apply()
+
+    var Context.compactKeyHeight: Int
+        get() = prefs(this).getInt(KEY_COMPACT_KEY_HEIGHT, 82)
+        set(value) = prefs(this).edit().putInt(KEY_COMPACT_KEY_HEIGHT, value).apply()
+
+    var Context.wideKeyHeight: Int
+        get() = prefs(this).getInt(KEY_WIDE_KEY_HEIGHT, 72)
+        set(value) = prefs(this).edit().putInt(KEY_WIDE_KEY_HEIGHT, value).apply()
 
     // --- Appearance ---
     var Context.terminalFontSize: Int
