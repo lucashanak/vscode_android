@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-html { background:#1b1b1b; height:auto; overflow:visible; }
-body { background:#1b1b1b; height:auto; overflow:visible; touch-action:none; user-select:none; -webkit-user-select:none; }
+html, body { background:#1b1b1b; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; }
 
 /* Toolbar */
 .toolbar { display:flex; align-items:center; gap:6px; padding:6px 10px; background:#1b1b1b; border-bottom:1px solid #333; }
@@ -265,6 +264,14 @@ const A = window.Android || {
     doubleClick(){}, scroll(){}, hideOverlay(){}, sendModifier(){}, backToMenu(){},
     getClipboard(){ return ''; }, requestResize(){}
 };
+
+// Measure actual visible content height (toolbar + active panel) and notify Android
+function notifyHeight() {
+    const tb = document.querySelector('.toolbar');
+    const panels = document.querySelector('.panels');
+    const h = (tb ? tb.offsetHeight : 0) + (panels ? panels.offsetHeight : 0);
+    try { A.requestResize(h); } catch(_){}
+}
 
 // Poll clipboard for changes (to populate history when user copies from VS Code)
 let lastClip = '';
@@ -558,7 +565,7 @@ function renderCompact() {
         });
     }
     // Notify Android to re-measure WebView height after content change
-    requestAnimationFrame(() => { try { A.requestResize(document.body.scrollHeight); } catch(_){} });
+    requestAnimationFrame(() => notifyHeight());
 }
 
 function updateLayout() {
@@ -571,12 +578,13 @@ function updateLayout() {
         attachKeyEvents();
         kbPanel.classList.add('active');
         tpPanel.classList.add('active');
+        requestAnimationFrame(() => notifyHeight());
     } else {
         // Compact: only keyboard visible, hide touchpad
         tpPanel.classList.remove('active');
         kbPanel.classList.add('active');
         document.getElementById('tpToggle').classList.remove('active');
-        renderCompact();
+        renderCompact(); // calls notifyHeight() internally
     }
 }
 
@@ -1258,6 +1266,7 @@ document.getElementById('tpToggle').addEventListener('pointerdown', e => {
     kbPanel.classList.toggle('active', !show);
     tpPanel.classList.toggle('active', show);
     e.target.classList.toggle('active', show);
+    requestAnimationFrame(() => notifyHeight());
 });
 
 document.getElementById('menuBtn').addEventListener('pointerdown', e => {
@@ -1303,7 +1312,7 @@ updateLayout();
 // Sync TP height after layout settles
 setTimeout(syncTpHeight, 100);
 // Initial resize request for Android WebView
-setTimeout(() => { try { A.requestResize(document.body.scrollHeight); } catch(_){} }, 200);
+setTimeout(notifyHeight, 200);
 window.addEventListener('resize', () => { updateLayout(); setTimeout(syncTpHeight, 50); });
 </script>
 </body>
