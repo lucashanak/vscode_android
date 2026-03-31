@@ -25,8 +25,8 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 .row-shift { padding-left:2px; padding-right:2px; }
 
 .key {
-    flex:1 1 0; min-width:0; height:8.5vh; padding:0 2px;
-    font-size:2.4vh; font-weight:400;
+    flex:1 1 0; min-width:0; height:130px; padding:0 2px;
+    font-size:32px; font-weight:400;
     font-family:sans-serif;
     background:#333; color:#fff;
     border:none; border-bottom:1px solid #404040; border-radius:5px;
@@ -36,31 +36,31 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 }
 .key:active, .key.pressed { background:#1b1b1b; }
 .key.mod-active { background:#1b1b1b; color:#3399ff; }
-.space-key { flex:5 1 0; font-size:1.6vh; color:#ccc; }
-.wide-key { flex:1.5 1 0; font-size:1.9vh; }
-.xwide-key { flex:1.8 1 0; font-size:1.9vh; }
+.space-key { flex:5 1 0; font-size:22px; color:#ccc; }
+.wide-key { flex:1.5 1 0; font-size:24px; }
+.xwide-key { flex:1.8 1 0; font-size:24px; }
 .shifted .char-key { text-transform:uppercase; }
 
 /* Modifier keys */
-.key-mod { background:#333; font-size:1.6vh; color:#ccc; }
+.key-mod { background:#333; font-size:22px; color:#ccc; }
 .key-mod.mod-active { background:#1b1b1b; color:#3399ff; }
 
 /* Number row: shorter */
-.row-num .key { height:6vh; font-size:2vh; }
+.row-num .key { height:90px; font-size:28px; }
 
 /* Bottom row */
 .row-bottom { gap:4px; padding:1px 3px; }
-.row-bottom .key { height:8vh; }
+.row-bottom .key { height:120px; }
 
 /* F-key row styling (wide layout) */
 .fn-row { gap:1px; padding:1px 2px; }
-.fn-row .key { height:4vh; font-size:1.3vh; background:rgba(255,255,255,0.05); }
+.fn-row .key { height:52px; font-size:18px; background:rgba(255,255,255,0.05); }
 .fn-sep { width:8px; flex:0 0 8px; }
 
 /* Scrollable rows (symbols) */
 .row-scroll { justify-content:flex-start; overflow-x:auto; scrollbar-width:none; }
 .row-scroll::-webkit-scrollbar { display:none; }
-.row-scroll .key { flex:0 0 auto; min-width:42px; height:6vh; padding:0 8px; font-size:2vh; }
+.row-scroll .key { flex:0 0 auto; min-width:42px; height:90px; padding:0 8px; font-size:28px; }
 
 /* Nav cluster for wide layout */
 .nav-sep { width:6px; flex:0 0 6px; }
@@ -68,10 +68,10 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* ============ SWIPE KEYS (Unexpected Keyboard style) ============ */
 .swipe-key {
-    position:relative; flex:1 1 0; height:8.5vh; padding:0;
+    position:relative; flex:1 1 0; height:130px; padding:0;
     display:grid;
     grid-template-areas: "nw ne" "c c" "sw se";
-    grid-template-rows: 2vh 1fr 2vh;
+    grid-template-rows: 28px 1fr 28px;
     grid-template-columns: 1fr 1fr;
     align-items:center; justify-items:center;
     background:#333; color:#fff;
@@ -80,8 +80,8 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
     font-family:sans-serif;
 }
 .swipe-key:active, .swipe-key.pressed { background:#1b1b1b; }
-.sw-c { grid-area:c; font-size:2.4vh; font-weight:400; pointer-events:none; }
-.sw-nw,.sw-ne,.sw-sw,.sw-se { font-size:1.5vh; color:#ccc; pointer-events:none; line-height:1; }
+.sw-c { grid-area:c; font-size:32px; font-weight:400; pointer-events:none; }
+.sw-nw,.sw-ne,.sw-sw,.sw-se { font-size:20px; color:#ccc; pointer-events:none; line-height:1; }
 .sw-nw { grid-area:nw; justify-self:start; padding-left:4px; }
 .sw-ne { grid-area:ne; justify-self:end; padding-right:4px; }
 .sw-sw { grid-area:sw; justify-self:start; padding-left:4px; }
@@ -90,39 +90,39 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* Swipe-enabled special keys (Shift, Backspace) — UK style */
 .swipe-special {
-    position:relative; height:8.5vh; padding:0;
+    position:relative; height:130px; padding:0;
     display:grid;
     grid-template-areas: "nw ne" "c c" "sw se";
-    grid-template-rows: 2vh 1fr 2vh;
+    grid-template-rows: 28px 1fr 28px;
     grid-template-columns: 1fr 1fr;
     align-items:center; justify-items:center;
     background:#333; color:#ccc;
     border:none; border-bottom:1px solid #404040; border-radius:5px; cursor:pointer;
     touch-action:manipulation; transition:background 0.08s;
-    font-family:sans-serif; font-size:1.9vh;
+    font-family:sans-serif; font-size:24px;
 }
 .swipe-special:active, .swipe-special.pressed { background:#1b1b1b; }
 .swipe-special.mod-active { background:#1b1b1b; color:#3399ff; }
-.swipe-special .sw-c { grid-area:c; font-size:1.9vh; font-weight:400; pointer-events:none; }
-.swipe-special .sw-ne { font-size:1.3vh; color:#888; pointer-events:none; line-height:1; grid-area:ne; justify-self:end; padding-right:4px; }
+.swipe-special .sw-c { grid-area:c; font-size:24px; font-weight:400; pointer-events:none; }
+.swipe-special .sw-ne { font-size:17px; color:#888; pointer-events:none; line-height:1; grid-area:ne; justify-self:end; padding-right:4px; }
 .uk-shift { flex:1.5 1 0; }
 .uk-bksp { flex:1.5 1 0; }
 
 /* Unexpected Keyboard style bottom row */
 .row-uk { gap:4px; padding:1px 3px; }
-.row-uk .key { height:8vh; font-size:1.6vh; }
+.row-uk .key { height:120px; font-size:22px; }
 .row-uk .uk-ctrl {
     flex:1.7 1 0; padding:0;
     display:grid;
     grid-template-areas: "nw ne" "c c" "sw se";
-    grid-template-rows: 2vh 1fr 2vh;
+    grid-template-rows: 28px 1fr 28px;
     grid-template-columns: 1fr 1fr;
     align-items:center; justify-items:center;
 }
-.row-uk .uk-ctrl .sw-c { grid-area:c; font-size:1.6vh; pointer-events:none; }
-.row-uk .uk-ctrl .sw-sw { grid-area:sw; justify-self:start; padding-left:4px; font-size:1.2vh; color:#888; pointer-events:none; }
-.row-uk .uk-ctrl .sw-se { grid-area:se; justify-self:end; padding-right:4px; font-size:1.2vh; color:#888; pointer-events:none; }
-.row-uk .uk-fn { flex:1.1 1 0; font-size:1.6vh; background:#333; color:#ccc; border:none; border-bottom:1px solid #404040; border-radius:5px; cursor:pointer; touch-action:manipulation; }
+.row-uk .uk-ctrl .sw-c { grid-area:c; font-size:22px; pointer-events:none; }
+.row-uk .uk-ctrl .sw-sw { grid-area:sw; justify-self:start; padding-left:4px; font-size:16px; color:#888; pointer-events:none; }
+.row-uk .uk-ctrl .sw-se { grid-area:se; justify-self:end; padding-right:4px; font-size:16px; color:#888; pointer-events:none; }
+.row-uk .uk-fn { flex:1.1 1 0; font-size:22px; background:#333; color:#ccc; border:none; border-bottom:1px solid #404040; border-radius:5px; cursor:pointer; touch-action:manipulation; }
 .row-uk .uk-fn.mod-active { background:#1b1b1b; color:#3399ff; }
 .row-uk .uk-nav {
     flex:1.1 1 0; padding:0;
@@ -136,14 +136,14 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
     touch-action:manipulation; font-family:sans-serif;
 }
 .row-uk .uk-nav.pressed { background:#1b1b1b; }
-.nav-n { grid-area:n; font-size:1.4vh; pointer-events:none; }
-.nav-s { grid-area:s; font-size:1.4vh; pointer-events:none; }
-.nav-w { grid-area:w; font-size:1.4vh; pointer-events:none; }
-.nav-e { grid-area:e; font-size:1.4vh; pointer-events:none; }
-.nav-nw { grid-area:nw; font-size:1vh; color:#888; pointer-events:none; }
-.nav-ne { grid-area:ne; font-size:1vh; color:#888; pointer-events:none; }
-.nav-sw { grid-area:sw; font-size:1vh; color:#888; pointer-events:none; }
-.nav-se { grid-area:se; font-size:1vh; color:#888; pointer-events:none; }
+.nav-n { grid-area:n; font-size:18px; pointer-events:none; }
+.nav-s { grid-area:s; font-size:18px; pointer-events:none; }
+.nav-w { grid-area:w; font-size:18px; pointer-events:none; }
+.nav-e { grid-area:e; font-size:18px; pointer-events:none; }
+.nav-nw { grid-area:nw; font-size:13px; color:#888; pointer-events:none; }
+.nav-ne { grid-area:ne; font-size:13px; color:#888; pointer-events:none; }
+.nav-sw { grid-area:sw; font-size:13px; color:#888; pointer-events:none; }
+.nav-se { grid-area:se; font-size:13px; color:#888; pointer-events:none; }
 .row-uk .uk-enter { flex:1.7 1 0; }
 .row-uk .space-key {
     flex:4.4 1 0; position:relative;
@@ -151,7 +151,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 .row-uk .space-key .sp-hint-l,
 .row-uk .space-key .sp-hint-r {
     position:absolute; top:50%; transform:translateY(-50%);
-    font-size:1.3vh; color:#555; pointer-events:none;
+    font-size:17px; color:#555; pointer-events:none;
 }
 .row-uk .space-key .sp-hint-l { left:10px; }
 .row-uk .space-key .sp-hint-r { right:10px; }
@@ -167,13 +167,13 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 /* Quick action bar above keyboard */
 .action-bar { display:flex; gap:4px; padding:3px 3px; overflow-x:auto; scrollbar-width:none; }
 .action-bar::-webkit-scrollbar { display:none; }
-.action-btn { flex:0 0 auto; padding:0.7vh 1.4vh; font-size:1.4vh; font-weight:500; font-family:sans-serif; background:rgba(51,153,255,0.15); color:#3399ff; border:none; border-radius:4px; cursor:pointer; white-space:nowrap; touch-action:manipulation; }
+.action-btn { flex:0 0 auto; padding:10px 18px; font-size:20px; font-weight:500; font-family:sans-serif; background:rgba(51,153,255,0.15); color:#3399ff; border:none; border-radius:4px; cursor:pointer; white-space:nowrap; touch-action:manipulation; }
 .action-btn:active { background:rgba(51,153,255,0.35); }
 
 /* Diacritics popup */
 #diacPopup { position:fixed; display:none; background:#333; border:1px solid #404040; border-radius:5px; padding:4px; z-index:300; box-shadow:0 4px 16px rgba(0,0,0,0.6); }
 #diacPopup .diac-row { display:flex; gap:3px; }
-.diac-key { min-width:44px; padding:0 5px; height:6vh; font-size:2.4vh; font-family:sans-serif; background:#1b1b1b; color:#fff; border:none; border-radius:5px; cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation; }
+.diac-key { min-width:44px; padding:0 5px; height:80px; font-size:32px; font-family:sans-serif; background:#1b1b1b; color:#fff; border:none; border-radius:5px; cursor:pointer; display:flex; align-items:center; justify-content:center; touch-action:manipulation; }
 .diac-key:active { background:#3399ff; }
 
 /* Clipboard history popup */
@@ -189,10 +189,10 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
     .kb-panel { flex:4; min-width:0; padding:4px 2px 6px 2px; }
     .tp-panel { display:flex; flex-direction:column; flex:1; min-width:0; border-left:1px solid #333; }
     .tp-area { min-height:0; }
-    .key { height:7vh; font-size:2vh; }
-    .fn-row .key { height:4.5vh; font-size:1.4vh; }
-    .row-scroll .key { height:5.5vh; font-size:1.7vh; }
-    .nav-key { width:44px; height:7vh; font-size:1.4vh; }
+    .key { height:72px; font-size:24px; }
+    .fn-row .key { height:48px; font-size:17px; }
+    .row-scroll .key { height:60px; font-size:20px; }
+    .nav-key { width:44px; height:72px; font-size:17px; }
     .row { gap:3px; padding:2px 2px; }
     .row-home { padding-left:3%; padding-right:3%; }
     .tp-btn.mid { flex:0.5; }
@@ -200,24 +200,24 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* Landscape narrow */
 @media (orientation:landscape) and (max-width:900px) {
-    .key { height:14vh; font-size:4vh; }
-    .swipe-key { height:14vh; }
-    .swipe-special { height:14vh; }
-    .sw-c { font-size:3.5vh; }
-    .swipe-special .sw-c { font-size:3vh; }
-    .swipe-special .sw-ne { font-size:2vh; }
-    .sw-nw,.sw-ne,.sw-sw,.sw-se { font-size:2.2vh; }
-    .swipe-key { grid-template-rows: 3vh 1fr 3vh; }
-    .swipe-special { grid-template-rows: 3vh 1fr 3vh; }
+    .key { height:90px; font-size:28px; }
+    .swipe-key { height:90px; }
+    .swipe-special { height:90px; }
+    .sw-c { font-size:26px; }
+    .swipe-special .sw-c { font-size:22px; }
+    .swipe-special .sw-ne { font-size:15px; }
+    .sw-nw,.sw-ne,.sw-sw,.sw-se { font-size:17px; }
+    .swipe-key { grid-template-rows: 20px 1fr 20px; }
+    .swipe-special { grid-template-rows: 20px 1fr 20px; }
     .row { gap:3px; padding:1px 2px; }
-    .row-scroll .key { height:10vh; font-size:3vh; }
-    .tp-btn { height:8vh; font-size:2.5vh; }
+    .row-scroll .key { height:60px; font-size:22px; }
+    .tp-btn { height:48px; font-size:20px; }
     .toolbar { padding:4px 6px; }
-    .tool-btn { padding:6px 12px; font-size:2.5vh; }
-    .tp-area { min-height:30vh; }
+    .tool-btn { padding:6px 12px; font-size:20px; }
+    .tp-area { min-height:120px; }
     .kb-panel { padding:2px 2px 4px 2px; }
-    .row-uk .key { height:13vh; }
-    .row-uk .uk-nav { height:13vh; }
+    .row-uk .key { height:82px; }
+    .row-uk .uk-nav { height:82px; }
 }
 </style>
 </head>
