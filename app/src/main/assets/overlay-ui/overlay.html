@@ -1419,11 +1419,15 @@ setTimeout(notifyHeight, 100);
 setTimeout(notifyHeight, 300);
 setTimeout(notifyHeight, 600);
 window.addEventListener('resize', () => {
-    currentLayout = ''; // force re-render on resize (e.g. foldable display switch)
-    updateLayout();
+    const wide = window.innerWidth > 900;
+    const newLayout = wide ? 'wide' : 'compact';
+    if (newLayout !== currentLayout) {
+        // Actual layout type change (e.g. foldable fold/unfold)
+        currentLayout = '';
+        updateLayout();
+    }
     setTimeout(syncTpHeight, 50);
     setTimeout(notifyHeight, 100);
-    setTimeout(notifyHeight, 400);
 });
 // Also re-measure when page becomes visible again (e.g. after display fold/unfold)
 document.addEventListener('visibilitychange', () => {
