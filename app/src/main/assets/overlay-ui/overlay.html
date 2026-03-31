@@ -25,7 +25,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 .row-shift { padding-left:2px; padding-right:2px; }
 
 .key {
-    flex:1 1 0; min-width:0; height:95px; padding:0 2px;
+    flex:1 1 0; min-width:0; height:82px; padding:0 2px;
     font-size:28px; font-weight:400;
     font-family:sans-serif;
     background:#333; color:#fff;
@@ -50,7 +50,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* Bottom row */
 .row-bottom { gap:4px; padding:1px 3px; }
-.row-bottom .key { height:88px; }
+.row-bottom .key { height:76px; }
 
 /* F-key row styling (wide layout) */
 .fn-row { gap:1px; padding:1px 2px; }
@@ -68,7 +68,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* ============ SWIPE KEYS (Unexpected Keyboard style) ============ */
 .swipe-key {
-    position:relative; flex:1 1 0; height:95px; padding:0;
+    position:relative; flex:1 1 0; height:82px; padding:0;
     display:grid;
     grid-template-areas: "nw ne" "c c" "sw se";
     grid-template-rows: 24px 1fr 24px;
@@ -90,7 +90,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* Swipe-enabled special keys (Shift, Backspace) — UK style */
 .swipe-special {
-    position:relative; height:95px; padding:0;
+    position:relative; height:82px; padding:0;
     display:grid;
     grid-template-areas: "nw ne" "c c" "sw se";
     grid-template-rows: 24px 1fr 24px;
@@ -110,7 +110,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* Unexpected Keyboard style bottom row */
 .row-uk { gap:4px; padding:1px 3px; }
-.row-uk .key { height:88px; font-size:22px; }
+.row-uk .key { height:76px; font-size:22px; }
 .row-uk .uk-ctrl {
     flex:1.7 1 0; padding:0;
     display:grid;
@@ -225,8 +225,8 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 <div class="toolbar">
     <button class="tool-btn" id="menuBtn">Menu</button>
-    <button class="tool-btn" id="clipBtn" style="font-size:12px">Clip</button>
-    <button class="tool-btn" id="langBtn" style="font-size:12px;min-width:36px">US</button>
+    <button class="tool-btn" id="clipBtn">Clip</button>
+    <button class="tool-btn" id="langBtn">US</button>
     <div class="spacer"></div>
     <button class="tool-btn tab-btn" id="tpToggle">TP</button>
     <button class="tool-btn" id="hideBtn">Hide</button>
@@ -257,6 +257,7 @@ const SENSITIVITY = 1.5, SCROLL_SENS = 3;
 let compactPage = 'abc'; // 'abc' or 'sym'
 let fnActive = false;
 let capsLock = false;
+let spaceAccum = 0, spaceDragging = false, spaceLastX = 0;
 
 // ======================== ANDROID BRIDGE ========================
 const A = window.Android || {
@@ -881,8 +882,9 @@ function attachKeyEvents() {
                 fireKey();
                 startRepeat(fireKey);
             } else if (isSpace) {
-                // Space: wait for pointerup to detect swipe left/right
+                // Space: continuous cursor mode — drag left/right moves cursor
                 pendingKey = true;
+                spaceAccum = 0; spaceDragging = false;
             } else if (hasDiac && !mods.ctrl && !mods.alt && !mods.meta) {
                 pendingKey = true;
                 diacTimer = setTimeout(() => {
@@ -898,6 +900,24 @@ function attachKeyEvents() {
         });
         btn.addEventListener('pointermove', e => {
             if (diacShown) updateDiacHighlight(e.clientX, e.clientY);
+            // Space: continuous cursor movement
+            if (isSpace && pendingKey) {
+                const dx = e.clientX - startX;
+                if (!spaceDragging && Math.abs(dx) >= SWIPE_THRESHOLD) spaceDragging = true;
+                if (spaceDragging) {
+                    spaceAccum += (e.clientX - (spaceLastX || startX));
+                    spaceLastX = e.clientX;
+                    const step = 20; // px per cursor step
+                    while (spaceAccum >= step) {
+                        A.sendKey(JSON.stringify({key:'Right', ctrl:false, alt:false, shift:mods.shift, meta:false}));
+                        spaceAccum -= step;
+                    }
+                    while (spaceAccum <= -step) {
+                        A.sendKey(JSON.stringify({key:'Left', ctrl:false, alt:false, shift:mods.shift, meta:false}));
+                        spaceAccum += step;
+                    }
+                }
+            }
         });
         btn.addEventListener('pointerup', e => {
             clearTimeout(diacTimer); diacTimer = null;
@@ -912,13 +932,10 @@ function attachKeyEvents() {
 
             if (isSpace && pendingKey) {
                 pendingKey = false;
-                const dx = e.clientX - startX;
-                if (Math.abs(dx) >= SWIPE_THRESHOLD) {
-                    const dir = dx > 0 ? 'Right' : 'Left';
-                    A.sendKey(JSON.stringify({key:dir, ctrl:false, alt:false, shift:false, meta:false}));
-                } else {
-                    fireKey();
+                if (!spaceDragging) {
+                    fireKey(); // tap = space
                 }
+                spaceDragging = false; spaceAccum = 0; spaceLastX = 0;
                 resetMods();
                 return;
             }
@@ -1110,9 +1127,17 @@ function attachKeyEvents() {
         navBtn.addEventListener('pointercancel', () => { navBtn.classList.remove('pressed'); });
     }
 
-    // Quick action buttons
+    // Quick action buttons — use pointerup with move threshold to avoid conflict with scroll
     kbPanel.querySelectorAll('.action-btn').forEach(btn => {
+        let abStartX = 0, abStartY = 0, abMoved = false;
         btn.addEventListener('pointerdown', e => {
+            abStartX = e.clientX; abStartY = e.clientY; abMoved = false;
+        });
+        btn.addEventListener('pointermove', e => {
+            if (Math.abs(e.clientX - abStartX) > 8 || Math.abs(e.clientY - abStartY) > 8) abMoved = true;
+        });
+        btn.addEventListener('pointerup', e => {
+            if (abMoved) return; // was a scroll, not a tap
             e.preventDefault(); e.stopPropagation();
             haptic();
             const action = btn.dataset.action;
@@ -1316,7 +1341,17 @@ setTimeout(syncTpHeight, 100);
 setTimeout(notifyHeight, 100);
 setTimeout(notifyHeight, 300);
 setTimeout(notifyHeight, 600);
-window.addEventListener('resize', () => { updateLayout(); setTimeout(syncTpHeight, 50); });
+window.addEventListener('resize', () => {
+    currentLayout = ''; // force re-render on resize (e.g. foldable display switch)
+    updateLayout();
+    setTimeout(syncTpHeight, 50);
+    setTimeout(notifyHeight, 100);
+    setTimeout(notifyHeight, 400);
+});
+// Also re-measure when page becomes visible again (e.g. after display fold/unfold)
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) { setTimeout(notifyHeight, 200); setTimeout(notifyHeight, 500); }
+});
 </script>
 </body>
 </html>
