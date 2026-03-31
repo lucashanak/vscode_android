@@ -446,6 +446,22 @@ class OverlayManager(
         }
 
         @JavascriptInterface
+        fun requestResize(contentHeight: Int) {
+            webView.post {
+                // Force WebView to re-measure after HTML content change
+                // contentHeight is CSS px from document.body.scrollHeight
+                val density = webView.resources.displayMetrics.density
+                val heightPx = (contentHeight * density).toInt()
+                val lp = webView.layoutParams
+                if (lp != null && lp.height != heightPx) {
+                    lp.height = heightPx
+                    webView.layoutParams = lp
+                    webView.parent?.let { (it as? android.view.View)?.requestLayout() }
+                }
+            }
+        }
+
+        @JavascriptInterface
         fun haptic() {
             val ctx = geckoView.context
             // Check setting

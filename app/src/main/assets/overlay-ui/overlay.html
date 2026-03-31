@@ -263,7 +263,7 @@ let capsLock = false;
 const A = window.Android || {
     sendChar(){}, sendKey(){}, pointerMove(){}, click(){}, mouseDown(){}, mouseUp(){},
     doubleClick(){}, scroll(){}, hideOverlay(){}, sendModifier(){}, backToMenu(){},
-    getClipboard(){ return ''; }
+    getClipboard(){ return ''; }, requestResize(){}
 };
 
 // Poll clipboard for changes (to populate history when user copies from VS Code)
@@ -557,6 +557,8 @@ function renderCompact() {
             renderCompact();
         });
     }
+    // Notify Android to re-measure WebView height after content change
+    requestAnimationFrame(() => { try { A.requestResize(document.body.scrollHeight); } catch(_){} });
 }
 
 function updateLayout() {
@@ -1300,6 +1302,8 @@ function syncTpHeight() {
 updateLayout();
 // Sync TP height after layout settles
 setTimeout(syncTpHeight, 100);
+// Initial resize request for Android WebView
+setTimeout(() => { try { A.requestResize(document.body.scrollHeight); } catch(_){} }, 200);
 window.addEventListener('resize', () => { updateLayout(); setTimeout(syncTpHeight, 50); });
 </script>
 </body>
