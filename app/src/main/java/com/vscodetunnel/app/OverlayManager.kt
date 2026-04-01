@@ -71,10 +71,11 @@ class OverlayManager(
                 val compactH = prefs.getInt("compact_key_height", 82)
                 val wideH = prefs.getInt("wide_key_height", 72)
                 val tpSens = prefs.getInt("tp_sensitivity", 150)
-                val tpScroll = prefs.getInt("tp_scroll_speed", 300)
+                val tpScroll = prefs.getInt("tp_scroll_speed", 20)
+                val tpInvert = prefs.getBoolean("tp_invert_scroll", true)
                 webView.postDelayed({
                     webView.evaluateJavascript("if(typeof updateKeyHeight==='function')updateKeyHeight($compactH,$wideH)", null)
-                    webView.evaluateJavascript("if(typeof updateTouchpad==='function')updateTouchpad($tpSens,$tpScroll)", null)
+                    webView.evaluateJavascript("if(typeof updateTouchpad==='function')updateTouchpad($tpSens,$tpScroll,$tpInvert)", null)
                     webView.evaluateJavascript("if(typeof notifyHeight==='function')notifyHeight()", null)
                 }, 300)
             }

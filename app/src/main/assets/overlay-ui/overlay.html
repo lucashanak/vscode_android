@@ -192,9 +192,11 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
     .tp-area { min-height:0; }
     .key { height:var(--kh-wide); font-size:24px; }
     .swipe-key { height:var(--kh-wide); }
+    .swipe-special { height:var(--kh-wide); }
     .sw-c { font-size:20px; }
     .sw-nw,.sw-ne,.sw-sw,.sw-se { font-size:14px; }
     .swipe-key { grid-template-rows: 18px 1fr 18px; }
+    .swipe-special { grid-template-rows: 18px 1fr 18px; }
     .row-scroll .key { height:calc(var(--kh-wide) * 0.83); font-size:20px; }
     .nav-key { width:44px; height:var(--kh-wide); font-size:17px; }
     .row { gap:3px; padding:2px 2px; }
@@ -204,9 +206,9 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 /* Landscape narrow */
 @media (orientation:landscape) and (max-width:900px) {
-    .key { height:90px; font-size:28px; }
-    .swipe-key { height:90px; }
-    .swipe-special { height:90px; }
+    .key { height:var(--kh); font-size:28px; }
+    .swipe-key { height:var(--kh); }
+    .swipe-special { height:var(--kh); }
     .sw-c { font-size:26px; }
     .swipe-special .sw-c { font-size:22px; }
     .swipe-special .sw-ne { font-size:15px; }
@@ -257,11 +259,12 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 // ======================== STATE ========================
 const mods = { ctrl:false, alt:false, shift:false, meta:false };
 const tp = { tracking:false, lastX:0, lastY:0, startX:0, startY:0, totalMove:0, fingers:0, scrollLastY:0, tapStart:0, lastTap:0, tapTimeout:null };
-let SENSITIVITY = 1.5, SCROLL_SENS = 3;
+let SENSITIVITY = 1.5, SCROLL_SENS = 0.2, SCROLL_INVERT = true;
 // Called from Android when touchpad settings change
-function updateTouchpad(sensPct, scrollPct) {
+function updateTouchpad(sensPct, scrollPct, invertScroll) {
     SENSITIVITY = (sensPct || 150) / 100;
-    SCROLL_SENS = (scrollPct || 300) / 100;
+    SCROLL_SENS = (scrollPct || 20) / 100;
+    if (invertScroll !== undefined) SCROLL_INVERT = !!invertScroll;
 }
 let compactPage = 'abc'; // 'abc' or 'sym'
 let fnActive = false;
@@ -277,7 +280,10 @@ const A = window.Android || {
 
 // Notify Android to resize WebView to fit content (no overflow clipping now)
 function notifyHeight() {
+    // Temporarily collapse body so scrollHeight reflects actual content, not viewport
+    document.body.style.height = '0px';
     const h = document.body.scrollHeight;
+    document.body.style.height = '';
     if (h > 0) { try { A.requestResize(h); } catch(_){} }
 }
 
@@ -1392,7 +1398,7 @@ tpArea.addEventListener('touchmove', e => {
     tp.totalMove += Math.abs(dx) + Math.abs(dy);
     if (e.targetTouches.length >= 2) {
         const sd = t.clientY - tp.scrollLastY; tp.scrollLastY = t.clientY;
-        A.scroll(sd * SCROLL_SENS);
+        A.scroll(sd * SCROLL_SENS * (SCROLL_INVERT ? -1 : 1));
     } else {
         A.pointerMove(dx * SENSITIVITY, dy * SENSITIVITY);
         // Double-tap-and-hold: if moved past threshold, start drag

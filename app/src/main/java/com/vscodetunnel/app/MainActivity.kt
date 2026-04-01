@@ -55,6 +55,7 @@ import com.vscodetunnel.app.AppSettings.compactKeyHeight
 import com.vscodetunnel.app.AppSettings.wideKeyHeight
 import com.vscodetunnel.app.AppSettings.tpSensitivity
 import com.vscodetunnel.app.AppSettings.tpScrollSpeed
+import com.vscodetunnel.app.AppSettings.tpInvertScroll
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 
@@ -1453,9 +1454,11 @@ class MainActivity : AppCompatActivity() {
         label("Touchpad sensitivity % (default 150)")
         val tpSensField = field("150", tpSensitivity.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
         layout.addView(tpSensField)
-        label("Touchpad scroll speed % (default 300, lower=slower)")
-        val tpScrollField = field("300", tpScrollSpeed.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
+        label("Touchpad scroll speed % (default 20, lower=slower)")
+        val tpScrollField = field("20", tpScrollSpeed.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
         layout.addView(tpScrollField)
+        val invertScrollCheck = check("Invert scroll (natural scrolling)", tpInvertScroll)
+        layout.addView(invertScrollCheck)
 
         // === SSH DEFAULTS ===
         section("SSH Defaults")
@@ -1513,7 +1516,8 @@ class MainActivity : AppCompatActivity() {
             compactKeyHeight = (compactHeightField.text.toString().toIntOrNull() ?: 82).coerceIn(40, 200)
             wideKeyHeight = (wideHeightField.text.toString().toIntOrNull() ?: 72).coerceIn(30, 150)
             tpSensitivity = (tpSensField.text.toString().toIntOrNull() ?: 150).coerceIn(10, 500)
-            tpScrollSpeed = (tpScrollField.text.toString().toIntOrNull() ?: 300).coerceIn(10, 1000)
+            tpScrollSpeed = (tpScrollField.text.toString().toIntOrNull() ?: 20).coerceIn(1, 1000)
+            tpInvertScroll = invertScrollCheck.isChecked
             // SSH
             defaultSshPort = portField.text.toString().toIntOrNull() ?: 22
             defaultSshUser = userField.text.toString().trim()
@@ -1540,7 +1544,7 @@ class MainActivity : AppCompatActivity() {
         overlayWebView.evaluateJavascript(
             "if(typeof updateKeyHeight==='function')updateKeyHeight($compactKeyHeight,$wideKeyHeight)", null)
         overlayWebView.evaluateJavascript(
-            "if(typeof updateTouchpad==='function')updateTouchpad($tpSensitivity,$tpScrollSpeed)", null)
+            "if(typeof updateTouchpad==='function')updateTouchpad($tpSensitivity,$tpScrollSpeed,${if(tpInvertScroll) "true" else "false"})", null)
     }
 
     // --- Navigation ---

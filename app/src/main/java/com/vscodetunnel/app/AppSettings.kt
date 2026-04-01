@@ -25,6 +25,7 @@ object AppSettings {
     private const val KEY_WIDE_KEY_HEIGHT = "wide_key_height"
     private const val KEY_TP_SENSITIVITY = "tp_sensitivity"
     private const val KEY_TP_SCROLL_SPEED = "tp_scroll_speed"
+    private const val KEY_TP_INVERT_SCROLL = "tp_invert_scroll"
 
     private fun prefs(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -59,8 +60,12 @@ object AppSettings {
         set(value) = prefs(this).edit().putInt(KEY_TP_SENSITIVITY, value).apply()
 
     var Context.tpScrollSpeed: Int
-        get() = prefs(this).getInt(KEY_TP_SCROLL_SPEED, 300)
+        get() = prefs(this).getInt(KEY_TP_SCROLL_SPEED, 20)
         set(value) = prefs(this).edit().putInt(KEY_TP_SCROLL_SPEED, value).apply()
+
+    var Context.tpInvertScroll: Boolean
+        get() = prefs(this).getBoolean(KEY_TP_INVERT_SCROLL, true)
+        set(value) = prefs(this).edit().putBoolean(KEY_TP_INVERT_SCROLL, value).apply()
 
     // --- Appearance ---
     var Context.terminalFontSize: Int
