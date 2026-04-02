@@ -3,8 +3,8 @@
     <color name="background">#1E1E1E</color>
     <color name="surface">#252526</color>
     <color name="surface_variant">#2D2D2D</color>
-    <color name="primary">#007ACC</color>
-    <color name="primary_dark">#005A9E</color>
+    <color name="primary">#58A6FF</color>
+    <color name="primary_dark">#388BDF</color>
     <color name="accent_green">#238636</color>
     <color name="accent_green_dark">#1A6B2B</color>
     <color name="text_primary">#CCCCCC</color>
