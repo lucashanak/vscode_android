@@ -1169,6 +1169,12 @@ class MainActivity : AppCompatActivity() {
                 @android.webkit.JavascriptInterface
                 fun onTerminalReady(cols: Int, rows: Int) {
                     FileLogger.d(TAG, "Mosh terminal ready: ${cols}x$rows")
+                    val fontSize = terminalFontSize
+                    if (fontSize != 14) {
+                        sshTerminalWebView.post {
+                            sshTerminalWebView.evaluateJavascript("setFontSize($fontSize)", null)
+                        }
+                    }
                     mgr.resize(cols, rows)
                 }
                 @android.webkit.JavascriptInterface

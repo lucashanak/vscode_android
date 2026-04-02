@@ -3,6 +3,7 @@ package com.vscodetunnel.app
 import android.annotation.SuppressLint
 import android.content.Context
 import android.webkit.JavascriptInterface
+import com.vscodetunnel.app.AppSettings.terminalFontSize
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -457,6 +458,12 @@ class SshSessionManager(
         @JavascriptInterface
         fun onTerminalReady(cols: Int, rows: Int) {
             FileLogger.d(TAG, "Terminal ready: ${cols}x${rows}")
+            val fontSize = AppSettings.run { context.terminalFontSize }
+            if (fontSize != 14) {
+                terminalWebView.post {
+                    terminalWebView.evaluateJavascript("setFontSize($fontSize)", null)
+                }
+            }
             resize(cols, rows)
         }
 
