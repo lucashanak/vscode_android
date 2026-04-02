@@ -36,6 +36,13 @@ Java_com_vscodetunnel_app_PtyProcess_nativeForkPty(
     struct winsize ws = { .ws_row = rows, .ws_col = cols };
     ioctl(master, TIOCSWINSZ, &ws);
 
+    // Disable echo so input written to master is not echoed back
+    struct termios tio;
+    if (tcgetattr(master, &tio) == 0) {
+        cfmakeraw(&tio);
+        tcsetattr(master, TCSANOW, &tio);
+    }
+
     const char *slaveName = ptsname(master);
     if (!slaveName) { close(master); return NULL; }
 
