@@ -1195,7 +1195,10 @@ class MainActivity : AppCompatActivity() {
         sshTerminalWebView.loadUrl("file:///android_asset/terminal/terminal.html")
 
         // Delay connect until terminal is loaded
-        sshTerminalWebView.postDelayed({ mgr.connect(server) }, 500)
+        sshTerminalWebView.postDelayed({
+            sshTerminalWebView.evaluateJavascript("window.isMosh = true", null)
+            mgr.connect(server)
+        }, 500)
 
         if (server.snippets.isNotEmpty()) {
             sshTerminalWebView.postDelayed({

@@ -212,7 +212,7 @@ function scrollTerminal(lines) {
     const isAlt = term.buffer.active.type === 'alternate';
     const mouseMode = (term.modes && term.modes.mouseTrackingMode) || 'none';
 
-    if (isAlt && mouseMode !== 'none' && A) {
+    if ((window.isMosh || (isAlt && mouseMode !== 'none')) && A) {
         // Alternate buffer with mouse reporting (tmux mouse on, vim, etc.)
         // Send SGR mouse wheel escape sequences via SSH stdin
         const btn = lines < 0 ? 64 : 65; // 64=up, 65=down
