@@ -1196,7 +1196,9 @@ class MainActivity : AppCompatActivity() {
 
         // Delay connect until terminal is loaded
         sshTerminalWebView.postDelayed({
-            sshTerminalWebView.evaluateJavascript("window.isMosh = true", null)
+            if (server.useTmux) {
+                sshTerminalWebView.evaluateJavascript("window.isMosh = true", null)
+            }
             mgr.connect(server)
         }, 500)
 
