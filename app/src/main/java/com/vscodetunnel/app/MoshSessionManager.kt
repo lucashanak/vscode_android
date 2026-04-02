@@ -167,21 +167,22 @@ class MoshSessionManager(
 
                 FileLogger.d(TAG, "Mosh PTY process started, pid=${process.pid}, alive=${process.isAlive}")
 
-                // Send tmux command if enabled
-                if (server.useTmux) {
-                    delay(1000) // wait for mosh + shell to be ready
-                    val tmuxName = server.tmuxSessionName.ifBlank { server.name.ifBlank { "main" } }
-                    val tmuxCmd = TmuxManager.buildAttachCommand(tmuxName)
-                    process.outputStream.write((tmuxCmd + "\n").toByteArray())
-                    process.outputStream.flush()
-                    FileLogger.d(TAG, "Sent tmux command: $tmuxCmd")
-                    if (server.startupCommand.isNotBlank()) {
-                        delay(300)
-                        process.outputStream.write((server.startupCommand + "\n").toByteArray())
-                        process.outputStream.flush()
-                    }
-                } else if (server.startupCommand.isNotBlank()) {
-                    delay(500)
+                // Always wrap mosh in tmux for scrollback + mouse support
+                // (mosh has no scrollback without tmux)
+                delay(1000) // wait for mosh + shell to be ready
+                val tmuxName = if (server.useTmux) {
+                    server.tmuxSessionName.ifBlank { server.name.ifBlank { "main" } }
+                } else {
+                    "mosh-${server.name.ifBlank { server.host }}".take(20)
+                }
+                val tmuxCmd = TmuxManager.buildAttachCommand(tmuxName)
+                // Wrap in command -v check so bare bash works if tmux is missing
+                val safeCmd = "command -v tmux >/dev/null 2>&1 && $tmuxCmd || true"
+                process.outputStream.write((safeCmd + "\n").toByteArray())
+                process.outputStream.flush()
+                FileLogger.d(TAG, "Sent tmux command: $tmuxCmd")
+                if (server.startupCommand.isNotBlank()) {
+                    delay(300)
                     process.outputStream.write((server.startupCommand + "\n").toByteArray())
                     process.outputStream.flush()
                 }
