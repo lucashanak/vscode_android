@@ -21,7 +21,7 @@ object GeckoManager {
     // Chrome UA for Android — vscode.dev expects a modern browser
     const val CHROME_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+        "(KHTML, like Gecko) Chrome/135.0.0.0 Mobile Safari/537.36"
 
     fun getRuntime(context: Context): GeckoRuntime {
         if (runtime == null) {
