@@ -1499,6 +1499,31 @@ class MainActivity : AppCompatActivity() {
         val keepAliveCheck = check("Keep alive in background (foreground service)", keepAliveEnabled)
         layout.addView(keepAliveCheck)
 
+        // === MAINTENANCE ===
+        section("Maintenance")
+        val clearCacheBtn = Button(this).apply {
+            text = "Clear VS Code cache"
+            isAllCaps = false; textSize = 14f
+            setTextColor(resources.getColor(R.color.text_white, theme))
+            setBackgroundColor(resources.getColor(R.color.surface_variant, theme))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.topMargin = dp(4)
+            layoutParams = lp
+            setOnClickListener {
+                isEnabled = false; text = "Clearing..."
+                GeckoManager.clearBrowsingData(this@MainActivity) {
+                    runOnUiThread {
+                        text = "Cache cleared"
+                        android.widget.Toast.makeText(this@MainActivity,
+                            "VS Code cache cleared. Reopen tunnel to reload.", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+        layout.addView(clearCacheBtn)
+
         saveBtn.setOnClickListener {
             // Appearance
             terminalColorScheme = schemes[schemeSpinner.selectedItemPosition]

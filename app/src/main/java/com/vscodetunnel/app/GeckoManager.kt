@@ -6,6 +6,7 @@ import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
+import org.mozilla.geckoview.StorageController
 import org.mozilla.geckoview.WebExtension
 
 object GeckoManager {
@@ -54,6 +55,18 @@ object GeckoManager {
             .usePrivateMode(false)
             .build()
         return GeckoSession(settings)
+    }
+
+    fun clearBrowsingData(context: Context, onDone: (() -> Unit)? = null) {
+        val rt = runtime ?: getRuntime(context)
+        val flags = StorageController.ClearFlags.ALL
+        rt.storageController.clearData(flags).accept({
+            FileLogger.d(TAG, "GeckoView browsing data cleared")
+            onDone?.invoke()
+        }) { throwable ->
+            FileLogger.e(TAG, "Failed to clear browsing data", throwable)
+            onDone?.invoke()
+        }
     }
 
     fun installOverlayExtension(runtime: GeckoRuntime) {
