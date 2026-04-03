@@ -59,12 +59,10 @@ object GeckoManager {
 
     fun clearBrowsingData(context: Context, onDone: (() -> Unit)? = null) {
         val rt = runtime ?: getRuntime(context)
-        // Clear stale data but keep cookies (GitHub auth) and passwords
-        val flags = StorageController.ClearFlags.CACHE or
-            StorageController.ClearFlags.SERVICE_WORKERS or
-            StorageController.ClearFlags.DOM_STORAGE or
-            StorageController.ClearFlags.INDEXED_DB or
-            StorageController.ClearFlags.OFFLINE_CACHE or
+        // Clear stale data but keep cookies (GitHub auth)
+        val flags = StorageController.ClearFlags.ALL_CACHES or
+            StorageController.ClearFlags.DOM_STORAGES or
+            StorageController.ClearFlags.AUTH_SESSIONS or
             StorageController.ClearFlags.SITE_SETTINGS
         rt.storageController.clearData(flags).accept({
             FileLogger.d(TAG, "GeckoView browsing data cleared")
