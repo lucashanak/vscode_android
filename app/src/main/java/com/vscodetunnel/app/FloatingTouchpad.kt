@@ -158,7 +158,12 @@ class FloatingTouchpad(
         root.addView(handleBar)
 
         // === Touch area ===
-        val touchArea = View(context).apply {
+        val touchArea = object : View(context) {
+            @SuppressLint("ClickableViewAccessibility")
+            override fun onTouchEvent(event: MotionEvent): Boolean {
+                return handleTouchAreaEvent(event)
+            }
+        }.apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
             ).apply { setMargins(dp(6), 0, dp(6), dp(4)) }
@@ -168,8 +173,6 @@ class FloatingTouchpad(
                 setStroke(dp(1), 0xFF333333.toInt())
             }
             isClickable = true
-            isFocusable = true
-            setOnTouchListener(touchAreaListener)
         }
         root.addView(touchArea)
 
@@ -217,9 +220,10 @@ class FloatingTouchpad(
         addView(root)
     }
 
-    private val touchAreaListener = OnTouchListener { _, event ->
+    fun handleTouchAreaEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                FileLogger.d("FloatingTP", "DOWN x=${event.x} y=${event.y}")
                 tracking = true
                 fingerCount = 1
                 lastX = event.x; lastY = event.y
@@ -227,21 +231,20 @@ class FloatingTouchpad(
                 tapStart = System.currentTimeMillis()
                 tapTimeout?.let { removeCallbacks(it) }
                 tapTimeout = null
-                true
+                return true
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 fingerCount = event.pointerCount
                 if (fingerCount >= 2) scrollLastY = event.getY(0)
-                true
+                return true
             }
             MotionEvent.ACTION_MOVE -> {
-                if (!tracking) return@OnTouchListener false
+                if (!tracking) return false
                 val dx = event.x - lastX
                 val dy = event.y - lastY
                 totalMove += Math.abs(dx) + Math.abs(dy)
 
                 if (event.pointerCount >= 2) {
-                    // Two-finger scroll
                     val scrollDy = (event.getY(0) - scrollLastY) / density
                     scrollLastY = event.getY(0)
                     val dir = if (scrollInvert) -1f else 1f
@@ -251,7 +254,6 @@ class FloatingTouchpad(
                     val dyDp = dy / density
                     overlayManager.moveCursor(dxDp * sensitivity, dyDp * sensitivity)
 
-                    // Double-tap-and-hold drag
                     if (!isDragSelecting && totalMove > tapThresholdPx &&
                         System.currentTimeMillis() - lastTapTime < DOUBLE_TAP_TIMEOUT) {
                         isDragSelecting = true
@@ -259,14 +261,15 @@ class FloatingTouchpad(
                     }
                 }
                 lastX = event.x; lastY = event.y
-                true
+                return true
             }
             MotionEvent.ACTION_UP -> {
+                FileLogger.d("FloatingTP", "UP totalMove=$totalMove")
                 if (isDragSelecting) {
                     overlayManager.performMouseUp(0)
                     isDragSelecting = false
                     tracking = false
-                    return@OnTouchListener true
+                    return true
                 }
 
                 val elapsed = System.currentTimeMillis() - tapStart
@@ -274,18 +277,15 @@ class FloatingTouchpad(
 
                 if (isTap) {
                     if (fingerCount >= 2) {
-                        // Two-finger tap → right click
                         overlayManager.performClick(2)
                     } else {
                         val now = System.currentTimeMillis()
                         if (now - lastTapTime < DOUBLE_TAP_TIMEOUT) {
-                            // Double tap
                             tapTimeout?.let { removeCallbacks(it) }
                             tapTimeout = null
                             overlayManager.performDoubleClick()
                             lastTapTime = 0
                         } else {
-                            // Schedule single tap (wait for potential double tap)
                             lastTapTime = now
                             val runnable = Runnable {
                                 overlayManager.performClick(0)
@@ -298,10 +298,10 @@ class FloatingTouchpad(
                 }
                 tracking = false
                 fingerCount = 0
-                true
+                return true
             }
-            MotionEvent.ACTION_POINTER_UP -> true
-            else -> false
+            MotionEvent.ACTION_POINTER_UP -> return true
         }
+        return false
     }
 }

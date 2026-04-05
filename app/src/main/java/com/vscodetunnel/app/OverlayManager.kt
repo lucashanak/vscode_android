@@ -352,6 +352,7 @@ class OverlayManager(
     }
 
     fun moveCursor(dx: Float, dy: Float) {
+        FileLogger.d(TAG, "moveCursor dx=$dx dy=$dy target=$inputTarget")
         if (inputTarget == InputTarget.SSH_TERMINAL) {
             val wv = sshTerminalWebView ?: return
             if (sshCursorX < 0) {
@@ -378,6 +379,7 @@ class OverlayManager(
     }
 
     fun performClick(button: Int) {
+        FileLogger.d(TAG, "performClick button=$button cursor=($cursorX,$cursorY)")
         if (inputTarget == InputTarget.SSH_TERMINAL) {
             injectTerminalMouse("mousedown", sshCursorX, sshCursorY, button)
             injectTerminalMouse("mouseup", sshCursorX, sshCursorY, button)
