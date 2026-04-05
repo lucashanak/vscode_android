@@ -7,6 +7,7 @@ import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
+import android.widget.FrameLayout
 import android.widget.ScrollView
 import android.view.Gravity
 import android.view.View
