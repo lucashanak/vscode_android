@@ -115,6 +115,25 @@ class OverlayManager(
         }
     }
 
+    /** Show only the cursor dot (for floating touchpad mode — no overlay keyboard) */
+    fun showCursorOnly() {
+        if (inputTarget == InputTarget.VSCODE) {
+            cursorView.visibility = View.VISIBLE
+            sendToContentScript("overlayActive", JSONObject().put("active", true))
+        }
+        floatingToggle.visibility = View.GONE
+    }
+
+    /** Hide cursor dot when floating touchpad closes */
+    fun hideCursorOnly() {
+        cursorView.visibility = View.GONE
+        floatingToggle.visibility = View.VISIBLE
+        if (inputTarget == InputTarget.VSCODE) {
+            val keepActive = alwaysSuppressInput
+            sendToContentScript("overlayActive", JSONObject().put("active", keepActive))
+        }
+    }
+
     fun setPort(p: WebExtension.Port) {
         port = p
         FileLogger.d(TAG, "Content script port connected")
@@ -312,6 +331,108 @@ class OverlayManager(
         return base
     }
 
+    // ======================== PUBLIC CURSOR/MOUSE API ========================
+    // Shared by JSInterface (overlay keyboard) and FloatingTouchpad
+
+    private fun androidButton(button: Int): Int = when (button) {
+        0 -> MotionEvent.BUTTON_PRIMARY
+        1 -> MotionEvent.BUTTON_TERTIARY
+        2 -> MotionEvent.BUTTON_SECONDARY
+        else -> MotionEvent.BUTTON_PRIMARY
+    }
+
+    fun moveCursor(dx: Float, dy: Float) {
+        if (inputTarget == InputTarget.SSH_TERMINAL) {
+            val wv = sshTerminalWebView ?: return
+            if (sshCursorX < 0) {
+                val density = wv.resources.displayMetrics.density
+                sshCursorX = wv.width / density / 2f
+                sshCursorY = wv.height / density / 2f
+            }
+            val maxX = wv.width / wv.resources.displayMetrics.density.toFloat()
+            val maxY = wv.height / wv.resources.displayMetrics.density.toFloat()
+            sshCursorX = (sshCursorX + dx).coerceIn(0f, maxX)
+            sshCursorY = (sshCursorY + dy).coerceIn(0f, maxY)
+            injectTerminalMouse("mousemove", sshCursorX, sshCursorY)
+            return
+        }
+        val density = geckoView.resources.displayMetrics.density
+        geckoView.post {
+            updateCursor(dx * density, dy * density)
+            if (nativeMouseDown) {
+                injectMouseEvent(MotionEvent.ACTION_MOVE, cursorX, cursorY, MotionEvent.BUTTON_PRIMARY)
+            } else {
+                injectHoverMove(cursorX, cursorY)
+            }
+        }
+    }
+
+    fun performClick(button: Int) {
+        if (inputTarget == InputTarget.SSH_TERMINAL) {
+            injectTerminalMouse("mousedown", sshCursorX, sshCursorY, button)
+            injectTerminalMouse("mouseup", sshCursorX, sshCursorY, button)
+            injectTerminalMouse("click", sshCursorX, sshCursorY, button)
+            return
+        }
+        val btn = androidButton(button)
+        geckoView.post {
+            injectMouseEvent(MotionEvent.ACTION_DOWN, cursorX, cursorY, btn)
+            injectMouseEvent(MotionEvent.ACTION_UP, cursorX, cursorY, 0)
+        }
+    }
+
+    fun performDoubleClick() {
+        if (inputTarget == InputTarget.SSH_TERMINAL) {
+            injectTerminalMouse("mousedown", sshCursorX, sshCursorY)
+            injectTerminalMouse("mouseup", sshCursorX, sshCursorY)
+            injectTerminalMouse("click", sshCursorX, sshCursorY)
+            injectTerminalMouse("mousedown", sshCursorX, sshCursorY)
+            injectTerminalMouse("mouseup", sshCursorX, sshCursorY)
+            injectTerminalMouse("click", sshCursorX, sshCursorY)
+            injectTerminalMouse("dblclick", sshCursorX, sshCursorY)
+            return
+        }
+        geckoView.post {
+            val btn = MotionEvent.BUTTON_PRIMARY
+            injectMouseEvent(MotionEvent.ACTION_DOWN, cursorX, cursorY, btn)
+            injectMouseEvent(MotionEvent.ACTION_UP, cursorX, cursorY, 0)
+            injectMouseEvent(MotionEvent.ACTION_DOWN, cursorX, cursorY, btn)
+            injectMouseEvent(MotionEvent.ACTION_UP, cursorX, cursorY, 0)
+        }
+    }
+
+    fun performMouseDown(button: Int) {
+        if (inputTarget == InputTarget.SSH_TERMINAL) {
+            injectTerminalMouse("mousedown", sshCursorX, sshCursorY, button)
+            return
+        }
+        geckoView.post {
+            nativeMouseDown = true
+            injectMouseEvent(MotionEvent.ACTION_DOWN, cursorX, cursorY, androidButton(button))
+        }
+    }
+
+    fun performMouseUp(button: Int) {
+        if (inputTarget == InputTarget.SSH_TERMINAL) {
+            injectTerminalMouse("mouseup", sshCursorX, sshCursorY, button)
+            return
+        }
+        geckoView.post {
+            nativeMouseDown = false
+            injectMouseEvent(MotionEvent.ACTION_UP, cursorX, cursorY, 0)
+        }
+    }
+
+    fun performScroll(deltaY: Float) {
+        if (inputTarget == InputTarget.SSH_TERMINAL) {
+            injectTerminalWheel(sshCursorX, sshCursorY, deltaY)
+            return
+        }
+        geckoView.post {
+            injectScroll(cursorX, cursorY, deltaY)
+        }
+    }
+
     @Suppress("unused")
     inner class JSInterface {
         @JavascriptInterface
@@ -344,111 +465,23 @@ class OverlayManager(
             }
         }
 
-        private fun androidButton(button: Int): Int = when (button) {
-            0 -> MotionEvent.BUTTON_PRIMARY
-            1 -> MotionEvent.BUTTON_TERTIARY
-            2 -> MotionEvent.BUTTON_SECONDARY
-            else -> MotionEvent.BUTTON_PRIMARY
-        }
+        @JavascriptInterface
+        fun pointerMove(dx: Float, dy: Float) = moveCursor(dx, dy)
 
         @JavascriptInterface
-        fun pointerMove(dx: Float, dy: Float) {
-            if (inputTarget == InputTarget.SSH_TERMINAL) {
-                val wv = sshTerminalWebView ?: return
-                if (sshCursorX < 0) {
-                    val density = wv.resources.displayMetrics.density
-                    sshCursorX = wv.width / density / 2f
-                    sshCursorY = wv.height / density / 2f
-                }
-                val maxX = wv.width / wv.resources.displayMetrics.density.toFloat()
-                val maxY = wv.height / wv.resources.displayMetrics.density.toFloat()
-                sshCursorX = (sshCursorX + dx).coerceIn(0f, maxX)
-                sshCursorY = (sshCursorY + dy).coerceIn(0f, maxY)
-                injectTerminalMouse("mousemove", sshCursorX, sshCursorY)
-                return
-            }
-            val density = geckoView.resources.displayMetrics.density
-            geckoView.post {
-                updateCursor(dx * density, dy * density)
-                // Native mouse injection: trusted events via PanZoomController
-                if (nativeMouseDown) {
-                    injectMouseEvent(MotionEvent.ACTION_MOVE, cursorX, cursorY, MotionEvent.BUTTON_PRIMARY)
-                } else {
-                    injectHoverMove(cursorX, cursorY)
-                }
-            }
-        }
+        fun mouseDown(button: Int) = performMouseDown(button)
 
         @JavascriptInterface
-        fun mouseDown(button: Int) {
-            if (inputTarget == InputTarget.SSH_TERMINAL) {
-                injectTerminalMouse("mousedown", sshCursorX, sshCursorY, button)
-                return
-            }
-            geckoView.post {
-                nativeMouseDown = true
-                injectMouseEvent(MotionEvent.ACTION_DOWN, cursorX, cursorY, androidButton(button))
-            }
-        }
+        fun mouseUp(button: Int) = performMouseUp(button)
 
         @JavascriptInterface
-        fun mouseUp(button: Int) {
-            if (inputTarget == InputTarget.SSH_TERMINAL) {
-                injectTerminalMouse("mouseup", sshCursorX, sshCursorY, button)
-                return
-            }
-            geckoView.post {
-                nativeMouseDown = false
-                injectMouseEvent(MotionEvent.ACTION_UP, cursorX, cursorY, 0)
-            }
-        }
+        fun click(button: Int) = performClick(button)
 
         @JavascriptInterface
-        fun click(button: Int) {
-            if (inputTarget == InputTarget.SSH_TERMINAL) {
-                injectTerminalMouse("mousedown", sshCursorX, sshCursorY, button)
-                injectTerminalMouse("mouseup", sshCursorX, sshCursorY, button)
-                injectTerminalMouse("click", sshCursorX, sshCursorY, button)
-                return
-            }
-            val btn = androidButton(button)
-            geckoView.post {
-                injectMouseEvent(MotionEvent.ACTION_DOWN, cursorX, cursorY, btn)
-                injectMouseEvent(MotionEvent.ACTION_UP, cursorX, cursorY, 0)
-            }
-        }
+        fun doubleClick() = performDoubleClick()
 
         @JavascriptInterface
-        fun doubleClick() {
-            if (inputTarget == InputTarget.SSH_TERMINAL) {
-                injectTerminalMouse("mousedown", sshCursorX, sshCursorY)
-                injectTerminalMouse("mouseup", sshCursorX, sshCursorY)
-                injectTerminalMouse("click", sshCursorX, sshCursorY)
-                injectTerminalMouse("mousedown", sshCursorX, sshCursorY)
-                injectTerminalMouse("mouseup", sshCursorX, sshCursorY)
-                injectTerminalMouse("click", sshCursorX, sshCursorY)
-                injectTerminalMouse("dblclick", sshCursorX, sshCursorY)
-                return
-            }
-            geckoView.post {
-                val btn = MotionEvent.BUTTON_PRIMARY
-                injectMouseEvent(MotionEvent.ACTION_DOWN, cursorX, cursorY, btn)
-                injectMouseEvent(MotionEvent.ACTION_UP, cursorX, cursorY, 0)
-                injectMouseEvent(MotionEvent.ACTION_DOWN, cursorX, cursorY, btn)
-                injectMouseEvent(MotionEvent.ACTION_UP, cursorX, cursorY, 0)
-            }
-        }
-
-        @JavascriptInterface
-        fun scroll(deltaY: Float) {
-            if (inputTarget == InputTarget.SSH_TERMINAL) {
-                injectTerminalWheel(sshCursorX, sshCursorY, deltaY)
-                return
-            }
-            geckoView.post {
-                injectScroll(cursorX, cursorY, deltaY)
-            }
-        }
+        fun scroll(deltaY: Float) = performScroll(deltaY)
 
         @JavascriptInterface
         fun hideOverlay() {

@@ -86,6 +86,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var geckoContainer: View
     private lateinit var launcherScroll: View
     private lateinit var overlayManager: OverlayManager
+    private lateinit var floatingTouchpad: FloatingTouchpad
     private val tunnelSessions = mutableListOf<TunnelSessionInfo>()
     private var currentSessionIdx = -1
     private var pollJob: Job? = null
@@ -204,7 +205,24 @@ class MainActivity : AppCompatActivity() {
         )
         overlayManager.setup()
         overlayManager.alwaysSuppressInput = suppressSystemKeyboard
-        floatingToggle.setOnClickListener { overlayManager.show() }
+        floatingToggle.setOnClickListener {
+            if (floatingTouchpad.visibility == View.VISIBLE) hideFloatingTouchpad()
+            overlayManager.show()
+        }
+        floatingToggle.setOnLongClickListener { showFloatingTouchpad(); true }
+
+        // Setup floating touchpad
+        floatingTouchpad = FloatingTouchpad(this, overlayManager)
+        floatingTouchpad.visibility = View.GONE
+        floatingTouchpad.onClose = { hideFloatingTouchpad() }
+        val rootFrame = findViewById<FrameLayout>(R.id.rootFrame)
+        rootFrame.addView(floatingTouchpad, FrameLayout.LayoutParams(1, 1)) // sized later in updateSize()
+        rootFrame.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            if (floatingTouchpad.visibility == View.VISIBLE) {
+                floatingTouchpad.updateSize()
+                floatingTouchpad.clampToParent()
+            }
+        }
 
         // Apply suppress setting immediately so it's ready before any session
         if (suppressSystemKeyboard) {
@@ -1768,6 +1786,21 @@ class MainActivity : AppCompatActivity() {
         session.webExtensionController.setMessageDelegate(extension, messageDelegate, "browser")
     }
 
+    private fun showFloatingTouchpad() {
+        // Hide full overlay if open
+        if (overlayManager.isVisible) overlayManager.hide()
+        floatingTouchpad.loadSettings()
+        floatingTouchpad.updateSize()
+        floatingTouchpad.visibility = View.VISIBLE
+        floatingTouchpad.post { floatingTouchpad.restorePosition() }
+        overlayManager.showCursorOnly()
+    }
+
+    private fun hideFloatingTouchpad() {
+        floatingTouchpad.visibility = View.GONE
+        overlayManager.hideCursorOnly()
+    }
+
     private fun onOverlayVisibilityChanged(visible: Boolean) {
         // Suppress system keyboard: always when setting is on, or when overlay is visible
         val suppress = visible || suppressSystemKeyboard
@@ -1874,6 +1907,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showLauncher() {
         overlayManager.hide()
+        if (floatingTouchpad.visibility == View.VISIBLE) hideFloatingTouchpad()
         // Close ALL sessions
         geckoView.releaseSession()
         for (s in tunnelSessions) { s.session.close() }
