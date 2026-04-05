@@ -167,6 +167,8 @@ class FloatingTouchpad(
                 cornerRadius = dp(4).toFloat()
                 setStroke(dp(1), 0xFF333333.toInt())
             }
+            isClickable = true
+            isFocusable = true
             setOnTouchListener(touchAreaListener)
         }
         root.addView(touchArea)

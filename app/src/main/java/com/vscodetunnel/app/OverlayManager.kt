@@ -118,6 +118,16 @@ class OverlayManager(
     /** Show only the cursor dot (for floating touchpad mode — no overlay keyboard) */
     fun showCursorOnly() {
         if (inputTarget == InputTarget.VSCODE) {
+            // Center cursor on first show so it's not hidden at (0,0)
+            if (cursorX == 0f && cursorY == 0f) {
+                val parent = cursorView.parent as? View
+                if (parent != null && parent.width > 0) {
+                    cursorX = parent.width / 2f
+                    cursorY = parent.height / 2f
+                    cursorView.translationX = cursorX
+                    cursorView.translationY = cursorY
+                }
+            }
             cursorView.visibility = View.VISIBLE
             sendToContentScript("overlayActive", JSONObject().put("active", true))
         }
