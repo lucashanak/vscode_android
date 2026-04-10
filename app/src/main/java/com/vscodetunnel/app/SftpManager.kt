@@ -44,6 +44,9 @@ class SftpManager(
                 config["StrictHostKeyChecking"] = "no"
                 sess.setConfig(config)
                 sess.timeout = 15000
+                if (server.useCloudflareProxy) {
+                    sess.setProxy(CloudflareProxy(server.host, server.cloudflareToken))
+                }
                 sess.connect()
                 session = sess
 

@@ -46,7 +46,9 @@ data class SshServer(
     val snippets: List<String> = emptyList(),
     val useMosh: Boolean = false,
     val useTmux: Boolean = false,
-    val tmuxSessionName: String = ""
+    val tmuxSessionName: String = "",
+    val useCloudflareProxy: Boolean = false,
+    val cloudflareToken: String = ""
 ) {
     enum class AuthMethod { PASSWORD, KEY }
 
@@ -66,6 +68,8 @@ data class SshServer(
         put("useMosh", useMosh)
         put("useTmux", useTmux)
         put("tmuxSessionName", tmuxSessionName)
+        put("useCloudflareProxy", useCloudflareProxy)
+        put("cloudflareToken", Base64.encodeToString(cloudflareToken.toByteArray(), Base64.NO_WRAP))
     }
 
     companion object {
@@ -94,6 +98,10 @@ data class SshServer(
             useMosh = json.optBoolean("useMosh", false),
             useTmux = json.optBoolean("useTmux", false),
             tmuxSessionName = json.optString("tmuxSessionName", ""),
+            useCloudflareProxy = json.optBoolean("useCloudflareProxy", false),
+            cloudflareToken = try {
+                String(Base64.decode(json.optString("cloudflareToken", ""), Base64.NO_WRAP))
+            } catch (_: Exception) { "" },
             snippets = try {
                 val arr = json.optJSONArray("snippets")
                 if (arr != null) (0 until arr.length()).map { arr.getString(it) }

@@ -264,6 +264,13 @@ class SshSessionManager(
                 sess.setConfig(config)
                 sess.timeout = 15000
 
+                // Cloudflare Tunnel: route SSH over WebSocket proxy
+                if (server.useCloudflareProxy) {
+                    writeInfo("Using Cloudflare Tunnel proxy...\r\n")
+                    val proxy = CloudflareProxy(server.host, server.cloudflareToken)
+                    sess.setProxy(proxy)
+                }
+
                 sess.connect()
 
                 // TOFU host key verification

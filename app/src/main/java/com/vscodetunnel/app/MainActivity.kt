@@ -727,6 +727,39 @@ class MainActivity : AppCompatActivity() {
         }
         layout.addView(tmuxNameField)
 
+        addLabel("Cloudflare Tunnel")
+        val cfCheck = CheckBox(this).apply {
+            text = "Route SSH via Cloudflare Tunnel (WebSocket proxy)"
+            isChecked = existing?.useCloudflareProxy ?: false
+            setTextColor(resources.getColor(R.color.text_primary, theme))
+            textSize = 14f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(4) }
+        }
+        layout.addView(cfCheck)
+
+        val cfTokenField = EditText(this).apply {
+            hint = "CF Access token (optional, for Zero Trust)"
+            setText(existing?.cloudflareToken ?: "")
+            setTextColor(resources.getColor(R.color.text_primary, theme))
+            setHintTextColor(resources.getColor(R.color.text_secondary, theme))
+            textSize = 14f
+            background = resources.getDrawable(R.drawable.bg_input, theme)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) }
+            visibility = if (existing?.useCloudflareProxy == true) View.VISIBLE else View.GONE
+        }
+        cfCheck.setOnCheckedChangeListener { _, checked ->
+            cfTokenField.visibility = if (checked) View.VISIBLE else View.GONE
+        }
+        layout.addView(cfTokenField)
+
         AlertDialog.Builder(this, R.style.AppDialogTheme)
             .setTitle(if (existing != null) "Edit Server" else "Add SSH Server")
             .setView(scroll)
@@ -752,7 +785,9 @@ class MainActivity : AppCompatActivity() {
                     snippets = snippetsField.text.toString().split(",").map { it.trim() }.filter { it.isNotBlank() },
                     useMosh = moshCheck.isChecked,
                     useTmux = tmuxCheck.isChecked,
-                    tmuxSessionName = tmuxNameField.text.toString().trim()
+                    tmuxSessionName = tmuxNameField.text.toString().trim(),
+                    useCloudflareProxy = cfCheck.isChecked,
+                    cloudflareToken = cfTokenField.text.toString().trim()
                 )
                 ServerStorage.saveServer(this, server)
                 renderSshServers()

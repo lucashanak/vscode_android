@@ -65,6 +65,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     // SSH client
     implementation("com.github.mwiede:jsch:0.2.21")
+    // WebSocket (for Cloudflare Tunnel SSH proxy)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // Biometric auth
     implementation("androidx.biometric:biometric:1.1.0")
     // Binary delta patching for updates
