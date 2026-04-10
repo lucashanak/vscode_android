@@ -31,7 +31,9 @@ class CloudflareProxy(
 
     companion object {
         private const val TAG = "CloudflareProxy"
-        private const val CF_SSH_PATH = "/__cloudflare_access/ssh/v2"
+        // Root path — Cloudflare edge routes WebSocket to the tunnel's SSH service.
+        // /__cloudflare_access/ssh/v2 is only for browser-rendered terminal.
+        private const val CF_SSH_PATH = ""
         private const val PIPE_BUFFER = 65536
     }
 
