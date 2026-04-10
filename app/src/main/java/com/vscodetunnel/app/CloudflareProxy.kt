@@ -9,6 +9,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
+import okhttp3.Protocol
 import java.io.InputStream
 import java.io.OutputStream
 import java.io.PipedInputStream
@@ -46,6 +47,7 @@ class CloudflareProxy(
     @Volatile private var closed = false
 
     private val client = OkHttpClient.Builder()
+        .protocols(listOf(Protocol.HTTP_1_1)) // Force HTTP/1.1 — WebSocket upgrade fails over HTTP/2
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .pingInterval(30, TimeUnit.SECONDS)
         .build()
