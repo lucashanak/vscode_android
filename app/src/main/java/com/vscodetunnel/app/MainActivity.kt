@@ -52,6 +52,7 @@ import com.vscodetunnel.app.AppSettings.sshConnectTimeout
 import com.vscodetunnel.app.AppSettings.suppressSystemKeyboard
 import com.vscodetunnel.app.AppSettings.biometricLockEnabled
 import com.vscodetunnel.app.AppSettings.vscodeZoomPercent
+import com.vscodetunnel.app.AppSettings.vscodeLanguage
 import com.vscodetunnel.app.AppSettings.compactKeyHeight
 import com.vscodetunnel.app.AppSettings.wideKeyHeight
 import com.vscodetunnel.app.AppSettings.tpSensitivity
