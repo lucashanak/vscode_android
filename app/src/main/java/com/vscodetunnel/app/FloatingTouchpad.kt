@@ -21,6 +21,7 @@ class FloatingTouchpad(
         private const val TAP_MOVE_THRESHOLD = 10f // dp
         private const val TAP_TIMEOUT = 300L
         private const val DOUBLE_TAP_TIMEOUT = 300L
+        private const val EDGE_SCROLL_FRACTION = 0.15f // rightmost 15% = scroll zone
     }
 
     // Touch state
@@ -34,6 +35,7 @@ class FloatingTouchpad(
     private var lastTapTime = 0L
     private var isDragSelecting = false
     private var tapTimeout: Runnable? = null
+    private var edgeScrolling = false
 
     // Settings
     private var sensitivity = 1.5f
@@ -231,6 +233,8 @@ class FloatingTouchpad(
                 tapStart = System.currentTimeMillis()
                 tapTimeout?.let { removeCallbacks(it) }
                 tapTimeout = null
+                // Detect right-edge scroll zone
+                edgeScrolling = event.x > width * (1f - EDGE_SCROLL_FRACTION)
                 return true
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
@@ -249,6 +253,11 @@ class FloatingTouchpad(
                     scrollLastY = event.getY(0)
                     val dir = if (scrollInvert) -1f else 1f
                     overlayManager.performScroll(scrollDy * scrollSpeed * dir)
+                } else if (edgeScrolling) {
+                    // Right-edge single-finger scroll
+                    val dyDp = dy / density
+                    val dir = if (scrollInvert) -1f else 1f
+                    overlayManager.performScroll(dyDp * scrollSpeed * dir)
                 } else {
                     val dxDp = dx / density
                     val dyDp = dy / density
@@ -298,6 +307,7 @@ class FloatingTouchpad(
                 }
                 tracking = false
                 fingerCount = 0
+                edgeScrolling = false
                 return true
             }
             MotionEvent.ACTION_POINTER_UP -> return true

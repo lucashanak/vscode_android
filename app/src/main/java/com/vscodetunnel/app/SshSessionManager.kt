@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.webkit.JavascriptInterface
 import com.vscodetunnel.app.AppSettings.terminalFontSize
+import com.vscodetunnel.app.AppSettings.sshKeepaliveInterval
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -94,6 +95,11 @@ class SshSessionManager(
             var scrollAccum1f = 0f
             var longPressRunnable: Runnable? = null
             val handler = android.os.Handler(android.os.Looper.getMainLooper())
+            // Double-tap state
+            var lastTapTime = 0L
+            var lastTapX = 0f
+            var lastTapY = 0f
+            val doubleTapTimeout = 300L
             // Dead zone in dp — finger must move this far before scroll starts
             // (prevents jitter on taps, but we still consume all 1-finger moves
             // to block xterm.js from seeing touchmove)
@@ -226,6 +232,27 @@ class SshSessionManager(
                         // Consume UP after scroll/long-press to prevent browser
                         // from synthesizing click that would clear selection
                         if (was2f || was1fScroll || wasLongPress) return@setOnTouchListener true
+
+                        // Double-tap detection for word selection
+                        if (event.actionMasked == android.view.MotionEvent.ACTION_UP &&
+                            !was2f && !was1fScroll && !wasLongPress) {
+                            val now = System.currentTimeMillis()
+                            val tapDx = event.x - lastTapX
+                            val tapDy = event.y - lastTapY
+                            val tapDist = tapDx * tapDx + tapDy * tapDy
+                            if (now - lastTapTime < doubleTapTimeout && tapDist < deadZone * deadZone * 16) {
+                                // Double-tap: select word at CSS pixel coords
+                                val cssX = event.x / density
+                                val cssY = event.y / density
+                                webView.evaluateJavascript("selectWordAt($cssX,$cssY)", null)
+                                lastTapTime = 0L
+                                return@setOnTouchListener true
+                            }
+                            lastTapTime = now
+                            lastTapX = event.x
+                            lastTapY = event.y
+                        }
+
                         false
                     }
                     else -> false
@@ -263,6 +290,13 @@ class SshSessionManager(
                 config["StrictHostKeyChecking"] = "no"
                 sess.setConfig(config)
                 sess.timeout = 15000
+
+                // SSH keepalive to prevent idle disconnections
+                val keepaliveSeconds = context.sshKeepaliveInterval
+                if (keepaliveSeconds > 0) {
+                    sess.setServerAliveInterval(keepaliveSeconds * 1000)
+                    sess.setServerAliveCountMax(3)
+                }
 
                 // Cloudflare Tunnel: route SSH over WebSocket proxy
                 if (server.useCloudflareProxy) {

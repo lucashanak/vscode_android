@@ -49,6 +49,7 @@ import com.vscodetunnel.app.AppSettings.defaultStartupCmd
 import com.vscodetunnel.app.AppSettings.sshAutoReconnect
 import com.vscodetunnel.app.AppSettings.sshReconnectAttempts
 import com.vscodetunnel.app.AppSettings.sshConnectTimeout
+import com.vscodetunnel.app.AppSettings.sshKeepaliveInterval
 import com.vscodetunnel.app.AppSettings.suppressSystemKeyboard
 import com.vscodetunnel.app.AppSettings.biometricLockEnabled
 import com.vscodetunnel.app.AppSettings.vscodeZoomPercent
@@ -1555,6 +1556,9 @@ class MainActivity : AppCompatActivity() {
         label("Connection timeout (seconds)")
         val timeoutField = field("15", sshConnectTimeout.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
         layout.addView(timeoutField)
+        label("Keepalive interval (seconds, 0 = disabled)")
+        val keepaliveField = field("60", sshKeepaliveInterval.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
+        layout.addView(keepaliveField)
 
         // === SECURITY ===
         section("Security")
@@ -1631,6 +1635,7 @@ class MainActivity : AppCompatActivity() {
             sshAutoReconnect = autoReconnectCheck.isChecked
             sshReconnectAttempts = attemptsField.text.toString().toIntOrNull() ?: 3
             sshConnectTimeout = timeoutField.text.toString().toIntOrNull() ?: 15
+            sshKeepaliveInterval = (keepaliveField.text.toString().toIntOrNull() ?: 60).coerceIn(0, 600)
             // Security
             biometricLockEnabled = biometricCheck.isChecked
             keepAliveEnabled = keepAliveCheck.isChecked
