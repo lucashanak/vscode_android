@@ -13,6 +13,7 @@ object AppSettings {
     private const val KEY_COLOR_SCHEME = "terminal_color_scheme"
     private const val KEY_SCROLLBACK = "terminal_scrollback"
     private const val KEY_VSCODE_ZOOM = "vscode_zoom_percent"
+    private const val KEY_VSCODE_LANGUAGE = "vscode_language"
     private const val KEY_REPEAT_DELAY = "key_repeat_delay"
     private const val KEY_REPEAT_RATE = "key_repeat_rate"
     private const val KEY_DEFAULT_SSH_PORT = "default_ssh_port"
@@ -83,6 +84,10 @@ object AppSettings {
     var Context.vscodeZoomPercent: Int
         get() = prefs(this).getInt(KEY_VSCODE_ZOOM, 100)
         set(value) = prefs(this).edit().putInt(KEY_VSCODE_ZOOM, value).apply()
+
+    var Context.vscodeLanguage: String
+        get() = prefs(this).getString(KEY_VSCODE_LANGUAGE, "") ?: ""
+        set(value) = prefs(this).edit().putString(KEY_VSCODE_LANGUAGE, value).apply()
 
     // --- SSH Defaults ---
     var Context.defaultSshPort: Int

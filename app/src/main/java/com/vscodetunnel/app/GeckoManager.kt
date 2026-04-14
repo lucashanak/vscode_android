@@ -40,11 +40,23 @@ object GeckoManager {
                 FileLogger.d(TAG, "VSCode zoom: ${zoomPercent}%, density: $systemDensity → $newDensity")
             }
 
+            val lang = prefs.getString("vscode_language", "") ?: ""
+            if (lang.isNotEmpty()) {
+                builder.locales(arrayOf(lang))
+                FileLogger.d(TAG, "VSCode language: $lang")
+            }
+
             val settings = builder.build()
             runtime = GeckoRuntime.create(context.applicationContext, settings)
             FileLogger.d(TAG, "GeckoRuntime created")
         }
         return runtime!!
+    }
+
+    fun setLocale(lang: String) {
+        val locales = if (lang.isEmpty()) null else arrayOf(lang)
+        runtime?.settings?.locales = locales
+        FileLogger.d(TAG, "VSCode language updated: ${lang.ifEmpty { "auto" }}")
     }
 
     fun getOverlayExtension(): WebExtension? = overlayExtension

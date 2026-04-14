@@ -1495,6 +1495,18 @@ class MainActivity : AppCompatActivity() {
         label("VSCode zoom % (80=more content, restart required)")
         val zoomField = field("100", vscodeZoomPercent.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
         layout.addView(zoomField)
+        label("VSCode language")
+        val languages = arrayOf("Auto (system)", "en", "cs", "de", "fr", "es", "zh", "ja", "ko", "ru", "pt")
+        val languageValues = arrayOf("", "en", "cs", "de", "fr", "es", "zh", "ja", "ko", "ru", "pt")
+        val langSpinner = android.widget.Spinner(this).apply {
+            adapter = android.widget.ArrayAdapter(this@MainActivity,
+                android.R.layout.simple_spinner_dropdown_item, languages)
+            setSelection(languageValues.indexOf(vscodeLanguage).coerceAtLeast(0))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) }
+        }
+        layout.addView(langSpinner)
 
         // === KEYBOARD ===
         section("Keyboard")
@@ -1587,6 +1599,11 @@ class MainActivity : AppCompatActivity() {
             if (newZoom != vscodeZoomPercent) {
                 vscodeZoomPercent = newZoom
                 android.widget.Toast.makeText(this, "Use Exit button to restart app and apply zoom", android.widget.Toast.LENGTH_LONG).show()
+            }
+            val newLang = languageValues[langSpinner.selectedItemPosition]
+            if (newLang != vscodeLanguage) {
+                vscodeLanguage = newLang
+                GeckoManager.setLocale(newLang)
             }
             // Keyboard
             suppressSystemKeyboard = suppressCheck.isChecked
