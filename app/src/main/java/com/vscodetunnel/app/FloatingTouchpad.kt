@@ -34,6 +34,7 @@ class FloatingTouchpad(
     private var tapStart = 0L
     private var lastTapTime = 0L
     private var isDragSelecting = false
+    private var dragCandidate = false
     private var tapTimeout: Runnable? = null
     private var edgeScrolling = false
 
@@ -231,10 +232,21 @@ class FloatingTouchpad(
                 lastX = event.x; lastY = event.y
                 totalMove = 0f
                 tapStart = System.currentTimeMillis()
-                tapTimeout?.let { removeCallbacks(it) }
-                tapTimeout = null
                 // Detect right-edge scroll zone
                 edgeScrolling = event.x > width * (1f - EDGE_SCROLL_FRACTION)
+                // Drag candidate if this touch started within double-tap window
+                // from the previous tap's release — cursor stays frozen during
+                // this touch until we know if it becomes a drag.
+                dragCandidate = !edgeScrolling && lastTapTime > 0 &&
+                    System.currentTimeMillis() - lastTapTime < DOUBLE_TAP_TIMEOUT
+                // Cancel the pending single-click from the previous tap only
+                // when we're a drag candidate — we'll emit the click manually
+                // if the drag confirms. Plain second taps (no drag) still cancel
+                // the timer in ACTION_UP and emit a double-click.
+                if (dragCandidate) {
+                    tapTimeout?.let { removeCallbacks(it) }
+                    tapTimeout = null
+                }
                 return true
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
@@ -258,26 +270,36 @@ class FloatingTouchpad(
                     val dyDp = dy / density
                     val dir = if (scrollInvert) -1f else 1f
                     overlayManager.performScroll(dyDp * scrollSpeed * dir)
+                } else if (dragCandidate && !isDragSelecting) {
+                    // Freeze cursor during drag-detection window so the drag
+                    // anchors at the first-click position, not wherever the
+                    // finger has drifted.
+                    if (totalMove > tapThresholdPx) {
+                        // Drag confirmed. Emit the missed first click (we
+                        // canceled its timer in ACTION_DOWN), then press down.
+                        overlayManager.performClick(0)
+                        overlayManager.performMouseDown(0)
+                        isDragSelecting = true
+                        dragCandidate = false
+                    }
                 } else {
                     val dxDp = dx / density
                     val dyDp = dy / density
                     overlayManager.moveCursor(dxDp * sensitivity, dyDp * sensitivity)
-
-                    if (!isDragSelecting && totalMove > tapThresholdPx &&
-                        System.currentTimeMillis() - lastTapTime < DOUBLE_TAP_TIMEOUT) {
-                        isDragSelecting = true
-                        overlayManager.performMouseDown(0)
-                    }
                 }
                 lastX = event.x; lastY = event.y
                 return true
             }
             MotionEvent.ACTION_UP -> {
                 FileLogger.d("FloatingTP", "UP totalMove=$totalMove")
+                dragCandidate = false
                 if (isDragSelecting) {
                     overlayManager.performMouseUp(0)
                     isDragSelecting = false
                     tracking = false
+                    fingerCount = 0
+                    edgeScrolling = false
+                    lastTapTime = 0L // drag consumed the tap sequence
                     return true
                 }
 
@@ -311,6 +333,17 @@ class FloatingTouchpad(
                 return true
             }
             MotionEvent.ACTION_POINTER_UP -> return true
+            MotionEvent.ACTION_CANCEL -> {
+                if (isDragSelecting) {
+                    overlayManager.performMouseUp(0)
+                    isDragSelecting = false
+                }
+                tracking = false
+                fingerCount = 0
+                edgeScrolling = false
+                dragCandidate = false
+                return true
+            }
         }
         return false
     }

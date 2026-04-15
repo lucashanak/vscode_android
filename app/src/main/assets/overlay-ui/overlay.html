@@ -1378,9 +1378,11 @@ document.addEventListener('pointerdown', e => {
 
 // ======================== TOUCHPAD ========================
 const TAP_MOVE_THRESHOLD = 10;
+const DOUBLE_TAP_WINDOW = 400; // ms between tap-up and next tap-down for drag detection
 const EDGE_SCROLL_FRACTION = 0.15; // rightmost 15% of touchpad = scroll zone
 const tpArea = document.getElementById('tpArea');
-let tpDragging = false; // double-tap-and-hold drag state
+let tpDragging = false; // double-tap-and-hold drag active
+let tpDragCandidate = false; // this touch started within double-tap window, may become drag
 let tpEdgeScrolling = false; // right-edge single-finger scroll
 
 tpArea.addEventListener('touchstart', e => {
@@ -1396,6 +1398,10 @@ tpArea.addEventListener('touchstart', e => {
     // Detect right-edge scroll zone
     const rect = tpArea.getBoundingClientRect();
     tpEdgeScrolling = (t.length === 1 && t[0].clientX > rect.right - rect.width * EDGE_SCROLL_FRACTION);
+    // Mark as drag candidate if this touch started soon after the last tap.
+    // Cursor stays frozen during this touch until we know if it's a drag or just a double-tap.
+    tpDragCandidate = (t.length === 1 && !tpEdgeScrolling &&
+        tp.lastTap > 0 && Date.now() - tp.lastTap < DOUBLE_TAP_WINDOW);
 }, {passive:false});
 
 tpArea.addEventListener('touchmove', e => {
@@ -1412,24 +1418,29 @@ tpArea.addEventListener('touchmove', e => {
     } else if (tpEdgeScrolling) {
         // Right-edge single-finger scroll
         A.scroll(dy * SCROLL_SENS * (SCROLL_INVERT ? -1 : 1));
-    } else {
-        A.pointerMove(dx * SENSITIVITY, dy * SENSITIVITY);
-        // Double-tap-and-hold: if moved past threshold, start drag
-        if (!tpDragging && tp.lastTap > 0 && Date.now() - tp.lastTap < 300 && tp.totalMove > TAP_MOVE_THRESHOLD) {
+    } else if (tpDragCandidate && !tpDragging) {
+        // Holding cursor still until drag is confirmed — drag must anchor at
+        // the first click position, not wherever the finger drifts.
+        if (tp.totalMove > TAP_MOVE_THRESHOLD) {
             tpDragging = true;
+            tpDragCandidate = false;
             haptic(); A.mouseDown(0);
         }
+    } else {
+        A.pointerMove(dx * SENSITIVITY, dy * SENSITIVITY);
     }
 }, {passive:false});
 
 tpArea.addEventListener('touchend', e => {
     e.preventDefault();
+    tpDragCandidate = false;
     // End drag if active
     if (tpDragging) {
         tpDragging = false;
         A.mouseUp(0);
         tp.tracking = false; tp.fingers = 0; tp.tapStart = 0;
         tpEdgeScrolling = false;
+        tp.lastTap = 0; // drag consumed the tap sequence
         return;
     }
     // End edge scroll — no tap action
@@ -1448,13 +1459,10 @@ tpArea.addEventListener('touchend', e => {
             // 2-finger tap -> right click
             haptic(); A.click(2);
         } else if (tp.fingers === 1) {
-            // Single tap -> immediate left click
+            // Every single-finger tap emits one click. Two taps in quick
+            // succession arrive as two clicks — the browser detects that as
+            // a double-click. No extra A.doubleClick() call (would triple up).
             haptic(); A.click(0);
-            // Record for double-tap-and-hold detection
-            if (now - tp.lastTap < 300) {
-                A.doubleClick();
-                // Keep lastTap for potential hold-drag on next touch
-            }
             tp.lastTap = now;
         }
         tp.tapStart = 0;
