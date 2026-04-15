@@ -170,6 +170,7 @@ class OverlayManager(
         }
         // Sync keepalive config so reconnected sessions respect current settings
         syncKeepalive()
+        syncColorInvert()
     }
 
     /** Sync inputmode suppression state to content script (call after changing alwaysSuppressInput) */
@@ -185,6 +186,24 @@ class OverlayManager(
             "app_settings", android.content.Context.MODE_PRIVATE
         ).getInt("tunnel_keepalive_interval", 30)
         sendToContentScript("keepalive", JSONObject().put("seconds", seconds))
+    }
+
+    /** Send current color-invert state to content script */
+    fun syncColorInvert() {
+        val enabled = geckoView.context.getSharedPreferences(
+            "app_settings", android.content.Context.MODE_PRIVATE
+        ).getBoolean("vscode_color_invert", false)
+        sendToContentScript("colorInvert", JSONObject().put("enabled", enabled))
+    }
+
+    /** Toggle color inversion (for sunlight readability). Persists across sessions. */
+    fun toggleColorInvert() {
+        val prefs = geckoView.context.getSharedPreferences(
+            "app_settings", android.content.Context.MODE_PRIVATE
+        )
+        val newState = !prefs.getBoolean("vscode_color_invert", false)
+        prefs.edit().putBoolean("vscode_color_invert", newState).apply()
+        sendToContentScript("colorInvert", JSONObject().put("enabled", newState))
     }
 
     private fun injectTerminalMouse(type: String, x: Float, y: Float, button: Int = 0) {

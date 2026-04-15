@@ -124,6 +124,10 @@ object AppSettings {
         get() = prefs(this).getInt(KEY_TUNNEL_KEEPALIVE, 30)
         set(value) = prefs(this).edit().putInt(KEY_TUNNEL_KEEPALIVE, value).apply()
 
+    var Context.vscodeColorInvert: Boolean
+        get() = prefs(this).getBoolean("vscode_color_invert", false)
+        set(value) = prefs(this).edit().putBoolean("vscode_color_invert", value).apply()
+
     // --- Security ---
     private const val KEY_BIOMETRIC = "biometric_lock"
 

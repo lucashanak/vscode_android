@@ -209,11 +209,35 @@ class MainActivity : AppCompatActivity() {
         )
         overlayManager.setup()
         overlayManager.alwaysSuppressInput = suppressSystemKeyboard
+        var lastToggleClickTime = 0L
+        var pendingSingleClick: Runnable? = null
+        val toggleHandler = android.os.Handler(android.os.Looper.getMainLooper())
         floatingToggle.setOnClickListener {
-            if (floatingTouchpad.visibility == View.VISIBLE) hideFloatingTouchpad()
-            overlayManager.show()
+            val now = android.os.SystemClock.uptimeMillis()
+            if (now - lastToggleClickTime < 300) {
+                // Double-click → toggle color invert (sunlight readability)
+                pendingSingleClick?.let { toggleHandler.removeCallbacks(it) }
+                pendingSingleClick = null
+                lastToggleClickTime = 0
+                overlayManager.toggleColorInvert()
+            } else {
+                lastToggleClickTime = now
+                // Defer the single-click action so a quick second tap can cancel it
+                val r = Runnable {
+                    pendingSingleClick = null
+                    if (floatingTouchpad.visibility == View.VISIBLE) hideFloatingTouchpad()
+                    overlayManager.show()
+                }
+                pendingSingleClick = r
+                toggleHandler.postDelayed(r, 300)
+            }
         }
-        floatingToggle.setOnLongClickListener { showFloatingTouchpad(); true }
+        floatingToggle.setOnLongClickListener {
+            pendingSingleClick?.let { toggleHandler.removeCallbacks(it) }
+            pendingSingleClick = null
+            showFloatingTouchpad()
+            true
+        }
 
         // Setup floating touchpad
         floatingTouchpad = FloatingTouchpad(this, overlayManager)

@@ -160,6 +160,27 @@
         }
     }
 
+    // ====================== COLOR INVERT (sunlight readability) ======================
+    // Invert whole page with a CSS filter. hue-rotate(180deg) keeps colors
+    // roughly correct (blues stay blue-ish) while lightness is flipped.
+    // Images/videos are un-inverted so they still look normal.
+    function setColorInvert(enabled) {
+        const id = 'vscode-sun-invert-style';
+        let el = document.getElementById(id);
+        if (!enabled) { if (el) el.remove(); return; }
+        if (!el) {
+            el = document.createElement('style');
+            el.id = id;
+            (document.head || document.documentElement).appendChild(el);
+        }
+        el.textContent = `
+            html { filter: invert(1) hue-rotate(180deg) !important; background: #fff !important; }
+            img, video, canvas, svg[class*="icon"], [style*="background-image"] {
+                filter: invert(1) hue-rotate(180deg) !important;
+            }
+        `;
+    }
+
     // ====================== KEEPALIVE (prevent idle disconnect) ======================
     // VSCode tunnel disconnects after prolonged inactivity. Dispatching
     // synthetic mousemove events at a configurable interval keeps the
@@ -199,6 +220,9 @@
                         break;
                     case 'keepalive':
                         setKeepalive(msg.seconds);
+                        break;
+                    case 'colorInvert':
+                        setColorInvert(!!msg.enabled);
                         break;
                 }
             });
