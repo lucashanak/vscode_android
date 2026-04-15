@@ -99,6 +99,11 @@ class OverlayManager(
         if (inputTarget == InputTarget.VSCODE) {
             sendToContentScript("overlayActive", JSONObject().put("active", true))
         }
+        // Push current invert state to the overlay UI (in case page just loaded)
+        val invertEnabled = geckoView.context.getSharedPreferences(
+            "app_settings", android.content.Context.MODE_PRIVATE
+        ).getBoolean("vscode_color_invert", false)
+        applyInvertToOverlay(invertEnabled)
     }
 
     fun hide() {
@@ -188,12 +193,13 @@ class OverlayManager(
         sendToContentScript("keepalive", JSONObject().put("seconds", seconds))
     }
 
-    /** Send current color-invert state to content script */
+    /** Send current color-invert state to content script AND overlay UI */
     fun syncColorInvert() {
         val enabled = geckoView.context.getSharedPreferences(
             "app_settings", android.content.Context.MODE_PRIVATE
         ).getBoolean("vscode_color_invert", false)
         sendToContentScript("colorInvert", JSONObject().put("enabled", enabled))
+        applyInvertToOverlay(enabled)
     }
 
     /** Toggle color inversion (for sunlight readability). Persists across sessions. */
@@ -204,6 +210,15 @@ class OverlayManager(
         val newState = !prefs.getBoolean("vscode_color_invert", false)
         prefs.edit().putBoolean("vscode_color_invert", newState).apply()
         sendToContentScript("colorInvert", JSONObject().put("enabled", newState))
+        applyInvertToOverlay(newState)
+    }
+
+    private fun applyInvertToOverlay(enabled: Boolean) {
+        webView.post {
+            webView.evaluateJavascript(
+                "if(typeof applyInvert==='function')applyInvert($enabled)", null
+            )
+        }
     }
 
     private fun injectTerminalMouse(type: String, x: Float, y: Float, button: Int = 0) {
@@ -527,6 +542,11 @@ class OverlayManager(
         @JavascriptInterface
         fun hideOverlay() {
             geckoView.post { hide() }
+        }
+
+        @JavascriptInterface
+        fun toggleInvert() {
+            geckoView.post { toggleColorInvert() }
         }
 
         @JavascriptInterface

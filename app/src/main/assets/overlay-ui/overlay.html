@@ -235,6 +235,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
     <button class="tool-btn" id="langBtn">US</button>
     <div class="spacer"></div>
     <button class="tool-btn tab-btn" id="tpToggle">TP</button>
+    <button class="tool-btn" id="invertBtn" title="Invert colors (sunlight)">☀</button>
     <button class="tool-btn" id="hideBtn">Hide</button>
 </div>
 
@@ -1518,6 +1519,32 @@ langBtn.addEventListener('pointerdown', e => {
 document.getElementById('hideBtn').addEventListener('pointerdown', e => {
     e.preventDefault();
     A.hideOverlay();
+});
+
+// ======================== COLOR INVERT ========================
+// Inverts both this overlay UI and the VSCode page. Button icon flips
+// ☀ (normal) ↔ ☾ (inverted). Android is the source of truth — it
+// pushes the current state via applyInvert() on load/sync.
+function applyInvert(enabled) {
+    const id = 'overlay-invert-style';
+    let el = document.getElementById(id);
+    if (!enabled) {
+        if (el) el.remove();
+    } else {
+        if (!el) {
+            el = document.createElement('style');
+            el.id = id;
+            document.head.appendChild(el);
+        }
+        // Invert the whole overlay; swap background so key contrast stays readable.
+        el.textContent = `html { filter: invert(1) hue-rotate(180deg); background: #fff; }`;
+    }
+    const btn = document.getElementById('invertBtn');
+    if (btn) btn.textContent = enabled ? '\u263E' : '\u2600';
+}
+document.getElementById('invertBtn').addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (typeof A.toggleInvert === 'function') A.toggleInvert();
 });
 
 // Prevent focus stealing
