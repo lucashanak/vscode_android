@@ -50,6 +50,7 @@ import com.vscodetunnel.app.AppSettings.sshAutoReconnect
 import com.vscodetunnel.app.AppSettings.sshReconnectAttempts
 import com.vscodetunnel.app.AppSettings.sshConnectTimeout
 import com.vscodetunnel.app.AppSettings.sshKeepaliveInterval
+import com.vscodetunnel.app.AppSettings.tunnelKeepaliveInterval
 import com.vscodetunnel.app.AppSettings.suppressSystemKeyboard
 import com.vscodetunnel.app.AppSettings.biometricLockEnabled
 import com.vscodetunnel.app.AppSettings.vscodeZoomPercent
@@ -1569,6 +1570,9 @@ class MainActivity : AppCompatActivity() {
         section("Background")
         val keepAliveCheck = check("Keep alive in background (foreground service)", keepAliveEnabled)
         layout.addView(keepAliveCheck)
+        label("VSCode tunnel keepalive interval (seconds, 0 = disabled)")
+        val tunnelKeepaliveField = field("30", tunnelKeepaliveInterval.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
+        layout.addView(tunnelKeepaliveField)
 
         // === MAINTENANCE ===
         section("Maintenance")
@@ -1639,6 +1643,8 @@ class MainActivity : AppCompatActivity() {
             // Security
             biometricLockEnabled = biometricCheck.isChecked
             keepAliveEnabled = keepAliveCheck.isChecked
+            tunnelKeepaliveInterval = (tunnelKeepaliveField.text.toString().toIntOrNull() ?: 30).coerceIn(0, 600)
+            overlayManager.syncKeepalive()
             // Push repeat settings
             updateOverlaySettings()
             dialog.dismiss()

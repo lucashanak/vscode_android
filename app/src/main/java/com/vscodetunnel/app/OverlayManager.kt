@@ -168,6 +168,8 @@ class OverlayManager(
         if (inputTarget == InputTarget.VSCODE && (isVisible || alwaysSuppressInput)) {
             sendToContentScript("overlayActive", JSONObject().put("active", true))
         }
+        // Sync keepalive config so reconnected sessions respect current settings
+        syncKeepalive()
     }
 
     /** Sync inputmode suppression state to content script (call after changing alwaysSuppressInput) */
@@ -175,6 +177,14 @@ class OverlayManager(
         if (inputTarget != InputTarget.VSCODE) return
         val active = isVisible || alwaysSuppressInput
         sendToContentScript("overlayActive", JSONObject().put("active", active))
+    }
+
+    /** Send tunnel keepalive interval to content script (0 = disabled) */
+    fun syncKeepalive() {
+        val seconds = geckoView.context.getSharedPreferences(
+            "app_settings", android.content.Context.MODE_PRIVATE
+        ).getInt("tunnel_keepalive_interval", 30)
+        sendToContentScript("keepalive", JSONObject().put("seconds", seconds))
     }
 
     private fun injectTerminalMouse(type: String, x: Float, y: Float, button: Int = 0) {

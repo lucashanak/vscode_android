@@ -160,6 +160,26 @@
         }
     }
 
+    // ====================== KEEPALIVE (prevent idle disconnect) ======================
+    // VSCode tunnel disconnects after prolonged inactivity. Dispatching
+    // synthetic mousemove events at a configurable interval keeps the
+    // user presence detection fresh without affecting focus or selection.
+    let keepaliveTimer = null;
+    function setKeepalive(seconds) {
+        if (keepaliveTimer) { clearInterval(keepaliveTimer); keepaliveTimer = null; }
+        if (!seconds || seconds <= 0) return;
+        keepaliveTimer = setInterval(() => {
+            try {
+                // Synthetic mousemove at current cursor pos — not trusted but
+                // sufficient to reset idle timers in vscode.dev's activity tracker
+                document.dispatchEvent(new MouseEvent('mousemove', {
+                    clientX: cursorX, clientY: cursorY,
+                    bubbles: true, cancelable: true
+                }));
+            } catch (e) {}
+        }, seconds * 1000);
+    }
+
     // ====================== PORT CONNECTION ======================
     function connect() {
         try {
@@ -176,6 +196,9 @@
                         break;
                     case 'overlayActive':
                         setInputModeNone(!!msg.active);
+                        break;
+                    case 'keepalive':
+                        setKeepalive(msg.seconds);
                         break;
                 }
             });

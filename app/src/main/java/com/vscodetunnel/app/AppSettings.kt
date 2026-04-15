@@ -23,6 +23,7 @@ object AppSettings {
     private const val KEY_RECONNECT_ATTEMPTS = "ssh_reconnect_attempts"
     private const val KEY_CONNECT_TIMEOUT = "ssh_connect_timeout"
     private const val KEY_KEEPALIVE_INTERVAL = "ssh_keepalive_interval"
+    private const val KEY_TUNNEL_KEEPALIVE = "tunnel_keepalive_interval"
     private const val KEY_COMPACT_KEY_HEIGHT = "compact_key_height"
     private const val KEY_WIDE_KEY_HEIGHT = "wide_key_height"
     private const val KEY_TP_SENSITIVITY = "tp_sensitivity"
@@ -118,6 +119,10 @@ object AppSettings {
     var Context.sshKeepaliveInterval: Int
         get() = prefs(this).getInt(KEY_KEEPALIVE_INTERVAL, 60)
         set(value) = prefs(this).edit().putInt(KEY_KEEPALIVE_INTERVAL, value).apply()
+
+    var Context.tunnelKeepaliveInterval: Int
+        get() = prefs(this).getInt(KEY_TUNNEL_KEEPALIVE, 30)
+        set(value) = prefs(this).edit().putInt(KEY_TUNNEL_KEEPALIVE, value).apply()
 
     // --- Security ---
     private const val KEY_BIOMETRIC = "biometric_lock"
