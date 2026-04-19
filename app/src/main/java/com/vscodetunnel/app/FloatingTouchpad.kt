@@ -275,9 +275,9 @@ class FloatingTouchpad(
                     // anchors at the first-click position, not wherever the
                     // finger has drifted.
                     if (totalMove > tapThresholdPx) {
-                        // Drag confirmed. Emit the missed first click (we
-                        // canceled its timer in ACTION_DOWN), then press down.
-                        overlayManager.performClick(0)
+                        // Drag confirmed. Just mouseDown — no leading click
+                        // because the click's mouseUp would break the continuous
+                        // press that VS Code needs for panel/handle drags.
                         overlayManager.performMouseDown(0)
                         isDragSelecting = true
                         dragCandidate = false

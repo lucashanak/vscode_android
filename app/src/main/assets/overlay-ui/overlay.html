@@ -1385,6 +1385,7 @@ const tpArea = document.getElementById('tpArea');
 let tpDragging = false; // double-tap-and-hold drag active
 let tpDragCandidate = false; // this touch started within double-tap window, may become drag
 let tpEdgeScrolling = false; // right-edge single-finger scroll
+let tpPendingClick = null; // delayed single-tap click (cancelable if drag follows)
 
 tpArea.addEventListener('touchstart', e => {
     e.preventDefault();
@@ -1403,6 +1404,11 @@ tpArea.addEventListener('touchstart', e => {
     // Cursor stays frozen during this touch until we know if it's a drag or just a double-tap.
     tpDragCandidate = (t.length === 1 && !tpEdgeScrolling &&
         tp.lastTap > 0 && Date.now() - tp.lastTap < DOUBLE_TAP_WINDOW);
+    // Cancel the pending first-tap click — if this becomes a drag we don't
+    // want a mouseUp from the click to break the continuous press.
+    if (tpDragCandidate && tpPendingClick) {
+        clearTimeout(tpPendingClick); tpPendingClick = null;
+    }
 }, {passive:false});
 
 tpArea.addEventListener('touchmove', e => {
@@ -1422,6 +1428,8 @@ tpArea.addEventListener('touchmove', e => {
     } else if (tpDragCandidate && !tpDragging) {
         // Holding cursor still until drag is confirmed — drag must anchor at
         // the first click position, not wherever the finger drifts.
+        // Only mouseDown here, NO leading click — a click's mouseUp would
+        // break the continuous press that VS Code needs for panel/handle drags.
         if (tp.totalMove > TAP_MOVE_THRESHOLD) {
             tpDragging = true;
             tpDragCandidate = false;
@@ -1460,11 +1468,22 @@ tpArea.addEventListener('touchend', e => {
             // 2-finger tap -> right click
             haptic(); A.click(2);
         } else if (tp.fingers === 1) {
-            // Every single-finger tap emits one click. Two taps in quick
-            // succession arrive as two clicks — the browser detects that as
-            // a double-click. No extra A.doubleClick() call (would triple up).
-            haptic(); A.click(0);
-            tp.lastTap = now;
+            if (now - tp.lastTap < DOUBLE_TAP_WINDOW) {
+                // Double-tap (no drag). Cancel the pending first click and
+                // fire both clicks together so the browser sees a double-click.
+                if (tpPendingClick) { clearTimeout(tpPendingClick); tpPendingClick = null; }
+                haptic(); A.click(0); A.click(0);
+                tp.lastTap = 0;
+            } else {
+                // Single tap — defer click so a quick second tap (drag) can
+                // cancel it. Without the delay the click's mouseUp would break
+                // continuous-press drags (e.g. VS Code panel moves).
+                tp.lastTap = now;
+                tpPendingClick = setTimeout(() => {
+                    tpPendingClick = null;
+                    haptic(); A.click(0);
+                }, DOUBLE_TAP_WINDOW);
+            }
         }
         tp.tapStart = 0;
     } else {
