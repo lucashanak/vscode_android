@@ -11,46 +11,61 @@ import org.mozilla.geckoview.GeckoSession
  * so external autofill services (Bitwarden, 1Password, etc.) see <input> fields
  * inside the tunnel page and can offer credential suggestions.
  *
- * Without this, GeckoSession.Autofill.Delegate is null and no notifyViewEntered/
- * notifyViewExited reaches the platform — autofill providers stay silent.
+ * Without an attached delegate, GeckoSession does not notify the platform on
+ * field focus changes — autofill providers stay silent.
  */
 class AutofillBridge(private val view: View) : Autofill.Delegate {
     private val TAG = "AutofillBridge"
     private val mgr: AutofillManager? =
         view.context.getSystemService(AutofillManager::class.java)
 
-    private fun nodeRect(node: Autofill.Node): Rect {
-        return try {
-            val r = node.dimensions
-            if (r.width() > 0 && r.height() > 0) r
+    private fun rectOf(node: Autofill.Node): Rect {
+        val r = node.screenRect
+        return if (r != null && r.width() > 0 && r.height() > 0) r
             else Rect(0, 0, view.width.coerceAtLeast(1), view.height.coerceAtLeast(1))
-        } catch (_: Throwable) {
-            Rect(0, 0, view.width.coerceAtLeast(1), view.height.coerceAtLeast(1))
-        }
     }
 
-    override fun onAutofill(session: GeckoSession, notification: Int, node: Autofill.Node?) {
+    override fun onSessionStart(session: GeckoSession) {
+        // No node info yet; AutofillManager will be notified on first node focus.
+    }
+
+    override fun onSessionCommit(
+        session: GeckoSession,
+        node: Autofill.Node,
+        data: Autofill.NodeData
+    ) {
+        try { mgr?.commit() } catch (t: Throwable) { FileLogger.w(TAG, "commit failed", t) }
+    }
+
+    override fun onSessionCancel(session: GeckoSession) {
+        try { mgr?.cancel() } catch (t: Throwable) { FileLogger.w(TAG, "cancel failed", t) }
+    }
+
+    override fun onNodeFocus(
+        session: GeckoSession,
+        focused: Autofill.Node,
+        data: Autofill.NodeData
+    ) {
         val m = mgr ?: return
         if (!m.isEnabled) return
         try {
-            when (notification) {
-                Autofill.Notify.SESSION_STARTED -> {
-                    if (node != null) m.requestAutofill(view, node.id, nodeRect(node))
-                }
-                Autofill.Notify.SESSION_COMMITTED -> m.commit()
-                Autofill.Notify.SESSION_CANCELED -> m.cancel()
-                Autofill.Notify.NODE_FOCUSED -> {
-                    if (node != null) m.notifyViewEntered(view, node.id, nodeRect(node))
-                }
-                Autofill.Notify.NODE_BLURRED -> {
-                    if (node != null) m.notifyViewExited(view, node.id)
-                }
-                Autofill.Notify.NODE_ADDED,
-                Autofill.Notify.NODE_REMOVED,
-                Autofill.Notify.NODE_UPDATED -> { /* structure changes handled via virtual structure */ }
-            }
+            m.notifyViewEntered(view, data.id, rectOf(focused))
         } catch (t: Throwable) {
-            FileLogger.w(TAG, "Autofill notify $notification failed", t)
+            FileLogger.w(TAG, "notifyViewEntered failed", t)
+        }
+    }
+
+    override fun onNodeBlur(
+        session: GeckoSession,
+        prev: Autofill.Node,
+        data: Autofill.NodeData
+    ) {
+        val m = mgr ?: return
+        if (!m.isEnabled) return
+        try {
+            m.notifyViewExited(view, data.id)
+        } catch (t: Throwable) {
+            FileLogger.w(TAG, "notifyViewExited failed", t)
         }
     }
 }
