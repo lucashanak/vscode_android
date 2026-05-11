@@ -29,7 +29,8 @@
                 <com.vscodetunnel.app.SuppressableGeckoView
                     android:id="@+id/geckoView"
                     android:layout_width="match_parent"
-                    android:layout_height="match_parent" />
+                    android:layout_height="match_parent"
+                    android:importantForAutofill="yes" />
 
                 <!-- Cursor dot overlaid on GeckoView -->
                 <ImageView

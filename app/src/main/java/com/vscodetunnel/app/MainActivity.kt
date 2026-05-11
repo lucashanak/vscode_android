@@ -1865,6 +1865,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         geckoView.setSession(session)
+        session.autofillDelegate = AutofillBridge(geckoView)
         session.loadUri(url)
 
         // Save for auto-reconnect after app restart
@@ -1993,7 +1994,9 @@ class MainActivity : AppCompatActivity() {
         runOnUiThread {
             try {
                 val popupView = GeckoView(this)
+                popupView.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
                 popupView.setSession(popupSession)
+                popupSession.autofillDelegate = AutofillBridge(popupView)
 
                 val dialog = Dialog(this, android.R.style.Theme_DeviceDefault_NoActionBar).apply {
                     setContentView(popupView, ViewGroup.LayoutParams(
