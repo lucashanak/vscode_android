@@ -1726,26 +1726,28 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Cold-start staleness check: if profile on disk is older than threshold,
-        // clear caches BEFORE loading so we don't bootstrap into a stale SW/DOM state.
+        // Cold-start staleness check: if profile on disk is older than threshold
+        // (or timestamp is missing — typical after upgrade), clear caches BEFORE
+        // loading so we don't bootstrap into a stale SW/DOM state.
         val thresholdMin = tunnelStaleRefreshMin
         if (thresholdMin > 0 && !coldStartStaleHandled) {
             coldStartStaleHandled = true
             val lastActive = sessionPrefs.getLong(KEY_LAST_TUNNEL_ACTIVE, 0L)
-            if (lastActive > 0L) {
-                val idleMs = System.currentTimeMillis() - lastActive
-                if (idleMs >= thresholdMin * 60_000L) {
-                    FileLogger.d(TAG, "Cold-start: profile idle ${idleMs / 1000}s — pre-clearing stale caches before tunnel open")
-                    android.widget.Toast.makeText(
-                        this,
-                        "Clearing stale VS Code cache…",
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
-                    GeckoManager.clearBrowsingData(this) {
-                        runOnUiThread { openTunnel(url) }
-                    }
-                    return
+            val stale = lastActive == 0L ||
+                (System.currentTimeMillis() - lastActive) >= thresholdMin * 60_000L
+            if (stale) {
+                val why = if (lastActive == 0L) "no timestamp (fresh install/upgrade)"
+                    else "idle ${(System.currentTimeMillis() - lastActive) / 1000}s"
+                FileLogger.d(TAG, "Cold-start pre-clear: $why")
+                android.widget.Toast.makeText(
+                    this,
+                    "Clearing stale VS Code cache…",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+                GeckoManager.clearBrowsingData(this) {
+                    runOnUiThread { openTunnel(url) }
                 }
+                return
             }
         }
 
