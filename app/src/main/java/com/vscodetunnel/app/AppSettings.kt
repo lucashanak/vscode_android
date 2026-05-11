@@ -24,6 +24,7 @@ object AppSettings {
     private const val KEY_CONNECT_TIMEOUT = "ssh_connect_timeout"
     private const val KEY_KEEPALIVE_INTERVAL = "ssh_keepalive_interval"
     private const val KEY_TUNNEL_KEEPALIVE = "tunnel_keepalive_interval"
+    private const val KEY_TUNNEL_STALE_REFRESH = "tunnel_stale_refresh_min"
     private const val KEY_COMPACT_KEY_HEIGHT = "compact_key_height"
     private const val KEY_WIDE_KEY_HEIGHT = "wide_key_height"
     private const val KEY_TP_SENSITIVITY = "tp_sensitivity"
@@ -123,6 +124,10 @@ object AppSettings {
     var Context.tunnelKeepaliveInterval: Int
         get() = prefs(this).getInt(KEY_TUNNEL_KEEPALIVE, 30)
         set(value) = prefs(this).edit().putInt(KEY_TUNNEL_KEEPALIVE, value).apply()
+
+    var Context.tunnelStaleRefreshMin: Int
+        get() = prefs(this).getInt(KEY_TUNNEL_STALE_REFRESH, 10)
+        set(value) = prefs(this).edit().putInt(KEY_TUNNEL_STALE_REFRESH, value).apply()
 
     var Context.vscodeColorInvert: Boolean
         get() = prefs(this).getBoolean("vscode_color_invert", false)

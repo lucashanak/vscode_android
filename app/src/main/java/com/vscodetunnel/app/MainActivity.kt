@@ -51,6 +51,7 @@ import com.vscodetunnel.app.AppSettings.sshReconnectAttempts
 import com.vscodetunnel.app.AppSettings.sshConnectTimeout
 import com.vscodetunnel.app.AppSettings.sshKeepaliveInterval
 import com.vscodetunnel.app.AppSettings.tunnelKeepaliveInterval
+import com.vscodetunnel.app.AppSettings.tunnelStaleRefreshMin
 import com.vscodetunnel.app.AppSettings.suppressSystemKeyboard
 import com.vscodetunnel.app.AppSettings.biometricLockEnabled
 import com.vscodetunnel.app.AppSettings.vscodeZoomPercent
@@ -76,6 +77,7 @@ class MainActivity : AppCompatActivity() {
         private const val PREFS_SESSION = "session"
         private const val KEY_LAST_URL = "last_url"
         private const val KEY_AUTO_RECONNECT = "auto_reconnect"
+        private const val KEY_LAST_TUNNEL_ACTIVE = "last_tunnel_active_ms"
         private val APP_VERSION: String get() = BuildConfig.VERSION_NAME
     }
 
@@ -1600,6 +1602,9 @@ class MainActivity : AppCompatActivity() {
 
         // === MAINTENANCE ===
         section("Maintenance")
+        label("Auto-refresh stale VS Code after N min in background (0 = off)")
+        val staleRefreshField = field("10", tunnelStaleRefreshMin.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
+        layout.addView(staleRefreshField)
         val clearCacheBtn = Button(this).apply {
             text = "Clear VS Code cache"
             isAllCaps = false; textSize = 14f
@@ -1668,6 +1673,7 @@ class MainActivity : AppCompatActivity() {
             biometricLockEnabled = biometricCheck.isChecked
             keepAliveEnabled = keepAliveCheck.isChecked
             tunnelKeepaliveInterval = (tunnelKeepaliveField.text.toString().toIntOrNull() ?: 30).coerceIn(0, 600)
+            tunnelStaleRefreshMin = (staleRefreshField.text.toString().toIntOrNull() ?: 10).coerceIn(0, 360)
             overlayManager.syncKeepalive()
             // Push repeat settings
             updateOverlaySettings()
@@ -1718,6 +1724,29 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread { openTunnel(url) }
             }
             return
+        }
+
+        // Cold-start staleness check: if profile on disk is older than threshold,
+        // clear caches BEFORE loading so we don't bootstrap into a stale SW/DOM state.
+        val thresholdMin = tunnelStaleRefreshMin
+        if (thresholdMin > 0 && !coldStartStaleHandled) {
+            coldStartStaleHandled = true
+            val lastActive = sessionPrefs.getLong(KEY_LAST_TUNNEL_ACTIVE, 0L)
+            if (lastActive > 0L) {
+                val idleMs = System.currentTimeMillis() - lastActive
+                if (idleMs >= thresholdMin * 60_000L) {
+                    FileLogger.d(TAG, "Cold-start: profile idle ${idleMs / 1000}s — pre-clearing stale caches before tunnel open")
+                    android.widget.Toast.makeText(
+                        this,
+                        "Clearing stale VS Code cache…",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                    GeckoManager.clearBrowsingData(this) {
+                        runOnUiThread { openTunnel(url) }
+                    }
+                    return
+                }
+            }
         }
 
         FileLogger.d(TAG, "Opening tunnel: $url")
@@ -1838,6 +1867,7 @@ class MainActivity : AppCompatActivity() {
 
         // Save for auto-reconnect after app restart
         saveOpenSessionUrls()
+        sessionPrefs.edit().putLong(KEY_LAST_TUNNEL_ACTIVE, System.currentTimeMillis()).apply()
 
         launcherScroll.visibility = View.GONE
         sessionWrapper.visibility = View.VISIBLE
@@ -2627,7 +2657,54 @@ class MainActivity : AppCompatActivity() {
     override fun onStop() {
         // Persist URLs when app goes to background (in case of kill)
         saveOpenSessionUrls()
+        val now = System.currentTimeMillis()
+        lastBackgroundTimeMs = now
+        // Persist for cold-start staleness check after process death
+        if (sessionWrapper.visibility == View.VISIBLE && currentTunnelUrl != null) {
+            sessionPrefs.edit().putLong(KEY_LAST_TUNNEL_ACTIVE, now).apply()
+        }
         super.onStop()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        maybeAutoRefreshStaleTunnel()
+    }
+
+    private var lastBackgroundTimeMs: Long = 0L
+    private var autoRefreshInFlight = false
+    private var coldStartStaleHandled = false
+
+    private fun maybeAutoRefreshStaleTunnel() {
+        val thresholdMin = tunnelStaleRefreshMin
+        if (thresholdMin <= 0) return
+        if (autoRefreshInFlight) return
+        if (lastBackgroundTimeMs == 0L) return
+        if (sessionWrapper.visibility != View.VISIBLE) return
+        if (geckoContainer.visibility != View.VISIBLE) return
+        val url = currentTunnelUrl ?: return
+        if (currentSessionIdx < 0 || currentSessionIdx >= tunnelSessions.size) return
+
+        val idleMs = System.currentTimeMillis() - lastBackgroundTimeMs
+        if (idleMs < thresholdMin * 60_000L) return
+
+        FileLogger.d(TAG, "Tunnel idle ${idleMs / 1000}s ≥ ${thresholdMin}min — auto-refreshing stale VS Code session")
+        autoRefreshInFlight = true
+        android.widget.Toast.makeText(
+            this,
+            "Refreshing stale VS Code session…",
+            android.widget.Toast.LENGTH_SHORT
+        ).show()
+        GeckoManager.clearBrowsingData(this) {
+            runOnUiThread {
+                autoRefreshInFlight = false
+                lastBackgroundTimeMs = System.currentTimeMillis()
+                val idx = currentSessionIdx
+                if (idx in tunnelSessions.indices && tunnelSessions[idx].url == url) {
+                    tunnelSessions[idx].session.loadUri(url)
+                }
+            }
+        }
     }
 
     // --- Auto Reconnect ---
