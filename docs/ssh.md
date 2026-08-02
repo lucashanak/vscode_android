@@ -93,7 +93,8 @@ The tmux, SFTP and mosh paths share the same verification. They pin a first-seen
 (there is no interactive prompt on those paths) but always **reject** a changed key rather than
 asking.
 
-Pins are stored encrypted; see [Credential storage](#credential-storage).
+Pins are stored in ordinary app-private preferences, deliberately not encrypted — see
+[Credential storage](#credential-storage).
 
 ### Mosh
 
@@ -173,9 +174,16 @@ clipboard preview and history.
 ### Credential storage
 
 Passwords, private keys and Cloudflare tokens are stored in `EncryptedSharedPreferences` with an
-AES256-GCM key held in the Android Keystore. Host key pins are encrypted the same way, since an
-attacker able to rewrite them would defeat host verification. Existing plaintext entries are
-migrated automatically on first launch after upgrading.
+AES256-GCM key held in the Android Keystore. Existing plaintext entries are migrated automatically
+on first launch after upgrading.
+
+Host key pins are **not** encrypted, and that is deliberate. A fingerprint is public data — it is
+what `ssh-keygen -lf` prints — so there is nothing there to keep secret. Only its integrity
+matters, and encryption does not provide that: anyone able to rewrite this app's private files
+already has app-level access and could read the encrypted store through the app's own key anyway.
+Encrypting pins actively made verification weaker, because a failed decrypt returned "no pin",
+which is indistinguishable from "never seen this host" — so a single transient Keystore error would
+silently downgrade every known host back to trust-on-first-use.
 
 Backup is disabled (`allowBackup="false"`, plus data-extraction rules excluding the credential
 stores), so secrets cannot be pulled off the device with `adb backup` or carried out by

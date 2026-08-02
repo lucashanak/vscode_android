@@ -691,7 +691,11 @@ class SshSessionManager(
                     // run on ConnectivityManager's process-wide shared thread, so blocking here
                     // would stall every connectivity callback in the process — including the
                     // onAvailable(cellular) edge this whole handover depends on.
-                    scope.launch { dropTransport() }
+                    //
+                    // Pin the generation: if this lambda is delayed past a full reconnect it must
+                    // not tear down the session that replaced the one it was queued for.
+                    val gen = sessionGeneration.get()
+                    scope.launch { if (sessionGeneration.get() == gen) dropTransport() }
                 }
             }
         }
