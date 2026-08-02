@@ -58,6 +58,52 @@ object JschFactory {
     private const val PROMPT_TIMEOUT_MS = 110_000L
 
     /**
+     * Whether [privateKey] needs a passphrase before it can be used.
+     *
+     * Checked up front rather than by letting `addIdentity` fail, so the user can be asked once
+     * before connecting instead of the attempt dying with an opaque "invalid privatekey".
+     *
+     * Returns false for a key that cannot be parsed at all — that is a different problem, and
+     * reporting it as "needs a passphrase" would send the user chasing the wrong thing.
+     */
+    fun isKeyEncrypted(privateKey: String): Boolean = inspectKey(privateKey, "encryption check") {
+        it.isEncrypted
+    }
+
+    /**
+     * Whether [passphrase] actually decrypts [privateKey]. Lets a wrong passphrase be reported as
+     * such, instead of as an authentication failure against the server.
+     */
+    fun isPassphraseValid(privateKey: String, passphrase: String): Boolean =
+        inspectKey(privateKey, "passphrase check") { it.decrypt(passphrase.toByteArray()) }
+
+    /**
+     * Loads [privateKey], runs [check] on it, and always disposes it.
+     *
+     * dispose() zeroes the key material, which matters here because [isPassphraseValid] succeeds by
+     * *decrypting* the key — without this, a cleartext private key is left on the heap after every
+     * unlock attempt.
+     */
+    private inline fun inspectKey(
+        privateKey: String,
+        what: String,
+        check: (com.jcraft.jsch.KeyPair) -> Boolean
+    ): Boolean {
+        var kp: com.jcraft.jsch.KeyPair? = null
+        return try {
+            kp = com.jcraft.jsch.KeyPair.load(JSch(), privateKey.toByteArray(), null)
+            check(kp)
+        } catch (e: Exception) {
+            // Unparseable is not the same as "needs a passphrase"; reporting it that way would send
+            // the user chasing the wrong thing, so both callers treat false as "no".
+            FileLogger.d(TAG, "Private key $what failed: $e")
+            false
+        } finally {
+            try { kp?.dispose() } catch (_: Exception) {}
+        }
+    }
+
+    /**
      * Adapts a UI confirmation into the blocking [HostKeyPrompt] JSch requires.
      *
      * JSch calls the prompt on its connect thread during key exchange, so the wait has to be a real
@@ -107,12 +153,17 @@ object JschFactory {
     fun newSession(
         context: Context,
         server: SshServer,
-        prompt: HostKeyPrompt? = null
+        prompt: HostKeyPrompt? = null,
+        passphrase: String? = null
     ): Session {
         val jsch = JSch()
 
         if (server.authMethod == SshServer.AuthMethod.KEY && server.privateKey.isNotBlank()) {
-            jsch.addIdentity("key", server.privateKey.toByteArray(), null, null)
+            // A passphrase-protected key with no passphrase fails inside addIdentity as
+            // "invalid privatekey", which used to surface as a generic "Connection failed" and
+            // left no hint that a passphrase was the missing piece.
+            val pass = (passphrase ?: server.keyPassphrase).takeIf { it.isNotBlank() }
+            jsch.addIdentity("key", server.privateKey.toByteArray(), null, pass?.toByteArray())
         }
 
         jsch.hostKeyRepository = KnownHostsRepository(context, jsch, server.host, server.port, prompt)
@@ -134,6 +185,24 @@ object JschFactory {
         // the SHA256 sanity check in KnownHostsRepository.check() would reject every host key and
         // no connection would be possible at all. Also keeps stored pins comparable forever.
         config["FingerprintHash"] = "sha256"
+        // Pin host-key negotiation to what this app has always used.
+        //
+        // JSch's default proposal leads with ssh-ed25519, but its ed25519 implementation lives in
+        // META-INF/versions/15/ and D8 drops multi-release overlays, so ssh-ed25519 was always
+        // pruned as unavailable and servers negotiated ECDSA or RSA — which is what existing pins
+        // therefore contain. Adding BouncyCastle (for ed25519 key generation and client auth) makes
+        // ssh-ed25519 available, and leaving the default order would suddenly negotiate the
+        // server's ed25519 host key instead: a different fingerprint for the same host, which
+        // KnownHosts can only read as "HOST KEY CHANGED — possible man-in-the-middle" on every
+        // server the user had already trusted. An alarm nobody can tell apart from a real attack is
+        // worse than no alarm.
+        //
+        // Pins are keyed on host:port with no key-type dimension, which is what forces this.
+        // OpenSSH's known_hosts stores one entry per host *per key type*; moving to that would turn
+        // the new type into a benign first-sight prompt, and is the right pairing for enabling
+        // ed25519 host keys later.
+        config["server_host_key"] =
+            "ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-512,rsa-sha2-256"
         // Cheap win on metered mobile links.
         config["compression.s2c"] = "zlib@openssh.com,zlib,none"
         config["compression.c2s"] = "zlib@openssh.com,zlib,none"

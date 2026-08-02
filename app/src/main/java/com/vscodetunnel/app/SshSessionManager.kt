@@ -39,6 +39,11 @@ class SshSessionManager(
         changed: Boolean,
         oldFingerprint: String?,
         callback: (Boolean) -> Unit
+    ) -> Unit,
+    private val onPassphraseRequired: (
+        server: SshServer,
+        retry: Boolean,
+        callback: (String?) -> Unit
     ) -> Unit
 ) {
     private var session: Session? = null
@@ -64,6 +69,19 @@ class SshSessionManager(
     @Volatile private var hostKeyDenied = false
     /** The dialog could not be shown or nobody answered it. Retryable: the user may still be back. */
     @Volatile private var hostKeyUnanswered = false
+    /**
+     * Passphrase for an encrypted private key, resolved once per connect() and reused by every
+     * reconnect. Reconnects run unattended in the background, so they cannot put a dialog on
+     * screen — asking again there would park the connect thread until the backstop timeout and
+     * then fail. Never logged, and cleared on disconnect().
+     */
+    @Volatile private var keyPassphrase: String? = null
+    /**
+     * connect() is waiting on the passphrase dialog. Suppresses every other connect trigger until
+     * it resolves — a network edge or an app resume reaching doConnect() first would connect
+     * without the passphrase and latch [fatal] on the resulting "invalid privatekey".
+     */
+    @Volatile private var awaitingPassphrase = false
     @Volatile private var foreground = true
     @Volatile private var lastConnectedAt = 0L
 
@@ -116,6 +134,10 @@ class SshSessionManager(
         private const val SHORT_SESSION_FLOOR_MS = 2_000L
         /** A session that stayed up this long counts as healthy, so the attempt ladder resets. */
         private const val STABLE_SESSION_MS = 60_000L
+        /** Typos happen; an unbounded retry loop on a key the user cannot open does not help. */
+        private const val MAX_PASSPHRASE_PROMPTS = 3
+        /** Backstop for UI that never answers at all, so a connect cannot hang forever. */
+        private const val PASSPHRASE_PROMPT_TIMEOUT_MS = 110_000L
 
         /**
          * JSch failure messages that mean "this will fail exactly the same way next time".
@@ -331,8 +353,87 @@ class SshSessionManager(
         reconnectAttempts.set(0)
         stopped = false
         fatal = false
-        registerNetworkCallback()
-        doConnect(server)
+        keyPassphrase = null
+        // Set before anything can schedule a connect. registerDefaultNetworkCallback() below
+        // delivers onAvailable for the *current* network the moment it is registered, and
+        // onAppResumed() fires if the user leaves to fetch the passphrase from a password
+        // manager — either would otherwise reach doConnect() while the prompt is still on
+        // screen, connect with a null passphrase, and have JSch's "invalid privatekey" latch
+        // `fatal`, killing auto-reconnect for the rest of this manager's life.
+        awaitingPassphrase = true
+        // Resolve the passphrase before the first attempt, not per attempt: prompting has to
+        // happen while the user is actually looking at the app, and it must not run on the main
+        // thread. Everything after this — retries, network edges, resume — reuses the cached value.
+        scope.launch {
+            val ok = try {
+                resolveKeyPassphrase(server)
+            } finally {
+                awaitingPassphrase = false
+            }
+            registerNetworkCallback()
+            if (ok) doConnect(server)
+        }
+    }
+
+    /**
+     * Work out the passphrase for [server]'s private key, caching it in [keyPassphrase].
+     *
+     * Returns false when the key is encrypted and no usable passphrase was obtained; that is
+     * fatal, not retryable — another attempt without a passphrase fails identically, and in the
+     * background it would loop forever behind a dialog nobody can see.
+     */
+    private suspend fun resolveKeyPassphrase(server: SshServer): Boolean {
+        if (server.authMethod != SshServer.AuthMethod.KEY || server.privateKey.isBlank()) return true
+
+        val encrypted = JschFactory.isKeyEncrypted(server.privateKey)
+        val stored = server.keyPassphrase
+        // A remembered passphrase that no longer opens the key (key replaced, passphrase changed)
+        // falls through to the prompt rather than dying as an opaque "invalid privatekey".
+        if (stored.isNotBlank() &&
+            (!encrypted || JschFactory.isPassphraseValid(server.privateKey, stored))
+        ) {
+            keyPassphrase = stored
+            return true
+        }
+        if (!encrypted) return true
+
+        for (attempt in 0 until MAX_PASSPHRASE_PROMPTS) {
+            val answer = askPassphrase(server, retry = attempt > 0) ?: break // cancelled
+            if (JschFactory.isPassphraseValid(server.privateKey, answer)) {
+                keyPassphrase = answer
+                return true
+            }
+        }
+
+        fatal = true
+        FileLogger.w(TAG, "Not retrying: ${FatalCause.PASSPHRASE.message}")
+        writeInfo("\r\n\u001b[31m${FatalCause.PASSPHRASE.message}\u001b[0m\r\n")
+        notifyDisconnected(FatalCause.PASSPHRASE.message)
+        return false
+    }
+
+    /**
+     * Ask the UI for the key passphrase and wait for the answer.
+     *
+     * Suspends rather than blocking a thread: the wait can run into minutes, and a manager torn
+     * down meanwhile (destroy() cancels the scope) must not leave a parked IO thread behind. Must
+     * never be called from the main thread — the dialog is posted there.
+     *
+     * Returns null when the user cancelled, the dialog could not be shown (a finishing Activity
+     * gives BadTokenException), or nobody answered in time.
+     */
+    private suspend fun askPassphrase(server: SshServer, retry: Boolean): String? {
+        val answer = CompletableDeferred<String?>()
+        mainHandler.post {
+            try {
+                // complete() is a no-op after the first call, so a UI that answers twice is safe.
+                onPassphraseRequired(server, retry) { value -> answer.complete(value) }
+            } catch (t: Throwable) {
+                FileLogger.e(TAG, "Passphrase dialog could not be shown", t)
+                answer.complete(null)
+            }
+        }
+        return withTimeoutOrNull(PASSPHRASE_PROMPT_TIMEOUT_MS) { answer.await() }
     }
 
     private fun doConnect(server: SshServer) {
@@ -368,7 +469,7 @@ class SshSessionManager(
                 // Host key is checked by JschFactory's HostKeyRepository *during* KEX, i.e.
                 // before any credential leaves the device.
                 val sess = JschFactory.newSession(
-                    context, server, JschFactory.HostKeyPrompt(::promptHostKey)
+                    context, server, JschFactory.HostKeyPrompt(::promptHostKey), keyPassphrase
                 )
                 sess.connect()
                 session = sess
@@ -550,7 +651,8 @@ class SshSessionManager(
         AUTH("Authentication failed - check the username, password or key"),
         NO_AUTH_METHOD("Authentication failed - the server accepted none of the offered methods"),
         UNKNOWN_HOST("Host not found - check the hostname"),
-        HOST_KEY("Host key not accepted")
+        HOST_KEY("Host key not accepted"),
+        PASSPHRASE("Passphrase required - the private key is encrypted")
     }
 
     /**
@@ -658,6 +760,9 @@ class SshSessionManager(
     private fun reconnectNow(why: String) {
         val server = currentServer ?: return
         if (stopped || fatal || isConnected) return
+        // connect() is still waiting on the passphrase dialog; connecting now would use a null
+        // passphrase and poison `fatal` for good.
+        if (awaitingPassphrase) return
         if (!context.sshAutoReconnect) return
         FileLogger.d(TAG, "Reconnecting now ($why)")
         reconnectJob?.cancel()
@@ -775,6 +880,9 @@ class SshSessionManager(
     fun disconnect() {
         stopped = true // prevent auto-reconnect
         currentServer = null
+        // Nothing may reconnect after this, so the passphrase has no reason to stay in memory.
+        // destroy() routes through here too.
+        keyPassphrase = null
         sessionGeneration.incrementAndGet() // orphan the current read loop
         reconnectJob?.cancel(); reconnectJob = null
         readJob?.cancel(); readJob = null

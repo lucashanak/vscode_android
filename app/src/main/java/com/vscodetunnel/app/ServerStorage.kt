@@ -43,6 +43,8 @@ data class SshServer(
     val authMethod: AuthMethod = AuthMethod.PASSWORD,
     val password: String = "",
     val privateKey: String = "",
+    /** Optional; only set when the user chose to remember it. Stored encrypted with the key. */
+    val keyPassphrase: String = "",
     val startupCommand: String = "",
     val portForwards: List<PortForward> = emptyList(),
     val colorScheme: String = "default",
@@ -64,6 +66,7 @@ data class SshServer(
         put("authMethod", authMethod.name)
         put("password", Base64.encodeToString(password.toByteArray(), Base64.NO_WRAP))
         put("privateKey", Base64.encodeToString(privateKey.toByteArray(), Base64.NO_WRAP))
+        put("keyPassphrase", Base64.encodeToString(keyPassphrase.toByteArray(), Base64.NO_WRAP))
         put("startupCommand", startupCommand)
         put("portForwards", JSONArray().apply { portForwards.forEach { put(it.toJson()) } })
         put("colorScheme", colorScheme)
@@ -90,6 +93,9 @@ data class SshServer(
             } catch (_: Exception) { "" },
             privateKey = try {
                 String(Base64.decode(json.optString("privateKey", ""), Base64.NO_WRAP))
+            } catch (_: Exception) { "" },
+            keyPassphrase = try {
+                String(Base64.decode(json.optString("keyPassphrase", ""), Base64.NO_WRAP))
             } catch (_: Exception) { "" },
             startupCommand = json.optString("startupCommand", ""),
             portForwards = try {
@@ -423,6 +429,25 @@ object KnownHosts {
      */
     private fun prefs(ctx: Context): SharedPreferences =
         ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /** A pinned host key, for the management screen. */
+    data class Pin(val host: String, val port: Int, val fingerprint: String) {
+        /** "host" for the default port, "host:port" otherwise — matches how ssh reports it. */
+        val label: String get() = if (port == 22) host else "$host:$port"
+    }
+
+    /**
+     * Every pin, sorted by host. Needed because a legitimate key rotation otherwise leaves the user
+     * stuck: the only route was the alarming change dialog, with no way to inspect or drop a pin.
+     */
+    fun all(ctx: Context): List<Pin> = prefs(ctx).all.mapNotNull { (key, value) ->
+        val fingerprint = value as? String ?: return@mapNotNull null
+        // Keys are "host:port"; an IPv6 literal contains colons too, so split from the right.
+        val sep = key.lastIndexOf(':')
+        if (sep <= 0) return@mapNotNull null
+        val port = key.substring(sep + 1).toIntOrNull() ?: return@mapNotNull null
+        Pin(key.substring(0, sep), port, fingerprint)
+    }.sortedWith(compareBy({ it.host }, { it.port }))
 
     fun getFingerprint(ctx: Context, host: String, port: Int): String? =
         prefs(ctx).getString("$host:$port", null)

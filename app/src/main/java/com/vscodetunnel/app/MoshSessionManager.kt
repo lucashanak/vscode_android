@@ -66,7 +66,13 @@ class MoshSessionManager(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     @Volatile var isConnected = false; private set
 
-    fun connect(server: SshServer, prompt: JschFactory.HostKeyPrompt?) {
+    /**
+     * @param passphrase for an encrypted private key. Optional: a passphrase the user chose to
+     *   remember is picked up from the server record by JschFactory, so only a session-only one
+     *   the caller already asked for has to be passed in. There is no prompt here — this is a
+     *   one-shot user-initiated connect and MainActivity owns that UI.
+     */
+    fun connect(server: SshServer, prompt: JschFactory.HostKeyPrompt?, passphrase: String? = null) {
         scope.launch {
             try {
                 writeInfo("Starting Mosh session to ${server.host}...\r\n")
@@ -92,7 +98,7 @@ class MoshSessionManager(
                 // host-key verification. This path sends the password immediately after the key
                 // check, so of the three SSH paths it most needs the caller-supplied prompt: an
                 // unprompted first-sight pin here would hand the password straight to an impostor.
-                val sess = JschFactory.newSession(context, server, prompt)
+                val sess = JschFactory.newSession(context, server, prompt, passphrase)
                 sess.connect()
                 sshSession = sess
                 FileLogger.d(TAG, "SSH connected")

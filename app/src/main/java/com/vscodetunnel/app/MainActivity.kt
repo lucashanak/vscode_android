@@ -28,9 +28,11 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
@@ -626,7 +628,11 @@ class MainActivity : AppCompatActivity() {
             textSize = 13f
             setPadding(dp(8), dp(4), dp(8), dp(4))
             setOnClickListener {
-                if (!ServerStorage.deleteServer(this@MainActivity, server.id)) {
+                if (ServerStorage.deleteServer(this@MainActivity, server.id)) {
+                    // Only once the server is really gone: on a failed delete the id is still live
+                    // and its session-name history is still wanted.
+                    TmuxManager.forgetServer(this@MainActivity, server.id)
+                } else {
                     showError(ServerStorage.lastError ?: "Could not delete this server.")
                 }
                 // Re-render either way: on failure the row is still there, and leaving it looking
@@ -701,6 +707,8 @@ class MainActivity : AppCompatActivity() {
             android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD)
         val keyField = addField("Private key (paste PEM or use file picker)", existing?.privateKey ?: "",
             android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE)
+        val keyPassField = addField("Key passphrase (if the key is encrypted)", existing?.keyPassphrase ?: "",
+            android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD)
         val startupField = addField("Startup command (e.g. cd /app && tmux attach)", existing?.startupCommand ?: "")
         val portFwdField = addField("Port forwards (e.g. L8080:127.0.0.1:80,R3000:localhost:3000)",
             existing?.portForwards?.joinToString(",") ?: "")
@@ -714,6 +722,7 @@ class MainActivity : AppCompatActivity() {
         layout.addView(passField)
         addLabel("Authentication key (optional)")
         layout.addView(keyField)
+        layout.addView(keyPassField)
 
         // File picker button for SSH key
         val pickKeyBtn = Button(this).apply {
@@ -849,6 +858,7 @@ class MainActivity : AppCompatActivity() {
                 authMethod = if (key.isNotBlank()) SshServer.AuthMethod.KEY else SshServer.AuthMethod.PASSWORD,
                 password = passField.text.toString(),
                 privateKey = key,
+                keyPassphrase = keyPassField.text.toString(),
                 startupCommand = startupField.text.toString().trim(),
                 portForwards = parsePortForwards(portFwdField.text.toString()),
                 snippets = snippetsField.text.toString().split(",").map { it.trim() }.filter { it.isNotBlank() },
@@ -927,22 +937,38 @@ class MainActivity : AppCompatActivity() {
     private fun generateSshKey(ed25519: Boolean, comment: String) {
         lifecycleScope.launch {
             try {
-                val kpg = if (ed25519) {
-                    java.security.KeyPairGenerator.getInstance("Ed25519")
-                } else {
-                    java.security.KeyPairGenerator.getInstance("RSA").apply { initialize(4096) }
+                // Generated through JSch rather than java.security on purpose. PublicKey.getEncoded()
+                // returns X.509 SubjectPublicKeyInfo DER, which is *not* the OpenSSH wire format;
+                // labelling it "ssh-ed25519 <der>" produced a line sshd silently ignores, so every
+                // key this dialog ever handed out was unusable in authorized_keys. writePublicKey
+                // emits the real "ssh-ed25519 AAAA... comment" line.
+                val type = if (ed25519) com.jcraft.jsch.KeyPair.ED25519 else com.jcraft.jsch.KeyPair.RSA
+                val (pubLine, privPem, loadable) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val kp = com.jcraft.jsch.KeyPair.genKeyPair(
+                        com.jcraft.jsch.JSch(), type, if (ed25519) 256 else 4096
+                    )
+                    // dispose() in a finally: it zeroes the key material, and a throw from either
+                    // write would otherwise leave the private key sitting in memory.
+                    val (pubOut, privOut) = try {
+                        java.io.ByteArrayOutputStream().also { kp.writePublicKey(it, comment) } to
+                            java.io.ByteArrayOutputStream().also { kp.writePrivateKey(it) }
+                    } finally {
+                        kp.dispose()
+                    }
+                    val priv = privOut.toString("UTF-8")
+                    // A private key the app's own loader cannot read is worse than no key at all —
+                    // the user would paste it into a server and get a generic connection failure.
+                    val ok = try {
+                        com.jcraft.jsch.KeyPair.load(
+                            com.jcraft.jsch.JSch(), priv.toByteArray(), null
+                        ).also { it.dispose() }
+                        true
+                    } catch (e: Exception) {
+                        FileLogger.e(TAG, "Generated private key does not load back", e)
+                        false
+                    }
+                    Triple(pubOut.toString("UTF-8").trim(), priv, ok)
                 }
-                val kp = kpg.generateKeyPair()
-
-                // Encode to PEM
-                val privBytes = kp.private.encoded
-                val pubBytes = kp.public.encoded
-                val privPem = "-----BEGIN PRIVATE KEY-----\n" +
-                    android.util.Base64.encodeToString(privBytes, android.util.Base64.DEFAULT) +
-                    "-----END PRIVATE KEY-----"
-
-                val pubB64 = android.util.Base64.encodeToString(pubBytes, android.util.Base64.NO_WRAP)
-                val keyType = if (ed25519) "ssh-ed25519" else "ssh-rsa"
 
                 // Show result
                 runOnUiThread {
@@ -956,15 +982,22 @@ class MainActivity : AppCompatActivity() {
                         textSize = 12f
                     }
                     val pubField = EditText(this@MainActivity).apply {
-                        setText("$keyType $pubB64 $comment")
+                        setText(pubLine)
                         setTextColor(resources.getColor(R.color.text_primary, theme))
                         textSize = 11f
                         setTextIsSelectable(true)
                         maxLines = 4
                     }
                     val privText = TextView(this@MainActivity).apply {
-                        text = "\nPrivate key (paste into server SSH key field):"
-                        setTextColor(resources.getColor(R.color.text_secondary, theme))
+                        text = if (loadable) {
+                            "\nPrivate key (paste into server SSH key field):"
+                        } else {
+                            "\n⚠ This private key could not be read back by the app's own SSH " +
+                                "library — do not rely on it, generate another one.\n" +
+                                "Private key (paste into server SSH key field):"
+                        }
+                        setTextColor(resources.getColor(
+                            if (loadable) R.color.text_secondary else R.color.error, theme))
                         textSize = 12f
                     }
                     val privField = EditText(this@MainActivity).apply {
@@ -986,7 +1019,7 @@ class MainActivity : AppCompatActivity() {
                         .setTitle("SSH Key Generated")
                         .setView(scroll)
                         .setPositiveButton("Copy Public Key") { _, _ ->
-                            TerminalClipboard.copy(this@MainActivity, "$keyType $pubB64 $comment")
+                            TerminalClipboard.copy(this@MainActivity, pubLine)
                             showError("Public key copied to clipboard")
                         }
                         .setNeutralButton("Copy Private Key") { _, _ ->
@@ -1147,6 +1180,287 @@ class MainActivity : AppCompatActivity() {
             showHostKeyDialog(host, port, fingerprint, changed, old, respond)
         }
 
+    /**
+     * Asks for the passphrase of [server]'s encrypted private key.
+     *
+     * [callback] is invoked exactly once, with null when the user cancels or the dialog cannot be
+     * shown. The entry is checked against the key itself before being accepted, so a typo is
+     * reported here instead of turning into an opaque authentication failure at the server.
+     */
+    private fun showKeyPassphraseDialog(server: SshServer, retry: Boolean, callback: (String?) -> Unit) {
+        var resolved = false
+        fun resolve(passphrase: String?) {
+            if (resolved) return
+            resolved = true
+            callback(passphrase)
+        }
+
+        // Same shape as showHostKeyDialog: one runnable on the main thread with the try/catch
+        // inside it, because a background auto-reconnect can reach here while the Activity is
+        // going away and show() would then throw BadTokenException on the main Looper.
+        val show = Runnable {
+            if (isFinishing || isDestroyed) {
+                FileLogger.w(TAG, "Passphrase prompt for ${server.host} while finishing, cancelling")
+                resolve(null)
+                return@Runnable
+            }
+            try {
+                val layout = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(24), dp(8), dp(24), dp(0))
+                }
+                val input = EditText(this).apply {
+                    hint = "Passphrase"
+                    inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                        android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+                    setTextColor(resources.getColor(R.color.text_primary, theme))
+                    setHintTextColor(resources.getColor(R.color.text_secondary, theme))
+                    textSize = 16f
+                    background = resources.getDrawable(R.drawable.bg_input, theme)
+                    setPadding(dp(16), dp(12), dp(16), dp(12))
+                }
+                val rememberCheck = CheckBox(this).apply {
+                    text = "Remember this passphrase"
+                    setTextColor(resources.getColor(R.color.text_primary, theme))
+                    textSize = 14f
+                    // Only offered for a stored server — ticking it on an ad-hoc quick-connect
+                    // would silently add a new entry to the server list.
+                    visibility = if (ServerStorage.getServers(this@MainActivity).any { it.id == server.id }) {
+                        View.VISIBLE
+                    } else {
+                        View.GONE
+                    }
+                }
+                layout.addView(input)
+                layout.addView(rememberCheck)
+
+                val dialog = AlertDialog.Builder(this, R.style.AppDialogTheme)
+                    .setTitle(if (retry) "Key passphrase — try again" else "Key passphrase")
+                    .setMessage(
+                        if (retry) {
+                            "The remembered passphrase did not open the private key for " +
+                                "${server.username}@${server.host}."
+                        } else {
+                            "The private key for ${server.username}@${server.host} is encrypted."
+                        }
+                    )
+                    .setView(layout)
+                    .setPositiveButton("Unlock", null)
+                    .setNegativeButton("Cancel", null)
+                    .create()
+                // Covers Cancel, back and outside taps in one place; the resolve-once guard makes
+                // it a no-op after a successful unlock has already answered.
+                dialog.setOnDismissListener { resolve(null) }
+                dialog.show()
+                val unlockBtn = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                unlockBtn.setOnClickListener {
+                    val passphrase = input.text.toString()
+                    // isPassphraseValid runs the key's KDF (bcrypt for OPENSSH keys), which is
+                    // deliberately slow — on the main thread that is a visible freeze, so it goes
+                    // to IO. The button is disabled meanwhile so an impatient double-tap cannot
+                    // queue a second KDF pass.
+                    unlockBtn.isEnabled = false
+                    lifecycleScope.launch {
+                        val valid = withContext(Dispatchers.IO) {
+                            JschFactory.isPassphraseValid(server.privateKey, passphrase)
+                        }
+                        unlockBtn.isEnabled = true
+                        if (!valid) {
+                            android.widget.Toast.makeText(
+                                this@MainActivity, "Wrong passphrase", android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                            return@launch
+                        }
+                        if (rememberCheck.visibility == View.VISIBLE && rememberCheck.isChecked &&
+                            !ServerStorage.saveServer(this@MainActivity, server.copy(keyPassphrase = passphrase))
+                        ) {
+                            // The connection can still go ahead with what was typed; only the
+                            // remembering failed, and saying nothing would make it look remembered.
+                            android.widget.Toast.makeText(
+                                this@MainActivity,
+                                ServerStorage.lastError ?: "Could not remember this passphrase.",
+                                android.widget.Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        resolve(passphrase)
+                        dialog.dismiss()
+                    }
+                }
+            } catch (t: Throwable) {
+                FileLogger.e(TAG, "Could not show passphrase dialog, cancelling", t)
+                resolve(null)
+            }
+        }
+
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) show.run()
+        else runOnUiThread(show)
+    }
+
+    /**
+     * Resolves the key passphrase for [server] and hands [onReady] a copy of the server that can be
+     * connected with — the passphrase travels in [SshServer.keyPassphrase], which [JschFactory]
+     * picks up, so paths that take no passphrase argument of their own (the tmux exec channels)
+     * work too.
+     *
+     * Asks only when there is something to ask: a key-auth server whose key is actually encrypted
+     * and whose remembered passphrase — if any — no longer opens it. Nothing is persisted unless
+     * the user ticks "Remember".
+     *
+     * Non-blocking and main-thread safe, unlike the prompt [SshSessionManager] drives for the shell
+     * — these are one-shot user-initiated connects, so a cancel simply means [onReady] never runs.
+     */
+    private fun withKeyPassphrase(server: SshServer, onReady: (SshServer) -> Unit) {
+        val encrypted = server.authMethod == SshServer.AuthMethod.KEY &&
+            server.privateKey.isNotBlank() &&
+            JschFactory.isKeyEncrypted(server.privateKey)
+        if (!encrypted) {
+            onReady(server)
+            return
+        }
+
+        lifecycleScope.launch {
+            // A remembered passphrase can go stale — the key was replaced, or its passphrase
+            // changed. Trusting it blindly makes these one-shot paths sail past the prompt and die
+            // inside addIdentity as "invalid privatekey", with no way for the user to correct it.
+            // SshSessionManager.resolveKeyPassphrase already validates for the shell path; this
+            // keeps Files, mosh and the tmux picker honest too. The check runs a KDF, hence IO.
+            val stored = server.keyPassphrase
+            val storedWorks = stored.isNotBlank() && withContext(Dispatchers.IO) {
+                JschFactory.isPassphraseValid(server.privateKey, stored)
+            }
+            if (storedWorks) {
+                onReady(server)
+                return@launch
+            }
+            showKeyPassphraseDialog(server, retry = stored.isNotBlank()) { passphrase ->
+                if (passphrase == null) {
+                    showError("Key passphrase required")
+                } else {
+                    onReady(server.copy(keyPassphrase = passphrase))
+                }
+            }
+        }
+    }
+
+    /**
+     * Lists the pinned host keys and lets them be dropped.
+     *
+     * Verification happens during key exchange and fails closed, so a server that legitimately
+     * rotates its key otherwise leaves the user with nothing but the alarming change dialog and no
+     * way to see or clear what is stored.
+     *
+     * @param onClosed lets the caller refresh a pin count it is displaying.
+     */
+    private fun showKnownHostsDialog(onClosed: () -> Unit = {}) {
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(8), dp(24), dp(0))
+        }
+
+        // The full fingerprint is shown rather than truncated because comparing it against the
+        // server is the only way a user can tell a real pin from an impostor's.
+        layout.addView(TextView(this).apply {
+            text = "Fingerprints are SHA-256 hashes of the host's public key. Check one against " +
+                "the server with `ssh-keygen -lf <hostkey file>`."
+            setTextColor(resources.getColor(R.color.text_secondary, theme))
+            textSize = 12f
+            setPadding(0, 0, 0, dp(10))
+        })
+
+        val listLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val maxListHeight = (resources.displayMetrics.heightPixels * 0.45f).toInt()
+        val listScroll = object : ScrollView(this) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                super.onMeasure(
+                    widthMeasureSpec,
+                    MeasureSpec.makeMeasureSpec(maxListHeight, MeasureSpec.AT_MOST)
+                )
+            }
+        }.apply { addView(listLayout) }
+        layout.addView(listScroll)
+
+        val dialog = AlertDialog.Builder(this, R.style.AppDialogTheme)
+            .setTitle("Known host keys")
+            .setView(layout)
+            .setNegativeButton("Close", null)
+            .create()
+        dialog.setOnDismissListener { onClosed() }
+
+        fun renderPins() {
+            listLayout.removeAllViews()
+            val pins = KnownHosts.all(this)
+
+            if (pins.isEmpty()) {
+                listLayout.addView(TextView(this).apply {
+                    text = "No pinned host keys yet"
+                    setTextColor(resources.getColor(R.color.text_secondary, theme))
+                    textSize = 14f
+                    setPadding(0, 0, 0, dp(8))
+                })
+                return
+            }
+
+            for (pin in pins) {
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    setBackgroundResource(R.drawable.bg_tunnel_item)
+                    setPadding(dp(12), dp(10), dp(12), dp(10))
+                    layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = dp(4) }
+                }
+                // Weighted column, so the 50-odd characters of fingerprint wrap inside the row
+                // instead of pushing Remove past the edge of the dialog.
+                val text = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f
+                    )
+                }
+                text.addView(TextView(this).apply {
+                    this.text = pin.label
+                    setTextColor(resources.getColor(R.color.text_white, theme))
+                    textSize = 14f
+                })
+                text.addView(TextView(this).apply {
+                    this.text = pin.fingerprint
+                    setTextColor(resources.getColor(R.color.text_secondary, theme))
+                    textSize = 11f
+                })
+                val removeBtn = TextView(this).apply {
+                    this.text = "Remove"
+                    setTextColor(resources.getColor(R.color.error, theme))
+                    textSize = 13f
+                    setPadding(dp(8), dp(4), dp(8), dp(4))
+                    setOnClickListener {
+                        AlertDialog.Builder(this@MainActivity, R.style.AppDialogTheme)
+                            .setTitle("Remove pinned key?")
+                            .setMessage(
+                                "The next connection to ${pin.label} will be trusted on first " +
+                                    "sight again, so a substituted key would be accepted with only " +
+                                    "the usual new-host prompt. Do this after a key change you " +
+                                    "expected — not to get past an unexplained one."
+                            )
+                            .setPositiveButton("Remove") { _, _ ->
+                                KnownHosts.removeFingerprint(this@MainActivity, pin.host, pin.port)
+                                renderPins()
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    }
+                }
+                row.addView(text)
+                row.addView(removeBtn)
+                listLayout.addView(row)
+            }
+        }
+
+        renderPins()
+        dialog.show()
+    }
+
     private var moshSessionManager: MoshSessionManager? = null
 
     private fun connectSsh(server: SshServer) {
@@ -1157,7 +1471,9 @@ class MainActivity : AppCompatActivity() {
         doConnectSsh(server)
     }
 
-    private fun showTmuxSessionPicker(server: SshServer) {
+    private fun showTmuxSessionPicker(unlocked: SshServer) = withKeyPassphrase(unlocked) { server ->
+        // The session list runs its own SSH exec before any shell exists, so an encrypted key has
+        // to be opened here rather than by SshSessionManager's prompt further down.
         val progressDialog = AlertDialog.Builder(this, R.style.AppDialogTheme)
             .setTitle("Loading tmux sessions...")
             .setView(ProgressBar(this).apply {
@@ -1167,8 +1483,16 @@ class MainActivity : AppCompatActivity() {
             .show()
 
         lifecycleScope.launch {
-            val sessions = TmuxManager.listSessions(this@MainActivity, server, hostKeyPrompt())
+            val sessions = TmuxManager.listSessions(this@MainActivity, server, hostKeyPrompt()).toMutableList()
             progressDialog.dismiss()
+
+            // Sessions this app has created or attached on this server. A server shared with other
+            // tooling can carry dozens of foreign sessions (one deployment here has 29), which used
+            // to bury every control in the dialog, so those are hidden behind "Show all" by default.
+            val known = (TmuxManager.knownSessionNames(this@MainActivity, server.id) + server.tmuxSessionName)
+                .filter { it.isNotBlank() }
+                .toSet()
+            var showAll = known.isEmpty()
 
             val layout = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
@@ -1181,59 +1505,35 @@ class MainActivity : AppCompatActivity() {
                 .setNegativeButton("Cancel", null)
                 .create()
 
-            if (sessions.isNotEmpty()) {
-                for (s in sessions) {
-                    val item = LinearLayout(this@MainActivity).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        gravity = android.view.Gravity.CENTER_VERTICAL
-                        setBackgroundResource(R.drawable.bg_tunnel_item)
-                        setPadding(dp(12), dp(10), dp(12), dp(10))
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                        ).apply { bottomMargin = dp(4) }
-                    }
-                    val label = TextView(this@MainActivity).apply {
-                        text = "${s.name}  —  ${s.statusText}"
-                        setTextColor(resources.getColor(R.color.text_white, theme))
-                        textSize = 14f
-                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                    }
-                    val killBtn = TextView(this@MainActivity).apply {
-                        text = "Kill"
-                        setTextColor(resources.getColor(R.color.error, theme))
-                        textSize = 13f
-                        setPadding(dp(8), dp(4), dp(8), dp(4))
-                        setOnClickListener {
-                            lifecycleScope.launch {
-                                TmuxManager.killSession(this@MainActivity, server, s.name, hostKeyPrompt())
-                                dialog.dismiss()
-                                showTmuxSessionPicker(server) // refresh
-                            }
-                        }
-                    }
-                    item.addView(label)
-                    item.addView(killBtn)
-                    item.setOnClickListener {
-                        dialog.dismiss()
-                        doConnectSsh(server.copy(tmuxSessionName = s.name))
-                    }
-                    layout.addView(item)
+            // The session list is the only part allowed to grow. Everything else — the new-session
+            // row above it, the toggle and "Connect without tmux" below — stays outside this
+            // ScrollView so it is reachable no matter how many sessions the server has.
+            val listLayout = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+            }
+            val maxListHeight = (resources.displayMetrics.heightPixels * 0.45f).toInt()
+            val listScroll = object : ScrollView(this@MainActivity) {
+                override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                    // AT_MOST, not a fixed height: a two-session list must not reserve half a screen.
+                    super.onMeasure(
+                        widthMeasureSpec,
+                        MeasureSpec.makeMeasureSpec(maxListHeight, MeasureSpec.AT_MOST)
+                    )
                 }
-            } else {
-                layout.addView(TextView(this@MainActivity).apply {
-                    text = "No existing tmux sessions"
-                    setTextColor(resources.getColor(R.color.text_secondary, theme))
-                    textSize = 14f
-                    setPadding(0, 0, 0, dp(8))
-                })
+            }.apply { addView(listLayout) }
+
+            val toggle = TextView(this@MainActivity).apply {
+                setTextColor(resources.getColor(R.color.primary, theme))
+                textSize = 13f
+                setPadding(0, dp(10), 0, dp(4))
             }
 
-            // New session button
+            // New session row — the most common action, so it sits above the list and never depends
+            // on scrolling.
             val newSessionLayout = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER_VERTICAL
-                setPadding(0, dp(8), 0, dp(4))
+                setPadding(0, 0, 0, dp(8))
             }
             val nameInput = EditText(this@MainActivity).apply {
                 hint = "Session name"
@@ -1255,13 +1555,110 @@ class MainActivity : AppCompatActivity() {
                 background = resources.getDrawable(R.drawable.bg_input, theme)
                 setOnClickListener {
                     val name = nameInput.text.toString().trim().ifBlank { "main" }
+                    TmuxManager.rememberSessionName(this@MainActivity, server.id, name)
                     dialog.dismiss()
                     doConnectSsh(server.copy(tmuxSessionName = name))
                 }
             }
             newSessionLayout.addView(nameInput)
             newSessionLayout.addView(createBtn)
+
+            fun attach(name: String) {
+                TmuxManager.rememberSessionName(this@MainActivity, server.id, name)
+                dialog.dismiss()
+                doConnectSsh(server.copy(tmuxSessionName = name))
+            }
+
+            // Re-rendered in place on toggle and after a kill, so the dialog never has to be
+            // dismissed and rebuilt (which would lose the toggle state and the typed name).
+            fun renderList() {
+                listLayout.removeAllViews()
+                val visible = if (showAll) sessions else sessions.filter { it.name in known }
+
+                if (visible.isEmpty()) {
+                    listLayout.addView(TextView(this@MainActivity).apply {
+                        text = if (sessions.isEmpty()) {
+                            "No existing tmux sessions"
+                        } else {
+                            "No sessions from this app — tap “Show all (${sessions.size})” below"
+                        }
+                        setTextColor(resources.getColor(R.color.text_secondary, theme))
+                        textSize = 14f
+                        setPadding(0, 0, 0, dp(8))
+                    })
+                }
+
+                for (s in visible) {
+                    val item = LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = android.view.Gravity.CENTER_VERTICAL
+                        setBackgroundResource(R.drawable.bg_tunnel_item)
+                        setPadding(dp(12), dp(10), dp(12), dp(10))
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        ).apply { bottomMargin = dp(4) }
+                    }
+                    val label = TextView(this@MainActivity).apply {
+                        text = "${s.name}  —  ${s.statusText}"
+                        setTextColor(resources.getColor(R.color.text_white, theme))
+                        textSize = 14f
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                    }
+                    val killBtn = TextView(this@MainActivity).apply {
+                        text = "Kill"
+                        setTextColor(resources.getColor(R.color.error, theme))
+                        textSize = 13f
+                        setPadding(dp(8), dp(4), dp(8), dp(4))
+                        setOnClickListener { btn ->
+                            // Each kill opens its own SSH session, so a second tap while the first
+                            // is in flight would connect twice and race over the same row.
+                            btn.isEnabled = false
+                            btn.alpha = 0.5f
+                            lifecycleScope.launch {
+                                val killed = TmuxManager.killSession(
+                                    this@MainActivity, server, s.name, hostKeyPrompt()
+                                )
+                                if (killed) {
+                                    // Only now is the row really gone; killSession reports the
+                                    // remote exit status, so a refused kill leaves it listed.
+                                    sessions.remove(s)
+                                    renderList()
+                                } else {
+                                    btn.isEnabled = true
+                                    btn.alpha = 1f
+                                    android.widget.Toast.makeText(
+                                        this@MainActivity,
+                                        "Could not kill ${s.name} — it is still running",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        }
+                    }
+                    item.addView(label)
+                    item.addView(killBtn)
+                    item.setOnClickListener { attach(s.name) }
+                    listLayout.addView(item)
+                }
+
+                val hidden = sessions.size - sessions.count { it.name in known }
+                // With no known names there is nothing to filter down to, so "Show fewer" could
+                // only ever empty the list — offer no control at all rather than one whose single
+                // effect is to make the dialog look broken. It reappears on the next visit, once
+                // creating or attaching a session has given `known` something in it.
+                toggle.visibility = if (known.isNotEmpty() && hidden > 0) View.VISIBLE else View.GONE
+                toggle.text = if (showAll) "Show fewer" else "Show all (${sessions.size})"
+            }
+
+            toggle.setOnClickListener {
+                showAll = !showAll
+                renderList()
+            }
+
             layout.addView(newSessionLayout)
+            layout.addView(listScroll)
+            layout.addView(toggle)
 
             // Without tmux button
             layout.addView(TextView(this@MainActivity).apply {
@@ -1275,6 +1672,7 @@ class MainActivity : AppCompatActivity() {
                 }
             })
 
+            renderList()
             dialog.show()
         }
     }
@@ -1302,6 +1700,9 @@ class MainActivity : AppCompatActivity() {
             },
             onHostKeyVerify = { host, port, fingerprint, changed, oldFingerprint, cb ->
                 showHostKeyDialog(host, port, fingerprint, changed, oldFingerprint, cb)
+            },
+            onPassphraseRequired = { srv, retry, cb ->
+                showKeyPassphraseDialog(srv, retry, cb)
             }
         )
         sshSessionManager?.destroy()
@@ -1336,7 +1737,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     @android.annotation.SuppressLint("SetJavaScriptEnabled")
-    private fun connectMosh(server: SshServer) {
+    private fun connectMosh(unlocked: SshServer) = withKeyPassphrase(unlocked) { server ->
         currentSshServer = server
 
         // A suspended SSH session from a previous server is still alive and still owns
@@ -1515,7 +1916,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     @android.annotation.SuppressLint("SetJavaScriptEnabled")
-    private fun openSftp(server: SshServer) {
+    private fun openSftp(unlocked: SshServer) = withKeyPassphrase(unlocked) { server ->
         val sftpWebView = findViewById<WebView>(R.id.sftpWebView)
         val sftpContainer = findViewById<View>(R.id.sftpContainer)
 
@@ -1746,6 +2147,23 @@ class MainActivity : AppCompatActivity() {
         section("Security")
         val biometricCheck = check("Biometric lock on app start", biometricLockEnabled)
         layout.addView(biometricCheck)
+        val knownHostsBtn = Button(this).apply {
+            text = "Known host keys (${KnownHosts.all(this@MainActivity).size})"
+            isAllCaps = false; textSize = 14f
+            setTextColor(resources.getColor(R.color.text_white, theme))
+            setBackgroundColor(resources.getColor(R.color.surface_variant, theme))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(4) }
+            setOnClickListener {
+                showKnownHostsDialog {
+                    // Pins can have been dropped in there; the count behind it would read stale.
+                    text = "Known host keys (${KnownHosts.all(this@MainActivity).size})"
+                }
+            }
+        }
+        layout.addView(knownHostsBtn)
 
         // === BACKGROUND ===
         section("Background")

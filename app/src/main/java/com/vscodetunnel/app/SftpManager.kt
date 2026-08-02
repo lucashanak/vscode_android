@@ -26,7 +26,13 @@ class SftpManager(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     var isConnected = false; private set
 
-    fun connect(server: SshServer, prompt: JschFactory.HostKeyPrompt?) {
+    /**
+     * @param passphrase for an encrypted private key. Optional: a passphrase the user chose to
+     *   remember is picked up from the server record by JschFactory, so only a session-only one
+     *   the caller already asked for has to be passed in. There is no prompt here — this is a
+     *   one-shot user-initiated connect and MainActivity owns that UI.
+     */
+    fun connect(server: SshServer, prompt: JschFactory.HostKeyPrompt?, passphrase: String? = null) {
         scope.launch {
             try {
                 postJs("showStatus('Connecting...')")
@@ -34,7 +40,7 @@ class SftpManager(
                 // host-key verification all come from JschFactory now. The caller supplies the
                 // prompt so a first-sight key can surface a dialog here too — the SFTP browser is
                 // often the first path to reach a new server, so it can no longer pin silently.
-                val sess = JschFactory.newSession(context, server, prompt)
+                val sess = JschFactory.newSession(context, server, prompt, passphrase)
                 sess.connect()
                 session = sess
 
