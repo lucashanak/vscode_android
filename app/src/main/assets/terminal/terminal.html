@@ -1,9 +1,17 @@
 <!DOCTYPE html>
 <html>
 <head>
+<!-- Blocks remote code in a WebView that exposes a JS bridge into the authenticated SSH shell.
+     The `file:` scheme is listed alongside 'self' deliberately: this page loads from
+     file:///android_asset, and a file:// origin is opaque, so 'self' alone is not reliably
+     matched across WebView versions — without it the vendored scripts would be blocked and the
+     terminal would render as a black screen. Remote https: origins stay blocked either way,
+     which is the actual threat. connect-src 'none' blocks exfiltration; the terminal talks to
+     Kotlin over the JS bridge, never over the network. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' file:; style-src 'self' 'unsafe-inline' file:; img-src 'self' data: file:; font-src 'self' file:; connect-src 'none'">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css" />
+<link rel="stylesheet" href="vendor/xterm.min.css" />
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 html, body { background:#1E1E1E; overflow:hidden; width:100%; height:100%; display:flex; flex-direction:column; }
@@ -66,10 +74,10 @@ html, body { background:#1E1E1E; overflow:hidden; width:100%; height:100%; displ
     <button class="ctx-item" id="ctxSearch">Search</button>
     <button class="ctx-item" id="ctxExport">Export Log</button>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-search@0.15.0/lib/addon-search.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
+<script src="vendor/xterm.min.js"></script>
+<script src="vendor/addon-fit.min.js"></script>
+<script src="vendor/addon-search.min.js"></script>
+<script src="vendor/addon-web-links.min.js"></script>
 <script>
 'use strict';
 
@@ -154,6 +162,37 @@ fitAddon.fit();
 
 // Send user input to Android
 term.onData(data => { if (A) A.onTerminalInput(data); });
+
+// OSC 52 — remote host manipulates the local clipboard.
+// Write is always honoured. Read is gated: a compromised host could otherwise
+// silently exfiltrate whatever was last copied, with no trace in the terminal.
+term.parser.registerOscHandler(52, function (data) {
+    var sep = data.indexOf(';');
+    if (sep === -1) return true;
+    var pc = data.substring(0, sep);
+    var pd = data.substring(sep + 1);
+    // pc is host-controlled and gets echoed back into the read response below. xterm.js's OSC
+    // parser strips C0 controls so it can't smuggle CR/LF/ESC, but arbitrary printable text would
+    // still land at the shell prompt — restrict it to the selector alphabet tmux/xterm define.
+    if (!/^[cpqs0-7]*$/.test(pc)) return true;
+
+    if (pd === '?') {
+        if (!A || !A.osc52ReadAllowed || !A.osc52ReadAllowed()) return true;
+        var cur = A.getClipboard() || '';
+        var b64;
+        try { b64 = btoa(unescape(encodeURIComponent(cur))); } catch (e) { return true; }
+        // Response must go back to the host over the same channel. term.input(str, false)
+        // routes through term.onData -> A.onTerminalInput, so no extra plumbing is needed.
+        term.input('\x1b]52;' + pc + ';' + b64 + '\x07', false);
+        return true;
+    }
+
+    try {
+        var text = decodeURIComponent(escape(atob(pd)));
+        if (A) A.copyToClipboard(text);
+    } catch (e) { /* invalid base64 means "clear"; nothing to do */ }
+    return true;
+});
 
 // ======================== SEARCH ========================
 const searchBar = document.getElementById('searchBar');
@@ -288,14 +327,14 @@ document.addEventListener('touchstart', e => {
 document.getElementById('ctxCopy').addEventListener('click', () => {
     hideCtxMenu();
     const sel = term.getSelection();
-    if (sel && A) { A.copyToClipboard(sel); showToast('Copied'); } // haptic in copyToClipboard
+    if (sel && A) { A.copyToClipboard(sel); A.haptic(); showToast('Copied'); } // haptic here: copyToClipboard no longer buzzes (OSC 52 also routes through it)
 });
 
 document.getElementById('ctxPaste').addEventListener('click', () => {
     hideCtxMenu();
     if (A) {
         const text = A.getClipboard();
-        if (text) { A.onTerminalInput(text); A.haptic(); showToast('Pasted'); }
+        if (text) { term.paste(text.replace(/[\x1b\x80-\x9f]/g, '')); A.haptic(); showToast('Pasted'); }
     }
 });
 
@@ -428,7 +467,7 @@ term.onSelectionChange(() => {
 // Selection toolbar actions
 document.getElementById('selCopy').addEventListener('click', () => {
     const sel = term.getSelection();
-    if (sel && A) { A.copyToClipboard(sel); showToast('Copied'); } // haptic in copyToClipboard
+    if (sel && A) { A.copyToClipboard(sel); A.haptic(); showToast('Copied'); } // haptic here: copyToClipboard no longer buzzes (OSC 52 also routes through it)
     term.clearSelection();
     hideSelToolbar();
 });
@@ -440,7 +479,7 @@ document.getElementById('selPaste').addEventListener('click', () => {
     hideSelToolbar();
     if (A) {
         const text = A.getClipboard();
-        if (text) { A.onTerminalInput(text); A.haptic(); showToast('Pasted'); }
+        if (text) { term.paste(text.replace(/[\x1b\x80-\x9f]/g, '')); A.haptic(); showToast('Pasted'); }
     }
 });
 

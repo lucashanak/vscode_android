@@ -23,6 +23,7 @@ object AppSettings {
     private const val KEY_RECONNECT_ATTEMPTS = "ssh_reconnect_attempts"
     private const val KEY_CONNECT_TIMEOUT = "ssh_connect_timeout"
     private const val KEY_KEEPALIVE_INTERVAL = "ssh_keepalive_interval"
+    private const val KEY_OSC52_CLIPBOARD_READ = "ssh_osc52_clipboard_read"
     private const val KEY_TUNNEL_KEEPALIVE = "tunnel_keepalive_interval"
     private const val KEY_TUNNEL_STALE_REFRESH = "tunnel_stale_refresh_min"
     private const val KEY_COMPACT_KEY_HEIGHT = "compact_key_height"
@@ -120,6 +121,17 @@ object AppSettings {
     var Context.sshKeepaliveInterval: Int
         get() = prefs(this).getInt(KEY_KEEPALIVE_INTERVAL, 60)
         set(value) = prefs(this).edit().putInt(KEY_KEEPALIVE_INTERVAL, value).apply()
+
+    /**
+     * Whether a remote host may *read* the Android clipboard via an OSC 52 query.
+     *
+     * Off by default, and deliberately so: writes are harmless, but a compromised host can silently
+     * exfiltrate whatever was last copied (passwords, OTPs) by printing an escape sequence, with no
+     * visible trace in the terminal. iTerm2, kitty, wezterm and xterm all default this off.
+     */
+    var Context.sshOsc52ClipboardRead: Boolean
+        get() = prefs(this).getBoolean(KEY_OSC52_CLIPBOARD_READ, false)
+        set(value) = prefs(this).edit().putBoolean(KEY_OSC52_CLIPBOARD_READ, value).apply()
 
     var Context.tunnelKeepaliveInterval: Int
         get() = prefs(this).getInt(KEY_TUNNEL_KEEPALIVE, 30)
