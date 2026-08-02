@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Extraction rules for Android 12+ (API 31).
+
+  android:allowBackup="false" already stops cloud backup and `adb backup`, but on API 31+
+  some vendors do not let an app opt out of device-to-device transfer. These rules close
+  that remaining path for the preferences that hold credentials.
+
+  Excluding the encrypted stores is a correctness fix as much as a hardening one: their
+  master key lives in the Android Keystore and cannot be exported, so a transferred copy
+  would arrive as undecryptable ciphertext.
+
+  Paths are resolved against shared_prefs/, and the platform does NOT append ".xml" for
+  domain="sharedpref" — AOSP's FullBackup.BackupScheme resolves `new File(domainDirectory,
+  pathFromXml)` verbatim, and Android's own docs example uses path="device.xml". So each prefs
+  file must be listed by its actual on-disk name, which is why both forms appear below.
+-->
+<data-extraction-rules>
+    <!-- Redundant while allowBackup is false, kept so secrets stay excluded if it is ever re-enabled. -->
+    <cloud-backup>
+        <exclude domain="sharedpref" path="ssh_servers" />
+        <exclude domain="sharedpref" path="ssh_servers.xml" />
+        <exclude domain="sharedpref" path="ssh_servers_secure" />
+        <exclude domain="sharedpref" path="ssh_servers_secure.xml" />
+        <exclude domain="sharedpref" path="known_hosts" />
+        <exclude domain="sharedpref" path="known_hosts.xml" />
+        <exclude domain="sharedpref" path="auth" />
+        <exclude domain="sharedpref" path="auth.xml" />
+    </cloud-backup>
+    <!-- This is the block that actually matters on API 31+: allowBackup="false" already blocks
+         cloud-backup, but not device-to-device transfer on every vendor. -->
+    <device-transfer>
+        <exclude domain="sharedpref" path="ssh_servers" />
+        <exclude domain="sharedpref" path="ssh_servers.xml" />
+        <exclude domain="sharedpref" path="ssh_servers_secure" />
+        <exclude domain="sharedpref" path="ssh_servers_secure.xml" />
+        <exclude domain="sharedpref" path="known_hosts" />
+        <exclude domain="sharedpref" path="known_hosts.xml" />
+        <exclude domain="sharedpref" path="auth" />
+        <exclude domain="sharedpref" path="auth.xml" />
+    </device-transfer>
+</data-extraction-rules>

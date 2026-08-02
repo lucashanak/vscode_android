@@ -69,6 +69,8 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // Biometric auth
     implementation("androidx.biometric:biometric:1.1.0")
+    // Keystore-backed encryption for stored SSH credentials
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
     // Binary delta patching for updates
     implementation("io.sigpipe:jbsdiff:1.0")
 }
