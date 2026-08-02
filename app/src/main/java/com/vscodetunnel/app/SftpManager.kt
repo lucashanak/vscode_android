@@ -5,14 +5,12 @@ import android.net.Uri
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import com.jcraft.jsch.ChannelSftp
-import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
 import com.jcraft.jsch.SftpATTRS
 import kotlinx.coroutines.*
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.util.Properties
 import java.util.Vector
 
 class SftpManager(
@@ -28,25 +26,15 @@ class SftpManager(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     var isConnected = false; private set
 
-    fun connect(server: SshServer) {
+    fun connect(server: SshServer, prompt: JschFactory.HostKeyPrompt?) {
         scope.launch {
             try {
                 postJs("showStatus('Connecting...')")
-                val jsch = JSch()
-                if (server.authMethod == SshServer.AuthMethod.KEY && server.privateKey.isNotBlank()) {
-                    jsch.addIdentity("key", server.privateKey.toByteArray(), null, null)
-                }
-                val sess = jsch.getSession(server.username, server.host, server.port)
-                if (server.authMethod == SshServer.AuthMethod.PASSWORD && server.password.isNotBlank()) {
-                    sess.setPassword(server.password)
-                }
-                val config = Properties()
-                config["StrictHostKeyChecking"] = "no"
-                sess.setConfig(config)
-                sess.timeout = 15000
-                if (server.useCloudflareProxy) {
-                    sess.setProxy(CloudflareProxy(server.host, server.cloudflareToken))
-                }
+                // Identity, password, timeout, keepalive, compression, CloudflareProxy and
+                // host-key verification all come from JschFactory now. The caller supplies the
+                // prompt so a first-sight key can surface a dialog here too — the SFTP browser is
+                // often the first path to reach a new server, so it can no longer pin silently.
+                val sess = JschFactory.newSession(context, server, prompt)
                 sess.connect()
                 session = sess
 

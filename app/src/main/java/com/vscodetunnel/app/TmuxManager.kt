@@ -1,11 +1,9 @@
 package com.vscodetunnel.app
 
+import android.content.Context
 import com.jcraft.jsch.ChannelExec
-import com.jcraft.jsch.JSch
-import com.jcraft.jsch.Session
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.Properties
 
 /**
  * Manages tmux sessions on a remote server over SSH.
@@ -30,9 +28,9 @@ object TmuxManager {
      * List tmux sessions on the remote server.
      * Returns empty list if tmux is not installed or no sessions exist.
      */
-    suspend fun listSessions(server: SshServer): List<TmuxSession> = withContext(Dispatchers.IO) {
+    suspend fun listSessions(context: Context, server: SshServer, prompt: JschFactory.HostKeyPrompt?): List<TmuxSession> = withContext(Dispatchers.IO) {
         try {
-            val output = sshExec(server, "tmux list-sessions -F '#{session_name}|||#{session_windows}|||#{session_attached}' 2>/dev/null")
+            val output = sshExec(context, server, "tmux list-sessions -F '#{session_name}|||#{session_windows}|||#{session_attached}' 2>/dev/null", prompt)
             output.lines()
                 .filter { it.contains("|||") }
                 .map { line ->
@@ -53,9 +51,9 @@ object TmuxManager {
     /**
      * Check if tmux is installed on the remote server.
      */
-    suspend fun isInstalled(server: SshServer): Boolean = withContext(Dispatchers.IO) {
+    suspend fun isInstalled(context: Context, server: SshServer, prompt: JschFactory.HostKeyPrompt?): Boolean = withContext(Dispatchers.IO) {
         try {
-            val output = sshExec(server, "command -v tmux 2>/dev/null")
+            val output = sshExec(context, server, "command -v tmux 2>/dev/null", prompt)
             output.trim().isNotBlank()
         } catch (_: Exception) { false }
     }
@@ -66,8 +64,14 @@ object TmuxManager {
      */
     fun buildAttachCommand(sessionName: String): String {
         val safeName = sessionName.replace("'", "'\\''")
-        // Enable mouse so touch scroll works (set-option runs after server starts)
-        return "tmux new-session -A -s '$safeName' \\; set-option -g mouse on"
+        // Enable mouse so touch scroll works (set-option runs after server starts).
+        // tmux does not forward OSC 52 by default, so the terminal's clipboard handler never
+        // sees a copy unless these two are also set. terminal-features is tmux >= 3.2 only and
+        // fails at runtime (harmlessly, but noisily) on 3.0/3.1, so terminal-overrides is also set
+        // for the older Ms-capability-based mechanism — belt and suspenders across tmux versions.
+        return "tmux new-session -A -s '$safeName' \\; set-option -g mouse on" +
+            " \\; set-option -g set-clipboard on \\; set-option -ga terminal-features ',*:clipboard'" +
+            " \\; set-option -ga terminal-overrides ',*:Ms=\\E]52;%p1%s;%p2%s\\7'"
     }
 
     /**
@@ -81,9 +85,9 @@ object TmuxManager {
     /**
      * Kill a tmux session on the remote server.
      */
-    suspend fun killSession(server: SshServer, sessionName: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun killSession(context: Context, server: SshServer, sessionName: String, prompt: JschFactory.HostKeyPrompt?): Boolean = withContext(Dispatchers.IO) {
         try {
-            sshExec(server, buildKillCommand(sessionName))
+            sshExec(context, server, buildKillCommand(sessionName), prompt)
             true
         } catch (e: Exception) {
             FileLogger.w(TAG, "Failed to kill tmux session: $e")
@@ -91,17 +95,12 @@ object TmuxManager {
         }
     }
 
-    private fun sshExec(server: SshServer, command: String): String {
-        val jsch = JSch()
-        if (server.authMethod == SshServer.AuthMethod.KEY && server.privateKey.isNotBlank()) {
-            jsch.addIdentity("key", server.privateKey.toByteArray(), null, null)
-        }
-        val sess = jsch.getSession(server.username, server.host, server.port)
-        if (server.password.isNotBlank()) sess.setPassword(server.password)
-        val config = Properties()
-        config["StrictHostKeyChecking"] = "no"
-        sess.setConfig(config)
-        sess.timeout = 10000
+    private fun sshExec(context: Context, server: SshServer, command: String, prompt: JschFactory.HostKeyPrompt?): String {
+        // Identity, password (auth-method gated), timeout, keepalive, compression,
+        // CloudflareProxy and host-key verification are all handled by JschFactory. The caller
+        // supplies the prompt so a first-sight key on this path can surface a dialog too — see
+        // JschFactory's kdoc on why an unprompted first-sight pin here is no longer safe.
+        val sess = JschFactory.newSession(context, server, prompt)
         sess.connect()
 
         try {

@@ -3,12 +3,13 @@ package com.vscodetunnel.app
 import android.content.Context
 import android.webkit.WebView
 import com.jcraft.jsch.ChannelExec
-import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
 import kotlinx.coroutines.*
 import org.json.JSONObject
 import java.io.File
-import java.util.Properties
+import java.nio.ByteBuffer
+import java.nio.CharBuffer
+import java.nio.charset.CodingErrorAction
 
 /**
  * Mosh session manager.
@@ -30,6 +31,7 @@ class MoshSessionManager(
     companion object {
         private const val TAG = "MoshSession"
         private const val MOSH_LIB = "libmosh.so"
+        private const val READ_BUF_SIZE = 8192
 
         /** Get mosh binary path from nativeLibraryDir */
         private fun moshBin(context: Context) =
@@ -64,7 +66,7 @@ class MoshSessionManager(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     @Volatile var isConnected = false; private set
 
-    fun connect(server: SshServer) {
+    fun connect(server: SshServer, prompt: JschFactory.HostKeyPrompt?) {
         scope.launch {
             try {
                 writeInfo("Starting Mosh session to ${server.host}...\r\n")
@@ -86,16 +88,11 @@ class MoshSessionManager(
                 // Step 2: SSH to run mosh-server
                 writeInfo("Connecting via SSH to start mosh-server...\r\n")
                 FileLogger.d(TAG, "SSH connecting to ${server.host}:${server.port}")
-                val jsch = JSch()
-                if (server.authMethod == SshServer.AuthMethod.KEY && server.privateKey.isNotBlank()) {
-                    jsch.addIdentity("key", server.privateKey.toByteArray(), null, null)
-                }
-                val sess = jsch.getSession(server.username, server.host, server.port)
-                if (server.password.isNotBlank()) sess.setPassword(server.password)
-                val config = Properties()
-                config["StrictHostKeyChecking"] = "no"
-                sess.setConfig(config)
-                sess.timeout = 15000
+                // Via JschFactory so the mosh bootstrap can't be the one SSH path that skips
+                // host-key verification. This path sends the password immediately after the key
+                // check, so of the three SSH paths it most needs the caller-supplied prompt: an
+                // unprompted first-sight pin here would hand the password straight to an impostor.
+                val sess = JschFactory.newSession(context, server, prompt)
                 sess.connect()
                 sshSession = sess
                 FileLogger.d(TAG, "SSH connected")
@@ -189,14 +186,28 @@ class MoshSessionManager(
 
                 // Step 4: Bridge PTY master fd to terminal WebView
                 readJob = scope.launch {
+                    // One decoder for the whole session, with the undecoded tail carried over:
+                    // decoding each read standalone turned any multi-byte character split
+                    // across the boundary into U+FFFD for good.
+                    val decoder = Charsets.UTF_8.newDecoder()
+                        .onMalformedInput(CodingErrorAction.REPLACE)
+                        .onUnmappableCharacter(CodingErrorAction.REPLACE)
+                    val pending = ByteBuffer.allocate(READ_BUF_SIZE + 8)
+                    val chars = CharBuffer.allocate(READ_BUF_SIZE + 8)
                     try {
-                        val buf = ByteArray(8192)
+                        val buf = ByteArray(READ_BUF_SIZE)
                         val input = process.inputStream
                         while (isActive) {
                             val n = input.read(buf)
                             if (n < 0) break
                             if (n == 0) { delay(20); continue }
-                            writeOutput(String(buf, 0, n))
+                            pending.put(buf, 0, n)
+                            pending.flip()
+                            chars.clear()
+                            decoder.decode(pending, chars, false)
+                            pending.compact() // retains the incomplete tail for the next read
+                            chars.flip()
+                            if (chars.hasRemaining()) writeOutput(chars.toString())
                         }
                     } catch (e: Exception) {
                         FileLogger.w(TAG, "Mosh read error: $e")

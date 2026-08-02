@@ -50,6 +50,7 @@ import com.vscodetunnel.app.AppSettings.sshAutoReconnect
 import com.vscodetunnel.app.AppSettings.sshReconnectAttempts
 import com.vscodetunnel.app.AppSettings.sshConnectTimeout
 import com.vscodetunnel.app.AppSettings.sshKeepaliveInterval
+import com.vscodetunnel.app.AppSettings.sshOsc52ClipboardRead
 import com.vscodetunnel.app.AppSettings.tunnelKeepaliveInterval
 import com.vscodetunnel.app.AppSettings.tunnelStaleRefreshMin
 import com.vscodetunnel.app.AppSettings.suppressSystemKeyboard
@@ -537,10 +538,31 @@ class MainActivity : AppCompatActivity() {
     // --- SSH Servers ---
 
     private fun renderSshServers() {
-        val servers = ServerStorage.getServers(this)
+        // serversOrNull rather than getServers: null means the store could not be read, which is
+        // not the same as having no servers. Rendering the usual empty state for it tells the user
+        // their servers are gone while the encrypted file sits intact on disk.
+        val servers = ServerStorage.serversOrNull(this)
         sshServerList.removeAllViews()
 
+        if (servers == null) {
+            sshEmptyText.text = ServerStorage.lastError
+                ?: "Saved servers are temporarily unavailable."
+            sshEmptyText.visibility = View.VISIBLE
+            return
+        }
+
+        // A readable but degraded store (servers left unencrypted) still has a lastError, and the
+        // list itself is fine — so that one goes to the transient error strip instead of replacing
+        // the list. Once per process, because this renders on every save, delete and resume.
+        if (!storageWarningShown) {
+            ServerStorage.lastError?.let {
+                storageWarningShown = true
+                showError(it)
+            }
+        }
+
         if (servers.isEmpty()) {
+            sshEmptyText.text = "No saved servers"
             sshEmptyText.visibility = View.VISIBLE
             return
         }
@@ -550,6 +572,9 @@ class MainActivity : AppCompatActivity() {
             addSshServerItem(server)
         }
     }
+
+    /** Keeps the degraded-storage warning from re-firing on every [renderSshServers]. */
+    private var storageWarningShown = false
 
     private fun addSshServerItem(server: SshServer) {
         val item = LinearLayout(this).apply {
@@ -601,7 +626,11 @@ class MainActivity : AppCompatActivity() {
             textSize = 13f
             setPadding(dp(8), dp(4), dp(8), dp(4))
             setOnClickListener {
-                ServerStorage.deleteServer(this@MainActivity, server.id)
+                if (!ServerStorage.deleteServer(this@MainActivity, server.id)) {
+                    showError(ServerStorage.lastError ?: "Could not delete this server.")
+                }
+                // Re-render either way: on failure the row is still there, and leaving it looking
+                // deleted would invite the user to assume it is gone.
                 renderSshServers()
             }
         }
@@ -789,40 +818,57 @@ class MainActivity : AppCompatActivity() {
         }
         layout.addView(cfTokenField)
 
-        AlertDialog.Builder(this, R.style.AppDialogTheme)
+        // Built with create() and an overridden button listener rather than setPositiveButton's
+        // own, because the builder's listener always dismisses. A save that did not land has to
+        // leave the dialog up with the user's input still in it — same for the blank-field check,
+        // which previously threw the whole form away to show its message.
+        val dialog = AlertDialog.Builder(this, R.style.AppDialogTheme)
             .setTitle(if (existing != null) "Edit Server" else "Add SSH Server")
             .setView(scroll)
-            .setPositiveButton("Save") { _, _ ->
-                val host = hostField.text.toString().trim()
-                val user = userField.text.toString().trim()
-                if (host.isBlank() || user.isBlank()) {
-                    showError("Host and username are required")
-                    return@setPositiveButton
-                }
-                val key = keyField.text.toString().trim()
-                val server = SshServer(
-                    id = existing?.id ?: System.currentTimeMillis().toString(),
-                    name = nameField.text.toString().trim(),
-                    host = host,
-                    port = portField.text.toString().toIntOrNull() ?: 22,
-                    username = user,
-                    authMethod = if (key.isNotBlank()) SshServer.AuthMethod.KEY else SshServer.AuthMethod.PASSWORD,
-                    password = passField.text.toString(),
-                    privateKey = key,
-                    startupCommand = startupField.text.toString().trim(),
-                    portForwards = parsePortForwards(portFwdField.text.toString()),
-                    snippets = snippetsField.text.toString().split(",").map { it.trim() }.filter { it.isNotBlank() },
-                    useMosh = moshCheck.isChecked,
-                    useTmux = tmuxCheck.isChecked,
-                    tmuxSessionName = tmuxNameField.text.toString().trim(),
-                    useCloudflareProxy = cfCheck.isChecked,
-                    cloudflareToken = cfTokenField.text.toString().trim()
-                )
-                ServerStorage.saveServer(this, server)
-                renderSshServers()
-            }
+            .setPositiveButton("Save", null)
             .setNegativeButton("Cancel", null)
-            .show()
+            .create()
+        dialog.show()
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val host = hostField.text.toString().trim()
+            val user = userField.text.toString().trim()
+            if (host.isBlank() || user.isBlank()) {
+                // Toast, not showError: the error strip lives in the Activity behind this dialog.
+                android.widget.Toast.makeText(
+                    this, "Host and username are required", android.widget.Toast.LENGTH_SHORT
+                ).show()
+                return@setOnClickListener
+            }
+            val key = keyField.text.toString().trim()
+            val server = SshServer(
+                id = existing?.id ?: System.currentTimeMillis().toString(),
+                name = nameField.text.toString().trim(),
+                host = host,
+                port = portField.text.toString().toIntOrNull() ?: 22,
+                username = user,
+                authMethod = if (key.isNotBlank()) SshServer.AuthMethod.KEY else SshServer.AuthMethod.PASSWORD,
+                password = passField.text.toString(),
+                privateKey = key,
+                startupCommand = startupField.text.toString().trim(),
+                portForwards = parsePortForwards(portFwdField.text.toString()),
+                snippets = snippetsField.text.toString().split(",").map { it.trim() }.filter { it.isNotBlank() },
+                useMosh = moshCheck.isChecked,
+                useTmux = tmuxCheck.isChecked,
+                tmuxSessionName = tmuxNameField.text.toString().trim(),
+                useCloudflareProxy = cfCheck.isChecked,
+                cloudflareToken = cfTokenField.text.toString().trim()
+            )
+            if (!ServerStorage.saveServer(this, server)) {
+                android.widget.Toast.makeText(
+                    this,
+                    ServerStorage.lastError ?: "Could not save this server.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+                return@setOnClickListener
+            }
+            dialog.dismiss()
+            renderSshServers()
+        }
     }
 
     private fun parsePortForwards(input: String): List<PortForward> {
@@ -940,13 +986,11 @@ class MainActivity : AppCompatActivity() {
                         .setTitle("SSH Key Generated")
                         .setView(scroll)
                         .setPositiveButton("Copy Public Key") { _, _ ->
-                            val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                            cm.setPrimaryClip(android.content.ClipData.newPlainText("pub_key", "$keyType $pubB64 $comment"))
+                            TerminalClipboard.copy(this@MainActivity, "$keyType $pubB64 $comment")
                             showError("Public key copied to clipboard")
                         }
                         .setNeutralButton("Copy Private Key") { _, _ ->
-                            val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                            cm.setPrimaryClip(android.content.ClipData.newPlainText("priv_key", privPem))
+                            TerminalClipboard.copy(this@MainActivity, privPem, sensitive = true)
                             showError("Private key copied to clipboard")
                         }
                         .setNegativeButton("Close", null)
@@ -1012,17 +1056,96 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun showHostKeyDialog(host: String, fingerprint: String, callback: (Boolean) -> Unit) {
-        runOnUiThread {
-            AlertDialog.Builder(this, R.style.AppDialogTheme)
-                .setTitle("Host Key Changed!")
-                .setMessage("The host key for $host has changed.\n\nNew fingerprint:\n$fingerprint\n\nThis could indicate a man-in-the-middle attack. Accept new key?")
-                .setPositiveButton("Accept") { _, _ -> callback(true) }
-                .setNegativeButton("Reject") { _, _ -> callback(false) }
-                .setCancelable(false)
-                .show()
+    private fun showHostKeyDialog(
+        host: String,
+        port: Int,
+        fingerprint: String,
+        changed: Boolean,
+        oldFingerprint: String?,
+        callback: (Boolean) -> Unit
+    ) {
+        // onHostKeyVerify fires on JSch's connect thread during key exchange (before any
+        // credential is sent), and callback must be invoked exactly once no matter how the
+        // dialog is dismissed.
+        var resolved = false
+        fun resolve(accept: Boolean) {
+            if (resolved) return
+            resolved = true
+            callback(accept)
         }
+
+        // Everything below runs on the main thread, in exactly one runnable, with the try/catch
+        // *inside* it. That placement is the point: a background auto-reconnect can reach here
+        // while the Activity is going away, and show() on a dead window throws BadTokenException.
+        // If that throw escaped a runnable already executing on the main Looper it would be an
+        // uncaught exception and kill the process — taking the blocked JSch thread with it long
+        // before its prompt timeout could answer. Caught here, we just reject.
+        val show = Runnable {
+            if (isFinishing || isDestroyed) {
+                FileLogger.w(TAG, "Host key prompt for $host:$port while finishing, rejecting")
+                resolve(false)
+                return@Runnable
+            }
+            try {
+                if (!changed) {
+                    // First sight of this host (TOFU). Low-friction confirm — accepting is what
+                    // lets the connection proceed.
+                    AlertDialog.Builder(this, R.style.AppDialogTheme)
+                        .setTitle("New Host Key")
+                        .setMessage(
+                            "First connection to $host:$port.\n\n" +
+                                "Fingerprint (SHA256):\n$fingerprint\n\n" +
+                                "Trust this key and continue?"
+                        )
+                        .setPositiveButton("Trust & Connect") { _, _ -> resolve(true) }
+                        .setNegativeButton("Cancel") { _, _ -> resolve(false) }
+                        .setOnCancelListener { resolve(false) }
+                        .setCancelable(true)
+                        .show()
+                } else {
+                    // Pinned key no longer matches. Always alarming, never auto-accepted.
+                    AlertDialog.Builder(this, R.style.AppDialogTheme)
+                        .setTitle("⚠ Host Key Changed!")
+                        .setMessage(
+                            "The host key for $host:$port has changed. This can happen after a legitimate " +
+                                "server reinstall, or it can mean someone is intercepting your connection " +
+                                "(man-in-the-middle attack).\n\n" +
+                                "These fingerprints are SHA256 hashes of the host key — compare them against " +
+                                "the server's actual key with `ssh-keygen -lf <hostkey file>` before accepting.\n\n" +
+                                "Previously known fingerprint:\n$oldFingerprint\n\n" +
+                                "New fingerprint:\n$fingerprint\n\n" +
+                                "Only accept if you are certain this change is expected."
+                        )
+                        .setPositiveButton("Accept New Key") { _, _ -> resolve(true) }
+                        .setNegativeButton("Reject") { _, _ -> resolve(false) }
+                        .setOnCancelListener { resolve(false) }
+                        .setCancelable(true)
+                        .show()
+                }
+            } catch (t: Throwable) {
+                FileLogger.e(TAG, "Could not show host key dialog, rejecting", t)
+                resolve(false)
+            }
+        }
+
+        // Callers arrive both ways and this must not care: JschFactory.blockingPrompt has already
+        // hopped to the main thread, while a direct onHostKeyVerify call is on JSch's. Run inline
+        // when already on main rather than posting a second runnable.
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) show.run()
+        else runOnUiThread(show)
     }
+
+    /**
+     * The blocking host-key confirmation the non-shell SSH paths (tmux, sftp, mosh) hand to
+     * [JschFactory]. Without one those paths fail closed on any server that has no pin yet.
+     *
+     * Only builds the prompt — the block happens inside confirm(), on whichever background
+     * thread JSch runs key exchange on, so this is safe to call from the main thread.
+     */
+    private fun hostKeyPrompt(): JschFactory.HostKeyPrompt =
+        JschFactory.blockingPrompt { host, port, fingerprint, changed, old, respond ->
+            showHostKeyDialog(host, port, fingerprint, changed, old, respond)
+        }
 
     private var moshSessionManager: MoshSessionManager? = null
 
@@ -1044,7 +1167,7 @@ class MainActivity : AppCompatActivity() {
             .show()
 
         lifecycleScope.launch {
-            val sessions = TmuxManager.listSessions(server)
+            val sessions = TmuxManager.listSessions(this@MainActivity, server, hostKeyPrompt())
             progressDialog.dismiss()
 
             val layout = LinearLayout(this@MainActivity).apply {
@@ -1083,7 +1206,7 @@ class MainActivity : AppCompatActivity() {
                         setPadding(dp(8), dp(4), dp(8), dp(4))
                         setOnClickListener {
                             lifecycleScope.launch {
-                                TmuxManager.killSession(server, s.name)
+                                TmuxManager.killSession(this@MainActivity, server, s.name, hostKeyPrompt())
                                 dialog.dismiss()
                                 showTmuxSessionPicker(server) // refresh
                             }
@@ -1164,6 +1287,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // Both managers drive the same sshTerminalWebView, and returning to the launcher only
+        // suspends a session rather than destroying it. A leftover mosh session would keep
+        // writing its own output into this terminal, so it has to go.
+        moshSessionManager?.destroy()
+        moshSessionManager = null
+
         val mgr = SshSessionManager(this, sshTerminalWebView,
             onDisconnected = { reason ->
                 runOnUiThread {
@@ -1171,7 +1300,9 @@ class MainActivity : AppCompatActivity() {
                     if (keepAliveEnabled) KeepAliveService.stop(this)
                 }
             },
-            onHostKeyVerify = { host, fp, cb -> showHostKeyDialog(host, fp, cb) }
+            onHostKeyVerify = { host, port, fingerprint, changed, oldFingerprint, cb ->
+                showHostKeyDialog(host, port, fingerprint, changed, oldFingerprint, cb)
+            }
         )
         sshSessionManager?.destroy()
         sshSessionManager = mgr
@@ -1207,6 +1338,12 @@ class MainActivity : AppCompatActivity() {
     @android.annotation.SuppressLint("SetJavaScriptEnabled")
     private fun connectMosh(server: SshServer) {
         currentSshServer = server
+
+        // A suspended SSH session from a previous server is still alive and still owns
+        // sshTerminalWebView — its shell output and reconnect notices would interleave with this
+        // mosh session's, and onResume() would keep force-reconnecting it. Tear it down first.
+        sshSessionManager?.destroy()
+        sshSessionManager = null
 
         // Setup terminal WebView (reuse SSH terminal)
         sshTerminalWebView.settings.apply {
@@ -1264,13 +1401,28 @@ class MainActivity : AppCompatActivity() {
                 fun onTerminalResize(cols: Int, rows: Int) { mgr.resize(cols, rows) }
                 @android.webkit.JavascriptInterface
                 fun copyToClipboard(text: String) {
-                    val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    cm.setPrimaryClip(android.content.ClipData.newPlainText("terminal", text))
+                    TerminalClipboard.copy(this@MainActivity, text)
                 }
                 @android.webkit.JavascriptInterface
-                fun getClipboard(): String {
-                    val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    return cm.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
+                fun getClipboard(): String = TerminalClipboard.read(this@MainActivity)
+                @android.webkit.JavascriptInterface
+                fun osc52ReadAllowed(): Boolean = sshOsc52ClipboardRead
+                @android.webkit.JavascriptInterface
+                fun haptic() {
+                    if (!hapticFeedback) return
+                    val vibrator = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                        val vm = getSystemService(VIBRATOR_MANAGER_SERVICE) as android.os.VibratorManager
+                        vm.defaultVibrator
+                    } else {
+                        @Suppress("DEPRECATION")
+                        getSystemService(VIBRATOR_SERVICE) as android.os.Vibrator
+                    }
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        vibrator.vibrate(android.os.VibrationEffect.createOneShot(5, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator.vibrate(5)
+                    }
                 }
                 @android.webkit.JavascriptInterface
                 fun exportScrollback(content: String) {}
@@ -1286,7 +1438,7 @@ class MainActivity : AppCompatActivity() {
         // Delay connect until terminal is loaded
         sshTerminalWebView.postDelayed({
             sshTerminalWebView.evaluateJavascript("window.isMosh = true", null)
-            mgr.connect(server)
+            mgr.connect(server, hostKeyPrompt())
         }, 500)
 
         if (server.snippets.isNotEmpty()) {
@@ -1380,7 +1532,7 @@ class MainActivity : AppCompatActivity() {
         sftpWebView.addJavascriptInterface(mgr.SftpBridge(), "Android")
         sftpWebView.loadUrl("file:///android_asset/sftp/sftp.html")
 
-        mgr.connect(server)
+        mgr.connect(server, hostKeyPrompt())
 
         launcherScroll.visibility = View.GONE
         sessionWrapper.visibility = View.VISIBLE
@@ -1586,6 +1738,9 @@ class MainActivity : AppCompatActivity() {
         label("Keepalive interval (seconds, 0 = disabled)")
         val keepaliveField = field("60", sshKeepaliveInterval.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
         layout.addView(keepaliveField)
+        val osc52ReadCheck = check("Allow remote host to read clipboard (OSC 52)", sshOsc52ClipboardRead)
+        layout.addView(osc52ReadCheck)
+        label("Off by default: a compromised host can silently read whatever was last copied — passwords, OTPs — with no trace in the terminal.")
 
         // === SECURITY ===
         section("Security")
@@ -1669,6 +1824,7 @@ class MainActivity : AppCompatActivity() {
             sshReconnectAttempts = attemptsField.text.toString().toIntOrNull() ?: 3
             sshConnectTimeout = timeoutField.text.toString().toIntOrNull() ?: 15
             sshKeepaliveInterval = (keepaliveField.text.toString().toIntOrNull() ?: 60).coerceIn(0, 600)
+            sshOsc52ClipboardRead = osc52ReadCheck.isChecked
             // Security
             biometricLockEnabled = biometricCheck.isChecked
             keepAliveEnabled = keepAliveCheck.isChecked
@@ -2674,6 +2830,15 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         maybeAutoRefreshStaleTunnel()
+        // Deliberate: this resets the retry counter and force-reconnects, so even a session the
+        // user was already told had failed gets one more try. Reopening the app is exactly when
+        // someone wants their terminal back — don't "fix" this into a no-op.
+        sshSessionManager?.onAppResumed()
+    }
+
+    override fun onPause() {
+        sshSessionManager?.onAppPaused()
+        super.onPause()
     }
 
     private var lastBackgroundTimeMs: Long = 0L

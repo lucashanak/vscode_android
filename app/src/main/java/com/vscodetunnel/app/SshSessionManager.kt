@@ -2,48 +2,97 @@ package com.vscodetunnel.app
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.os.Handler
+import android.os.Looper
 import android.webkit.JavascriptInterface
 import com.vscodetunnel.app.AppSettings.terminalFontSize
-import com.vscodetunnel.app.AppSettings.sshKeepaliveInterval
+import com.vscodetunnel.app.AppSettings.terminalScrollback
+import com.vscodetunnel.app.AppSettings.sshAutoReconnect
+import com.vscodetunnel.app.AppSettings.sshReconnectAttempts
+import com.vscodetunnel.app.AppSettings.sshOsc52ClipboardRead
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.jcraft.jsch.ChannelShell
-import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
 import org.json.JSONObject
 import kotlinx.coroutines.*
-import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.InputStream
 import java.io.OutputStream
-import java.security.MessageDigest
-import java.util.Properties
+import java.nio.ByteBuffer
+import java.nio.CharBuffer
+import java.nio.charset.CodingErrorAction
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class SshSessionManager(
     private val context: Context,
     private val terminalWebView: WebView,
     private val onDisconnected: (reason: String) -> Unit,
-    private val onHostKeyVerify: (host: String, fingerprint: String, callback: (Boolean) -> Unit) -> Unit
+    private val onHostKeyVerify: (
+        host: String,
+        port: Int,
+        fingerprint: String,
+        changed: Boolean,
+        oldFingerprint: String?,
+        callback: (Boolean) -> Unit
+    ) -> Unit
 ) {
     private var session: Session? = null
     private var channel: ChannelShell? = null
     private var inputStream: InputStream? = null
     private var outputStream: OutputStream? = null
     private var readJob: Job? = null
+    private var reconnectJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     @Volatile var isConnected = false; private set
-    private var currentServer: SshServer? = null
-    private var reconnectAttempts = 0
+    @Volatile private var currentServer: SshServer? = null
+    /** Mutated from the binder thread (network callback), IO (read loop) and main (lifecycle). */
+    private val reconnectAttempts = AtomicInteger(0)
+    /** Set by disconnect(); suppresses every reconnect path until the next connect(). */
+    @Volatile private var stopped = true
+    /**
+     * A failure that retrying cannot fix: wrong credentials, or a host key the user refused.
+     * Retrying those re-sends the password to the server (fail2ban, lockout) or re-opens a dialog
+     * the user already dismissed. Sticky until the next explicit connect().
+     */
+    @Volatile private var fatal = false
+    /** The user tapped "reject" on the host key dialog — fatal, unlike a prompt that went unanswered. */
+    @Volatile private var hostKeyDenied = false
+    /** The dialog could not be shown or nobody answered it. Retryable: the user may still be back. */
+    @Volatile private var hostKeyUnanswered = false
+    @Volatile private var foreground = true
+    @Volatile private var lastConnectedAt = 0L
 
-    // Port forwarding channels
-    private val activeForwards = mutableListOf<String>()
+    /** Last size xterm.js reported, replayed onto the PTY once a channel exists. */
+    @Volatile private var lastCols = 0
+    @Volatile private var lastRows = 0
+
+    /** Only one connect attempt at a time — entry points include a binder thread. */
+    private val connecting = AtomicBoolean(false)
+    /** Bumped per connect so a stale read loop can't drive the current session. */
+    private val sessionGeneration = AtomicInteger(0)
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
+    @Suppress("DEPRECATION") // the file-URL setters are the only way to pin these off pre-30
     fun setupTerminal() {
         terminalWebView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
-            mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+            // The terminal is a local asset that talks to the app only through the JS bridge, so
+            // it never needs the network or the filesystem. Pinned explicitly rather than relying
+            // on the platform defaults, which is what the page's CSP assumes.
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            allowFileAccess = false
+            allowContentAccess = false
+            allowFileAccessFromFileURLs = false
+            allowUniversalAccessFromFileURLs = false
             setSupportZoom(false)
             cacheMode = WebSettings.LOAD_DEFAULT
         }
@@ -61,7 +110,23 @@ class SshSessionManager(
 
     companion object {
         private const val TAG = "SshSession"
-        private const val MAX_RECONNECT_ATTEMPTS = 3
+        private const val READ_BUF_SIZE = 8192
+        /** A session that died this fast will very likely die again — brake the retry. */
+        private const val SHORT_SESSION_MS = 3_000L
+        private const val SHORT_SESSION_FLOOR_MS = 2_000L
+        /** A session that stayed up this long counts as healthy, so the attempt ladder resets. */
+        private const val STABLE_SESSION_MS = 60_000L
+
+        /**
+         * JSch failure messages that mean "this will fail exactly the same way next time".
+         * Matched case-insensitively against the message chain.
+         *
+         * "Auth fail" covers a wrong password and a key the server refused alike; "USERAUTH fail"
+         * and "invalid privatekey" are what a corrupt or wrongly-encrypted key produces.
+         */
+        private val FATAL_AUTH_MARKERS = arrayOf("auth fail", "userauth fail", "invalid privatekey")
+        private val FATAL_HOST_KEY_MARKERS =
+            arrayOf("hostkey has been changed", "reject hostkey", "unknownhostkey")
 
         /**
          * Handle all touch gestures on terminal WebView:
@@ -263,80 +328,49 @@ class SshSessionManager(
 
     fun connect(server: SshServer) {
         currentServer = server
-        reconnectAttempts = 0
+        reconnectAttempts.set(0)
+        stopped = false
+        fatal = false
+        registerNetworkCallback()
         doConnect(server)
     }
 
     private fun doConnect(server: SshServer) {
+        if (!connecting.compareAndSet(false, true)) {
+            FileLogger.d(TAG, "Connect already in flight, ignoring duplicate request")
+            return
+        }
+        // Claim the generation before tearing anything down, so the old read loop's EOF is
+        // recognised as stale and doesn't schedule a reconnect competing with this one.
+        val myGen = sessionGeneration.incrementAndGet()
         scope.launch {
+            var failure: String? = null
+            var cause: FatalCause? = null
+            // Per-attempt: a prompt that went unanswered last time must not colour this attempt's
+            // verdict.
+            hostKeyDenied = false
+            hostKeyUnanswered = false
             try {
                 // Reset xterm.js terminal state (exit alternate buffer, disable mouse mode)
                 // so stale state from a previous session doesn't leak SGR sequences
                 writeOutput("\u001b[?1049l\u001b[?1002l\u001b[?1003l\u001b[?1006l")
                 writeInfo("Connecting to ${server.host}:${server.port}...\r\n")
 
-                val jsch = JSch()
-                if (server.authMethod == SshServer.AuthMethod.KEY && server.privateKey.isNotBlank()) {
-                    jsch.addIdentity("key", server.privateKey.toByteArray(), null, null)
-                }
+                readJob?.cancel()
+                readJob = null
+                // A previous Session keeps its connect thread, socket and any
+                // setPortForwardingL server socket alive until finalization, so re-binding a
+                // fixed local forward below would fail "address already in use".
+                dropTransport()
 
-                val sess = jsch.getSession(server.username, server.host, server.port)
+                if (server.useCloudflareProxy) writeInfo("Using Cloudflare Tunnel proxy...\r\n")
 
-                if (server.authMethod == SshServer.AuthMethod.PASSWORD && server.password.isNotBlank()) {
-                    sess.setPassword(server.password)
-                }
-
-                val config = Properties()
-                config["StrictHostKeyChecking"] = "no"
-                sess.setConfig(config)
-                sess.timeout = 15000
-
-                // SSH keepalive to prevent idle disconnections
-                val keepaliveSeconds = context.sshKeepaliveInterval
-                if (keepaliveSeconds > 0) {
-                    sess.setServerAliveInterval(keepaliveSeconds * 1000)
-                    sess.setServerAliveCountMax(3)
-                }
-
-                // Cloudflare Tunnel: route SSH over WebSocket proxy
-                if (server.useCloudflareProxy) {
-                    writeInfo("Using Cloudflare Tunnel proxy...\r\n")
-                    val proxy = CloudflareProxy(server.host, server.cloudflareToken)
-                    sess.setProxy(proxy)
-                }
-
+                // Host key is checked by JschFactory's HostKeyRepository *during* KEX, i.e.
+                // before any credential leaves the device.
+                val sess = JschFactory.newSession(
+                    context, server, JschFactory.HostKeyPrompt(::promptHostKey)
+                )
                 sess.connect()
-
-                // TOFU host key verification
-                val hostKey = sess.hostKey
-                if (hostKey != null) {
-                    val fingerprint = fingerprintHex(hostKey.getFingerPrint(jsch))
-                    val known = KnownHosts.getFingerprint(context, server.host, server.port)
-                    if (known == null) {
-                        // First time — save
-                        KnownHosts.saveFingerprint(context, server.host, server.port, fingerprint)
-                        writeInfo("Host key saved: $fingerprint\r\n")
-                    } else if (known != fingerprint) {
-                        // Changed — warn and ask
-                        writeInfo("\r\n\u001B[31mWARNING: HOST KEY CHANGED!\u001B[0m\r\n")
-                        writeInfo("Expected: $known\r\n")
-                        writeInfo("Got:      $fingerprint\r\n")
-                        val accepted = withContext(Dispatchers.Main) {
-                            suspendCancellableCoroutine { cont ->
-                                onHostKeyVerify(server.host, fingerprint) { result ->
-                                    cont.resumeWith(Result.success(result))
-                                }
-                            }
-                        }
-                        if (!accepted) {
-                            sess.disconnect()
-                            writeInfo("Connection rejected by user.\r\n")
-                            return@launch
-                        }
-                        KnownHosts.saveFingerprint(context, server.host, server.port, fingerprint)
-                    }
-                }
-
                 session = sess
 
                 // Setup port forwarding
@@ -344,15 +378,13 @@ class SshSessionManager(
                     try {
                         if (pf.type == "local" && pf.localPort > 0 && pf.remotePort > 0) {
                             sess.setPortForwardingL(pf.localPort, pf.remoteHost, pf.remotePort)
-                            activeForwards.add("L${pf.localPort}")
                             writeInfo("Port forward: L${pf.localPort} → ${pf.remoteHost}:${pf.remotePort}\r\n")
                         } else if (pf.type == "remote" && pf.localPort > 0 && pf.remotePort > 0) {
                             sess.setPortForwardingR(pf.remotePort, pf.remoteHost, pf.localPort)
-                            activeForwards.add("R${pf.remotePort}")
                             writeInfo("Port forward: R${pf.remotePort} → ${pf.remoteHost}:${pf.localPort}\r\n")
                         }
                     } catch (e: Exception) {
-                        writeInfo("\u001B[33mPort forward failed: ${pf}: ${e.message}\u001B[0m\r\n")
+                        writeInfo("\u001b[33mPort forward failed: ${pf}: ${e.message}\u001b[0m\r\n")
                     }
                 }
 
@@ -365,7 +397,11 @@ class SshSessionManager(
                 ch.connect()
                 channel = ch
                 isConnected = true
-                reconnectAttempts = 0
+                lastConnectedAt = System.currentTimeMillis()
+
+                // xterm.js reported its size long before this handshake finished; without the
+                // replay the PTY stays at the default 80x24 and every redraw is mangled.
+                if (lastCols > 0 && lastRows > 0) applyPtySize(lastCols, lastRows)
 
                 FileLogger.d(TAG, "SSH connected to ${server.host}")
 
@@ -395,55 +431,316 @@ class SshSessionManager(
 
                 // Read loop
                 readJob = scope.launch {
+                    val stream = inputStream
+                    // One decoder for the whole session. Decoding each 8K read standalone
+                    // turned any multi-byte character straddling the read boundary into
+                    // U+FFFD for good - diacritics, box drawing, CJK, emoji.
+                    val decoder = Charsets.UTF_8.newDecoder()
+                        .onMalformedInput(CodingErrorAction.REPLACE)
+                        .onUnmappableCharacter(CodingErrorAction.REPLACE)
+                    // Slack for the <=3 carry-over bytes of a split sequence. UTF-8 never
+                    // yields more chars than input bytes, so this size can't overflow.
+                    val pending = ByteBuffer.allocate(READ_BUF_SIZE + 8)
+                    val chars = CharBuffer.allocate(READ_BUF_SIZE + 8)
                     try {
-                        val buf = ByteArray(8192)
+                        val buf = ByteArray(READ_BUF_SIZE)
                         while (isActive && ch.isConnected) {
-                            val n = inputStream?.read(buf) ?: -1
+                            val n = stream?.read(buf) ?: -1
                             if (n < 0) break
                             if (n == 0) { delay(50); if (ch.isClosed) break; continue }
-                            val text = String(buf, 0, n)
-                            writeOutput(text)
+                            pending.put(buf, 0, n)
+                            pending.flip()
+                            chars.clear()
+                            decoder.decode(pending, chars, false)
+                            pending.compact() // retains the incomplete tail for the next read
+                            chars.flip()
+                            if (chars.hasRemaining()) writeOutput(chars.toString())
                         }
-                    } catch (_: Exception) {
+                    } catch (e: CancellationException) {
+                        throw e // cancellation is not a session failure to be logged and swallowed
+                    } catch (e: Exception) {
+                        FileLogger.d(TAG, "Read loop ended: $e")
                     } finally {
-                        if (isConnected) {
-                            isConnected = false
-                            // Try auto-reconnect
-                            if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && currentServer != null) {
-                                reconnectAttempts++
-                                writeInfo("\r\n\u001B[33mConnection lost. Reconnecting (${reconnectAttempts}/$MAX_RECONNECT_ATTEMPTS)...\u001B[0m\r\n")
-                                delay(2000)
-                                doConnect(currentServer!!)
-                            } else {
-                                withContext(Dispatchers.Main) {
-                                    onDisconnected("Connection closed")
-                                }
-                            }
-                        }
+                        handleSessionEnded("Connection lost", myGen)
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e // a cancelled connect is a teardown, not a failure to report and retry
             } catch (e: Exception) {
                 FileLogger.e(TAG, "SSH connection failed: $e")
-                writeInfo("\r\nConnection failed: ${e.message}\r\n")
-                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS && currentServer != null) {
-                    reconnectAttempts++
-                    writeInfo("\u001B[33mRetrying (${reconnectAttempts}/$MAX_RECONNECT_ATTEMPTS)...\u001B[0m\r\n")
-                    delay(3000)
-                    doConnect(currentServer!!)
+                cause = classifyFatal(e)
+                if (cause != null) {
+                    fatal = true
+                    FileLogger.w(TAG, "Not retrying: ${cause.message}")
+                }
+                failure = e.message ?: e.toString()
+            } finally {
+                connecting.set(false)
+            }
+            // Outside the guard: handleSessionEnded() may start the next connect immediately. The
+            // generation test here only suppresses a stale terminal message; the teardown itself is
+            // guarded inside handleSessionEnded().
+            if (failure != null && sessionGeneration.get() == myGen) {
+                val fatalCause = cause
+                if (fatalCause != null) {
+                    // Name the cause. Retrying these used to be silent - no notifyDisconnected ever
+                    // ran - so a wrong password looked exactly like a flaky network forever.
+                    writeInfo("\r\n\u001b[31m${fatalCause.message}\u001b[0m\r\n($failure)\r\n")
+                    handleSessionEnded(fatalCause.message, myGen)
                 } else {
-                    withContext(Dispatchers.Main) {
-                        onDisconnected("Connection failed: ${e.message}")
-                    }
+                    writeInfo("\r\nConnection failed: $failure\r\n")
+                    handleSessionEnded("Connection failed: $failure", myGen)
                 }
             }
         }
     }
 
+    /**
+     * Blocking bridge to the confirmation dialog. The shared helper owns the main-thread hop, the
+     * backstop timeout, and the case where showing the dialog throws (a finishing Activity gives
+     * BadTokenException) — so the JSch connect thread can never wedge here.
+     */
+    private val hostKeyDialog = JschFactory.blockingPrompt { host, port, fingerprint, changed, old, respond ->
+        onHostKeyVerify(host, port, fingerprint, changed, old) { ok ->
+            // Record the *explicit* answer: the helper reports a timeout as false too, and only a
+            // real rejection may be treated as fatal.
+            hostKeyDenied = !ok
+            respond(ok)
+        }
+    }
+
+    /**
+     * Host-key confirmation, called by JSch on its connect thread during key exchange.
+     *
+     * Must block: returning before the user decides would let the auth loop run - and the
+     * password be sent - against an unverified host.
+     */
+    private fun promptHostKey(
+        host: String,
+        port: Int,
+        fingerprint: String,
+        changed: Boolean,
+        oldFingerprint: String?
+    ): Boolean {
+        if (changed) {
+            writeInfo("\r\n\u001b[31mWARNING: HOST KEY CHANGED!\u001b[0m\r\n")
+            writeInfo("Expected: ${oldFingerprint ?: "(unknown)"}\r\n")
+            writeInfo("Got:      $fingerprint\r\n")
+        }
+        val accepted = hostKeyDialog.confirm(host, port, fingerprint, changed, oldFingerprint)
+        if (accepted) {
+            writeInfo(if (changed) "Host key updated: $fingerprint\r\n" else "Host key saved: $fingerprint\r\n")
+        } else if (hostKeyDenied) {
+            fatal = true
+            writeInfo("Connection rejected: host key not accepted.\r\n")
+        } else {
+            // Nobody answered. Keep this retryable, so that coming back to the app and tapping
+            // "Trust & Connect" still works instead of every reconnect path being dead.
+            hostKeyUnanswered = true
+            writeInfo("Host key not confirmed in time — will retry.\r\n")
+        }
+        return accepted
+    }
+
+    /**
+     * A failure no further attempt can fix. [message] is shown to the user: retrying these used to
+     * be invisible, so a wrong password was indistinguishable from a flaky network.
+     */
+    private enum class FatalCause(val message: String) {
+        AUTH("Authentication failed - check the username, password or key"),
+        NO_AUTH_METHOD("Authentication failed - the server accepted none of the offered methods"),
+        UNKNOWN_HOST("Host not found - check the hostname"),
+        HOST_KEY("Host key not accepted")
+    }
+
+    /**
+     * Classify [e], or null when another attempt might genuinely succeed. Retrying an auth failure
+     * re-sends the credentials, which earns a fail2ban ban or an account lockout.
+     */
+    private fun classifyFatal(e: Throwable): FatalCause? {
+        val text = StringBuilder()
+        var cause: Throwable? = e
+        var depth = 0
+        var unknownHost = false
+        while (cause != null && depth++ < 5) {
+            if (cause is java.net.UnknownHostException) unknownHost = true
+            // The class name as well as the message: JSch always sets a message, so a marker meant
+            // to match a *type* (JSchUnknownHostKeyException) would never fire on the message alone.
+            text.append(cause::class.java.simpleName).append('|')
+            text.append(cause.message ?: "").append('|')
+            cause = cause.cause
+        }
+        val msg = text.toString().lowercase()
+        if (FATAL_AUTH_MARKERS.any { msg.contains(it) }) return FatalCause.AUTH
+        // JSch's "Auth cancel" means it ran out of methods to try - no password for a password
+        // server, no usable key - rather than anything the user cancelled.
+        if (msg.contains("auth cancel")) return FatalCause.NO_AUTH_METHOD
+        if (unknownHost || msg.contains("unknownhostexception")) {
+            // Android throws the same exception when the resolver has no network to ask at all,
+            // and *that* is transient. Only a name that failed to resolve over a working route
+            // says anything about the name itself.
+            return if (hasUsableNetwork()) FatalCause.UNKNOWN_HOST else null
+        }
+        // JSch reports "reject HostKey" both for a key the user refused and for one we never got to
+        // ask about; only the former may stop the retries.
+        if (!hostKeyUnanswered && FATAL_HOST_KEY_MARKERS.any { msg.contains(it) }) {
+            return FatalCause.HOST_KEY
+        }
+        return null
+    }
+
+    /** False when we cannot tell, so an ambiguous failure stays retryable rather than fatal. */
+    private fun hasUsableNetwork(): Boolean = try {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val caps = cm?.activeNetwork?.let { cm.getNetworkCapabilities(it) }
+        caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    } catch (e: Exception) {
+        // Called from inside a catch block, so a throw here would escape the connect coroutine.
+        FileLogger.w(TAG, "Could not read network state: $e")
+        false
+    }
+
+    /** Close the transport without giving up the session - the reconnect path still owns it. */
+    private fun dropTransport() {
+        isConnected = false
+        try { channel?.disconnect() } catch (_: Exception) {}
+        try { session?.disconnect() } catch (_: Exception) {}
+        channel = null; session = null; inputStream = null; outputStream = null
+    }
+
+    /**
+     * Single funnel for "the session is gone": reconnect, or tell the UI it's over.
+     *
+     * [gen] is the generation of the session that ended. Claiming it here rather than testing it at
+     * the call site is what makes the teardown safe: a stale read loop that passed a plain check and
+     * was then preempted by a fresh connect would resume and disconnect the *new* session's channel
+     * and transport. The CAS also makes this exactly-once per session, so the read loop's EOF and a
+     * connect failure cannot both drive it.
+     */
+    private fun handleSessionEnded(reason: String, gen: Int) {
+        if (!sessionGeneration.compareAndSet(gen, gen + 1)) return
+        // Nothing else drops the transport on this path, and the connect coroutine can land here
+        // with a live channel and session (a throw anywhere after isConnected = true), which would
+        // otherwise leave a fully live shell behind with isConnected == false. Idempotent.
+        dropTransport()
+        val server = currentServer
+        if (stopped || server == null) return
+        if (fatal) { notifyDisconnected(reason); return }
+        if (!context.sshAutoReconnect) { notifyDisconnected(reason); return }
+
+        val fg = foreground
+        // Consume the timestamp: a failure to *re-establish* must not keep re-reading the old
+        // session's start time and grow an "uptime" that looks healthy.
+        val connectedAt = lastConnectedAt
+        lastConnectedAt = 0L
+        val uptime = if (connectedAt == 0L) 0L else System.currentTimeMillis() - connectedAt
+        // Only a session that actually stayed up clears the ladder. Resetting on every successful
+        // connect made the attempt cap unreachable for a server whose shell exits immediately
+        // (nologin, a failing ForceCommand): connect → reset → shell closes → retry, forever.
+        if (uptime >= STABLE_SESSION_MS) reconnectAttempts.set(0)
+        val attempt = reconnectAttempts.incrementAndGet()
+        if (!ReconnectPolicy.shouldRetry(attempt, fg, context.sshReconnectAttempts)) {
+            notifyDisconnected(reason)
+            return
+        }
+        // Brake a session that came up and died again straight away.
+        val floor = if (connectedAt != 0L && uptime < SHORT_SESSION_MS) SHORT_SESSION_FLOOR_MS else 0L
+        val wait = ReconnectPolicy.delayMs(attempt, fg, floor)
+        writeInfo("\r\n\u001b[33m$reason. Reconnecting (attempt $attempt)...\u001b[0m\r\n")
+        reconnectJob?.cancel()
+        reconnectJob = scope.launch {
+            delay(wait)
+            doConnect(server)
+        }
+    }
+
+    /** Reconnect now, dropping any pending backoff. Used by the network/lifecycle edges. */
+    private fun reconnectNow(why: String) {
+        val server = currentServer ?: return
+        if (stopped || fatal || isConnected) return
+        if (!context.sshAutoReconnect) return
+        FileLogger.d(TAG, "Reconnecting now ($why)")
+        reconnectJob?.cancel()
+        reconnectJob = scope.launch { doConnect(server) }
+    }
+
+    private fun notifyDisconnected(reason: String) {
+        mainHandler.post { onDisconnected(reason) }
+    }
+
+    private fun registerNetworkCallback() {
+        if (networkCallback != null) return
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                // A usable route just appeared, so any backoff in flight is stale - reset the
+                // ladder instead of waiting out a delay that was sized for a dead network.
+                reconnectAttempts.set(0)
+                if (!isConnected) reconnectNow("network available")
+            }
+
+            override fun onLost(network: Network) {
+                // Kill the transport now. The read is parked in a blocking recv() that would
+                // otherwise hang for the whole keepalive window (interval x 3) with the
+                // terminal frozen; closing it EOFs the read and hands over to the reconnect.
+                if (isConnected) {
+                    FileLogger.d(TAG, "Network lost, dropping transport")
+                    // Off this thread: disconnect() writes SSH close packets, and a write to a
+                    // socket whose network just vanished can block for minutes (session.timeout is
+                    // SO_TIMEOUT, which does not bound writes). Without a Handler these callbacks
+                    // run on ConnectivityManager's process-wide shared thread, so blocking here
+                    // would stall every connectivity callback in the process — including the
+                    // onAvailable(cellular) edge this whole handover depends on.
+                    scope.launch { dropTransport() }
+                }
+            }
+        }
+        try {
+            cm.registerDefaultNetworkCallback(cb)
+            networkCallback = cb
+        } catch (e: Exception) {
+            // Missing ACCESS_NETWORK_STATE or an OEM quirk: reconnect still works via
+            // onAppResumed() and the backoff ladder, just without the network edge.
+            FileLogger.w(TAG, "registerDefaultNetworkCallback failed: $e")
+        }
+    }
+
+    private fun unregisterNetworkCallback() {
+        val cb = networkCallback ?: return
+        networkCallback = null
+        try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            cm?.unregisterNetworkCallback(cb)
+        } catch (e: Exception) {
+            FileLogger.w(TAG, "unregisterNetworkCallback failed: $e")
+        }
+    }
+
+    /**
+     * Called from Activity.onResume. Needed on top of the network callback, which only fires on
+     * an edge: after a long stint in the background connectivity is usually already up, so no
+     * edge ever arrives and a dead session would sit there forever.
+     */
+    fun onAppResumed() {
+        foreground = true
+        if (stopped || currentServer == null || isConnected) return
+        reconnectAttempts.set(0)
+        reconnectNow("app resumed")
+    }
+
+    fun onAppPaused() { foreground = false }
+
     fun sendInput(data: String) {
         scope.launch {
+            val out = outputStream
+            if (out == null) {
+                // Reconnect window: the keystrokes are simply lost. Logged so it's diagnosable.
+                FileLogger.d(TAG, "Dropped ${data.length} chars of input: no channel")
+                return@launch
+            }
             try {
-                outputStream?.write(data.toByteArray())
-                outputStream?.flush()
+                out.write(data.toByteArray())
+                out.flush()
             } catch (e: Exception) {
                 FileLogger.w(TAG, "Send failed: $e")
             }
@@ -451,27 +748,37 @@ class SshSessionManager(
     }
 
     fun resize(cols: Int, rows: Int) {
-        try { channel?.setPtySize(cols, rows, cols * 8, rows * 16) } catch (_: Exception) {}
+        if (cols > 0 && rows > 0) { lastCols = cols; lastRows = rows }
+        applyPtySize(cols, rows)
+    }
+
+    private fun applyPtySize(cols: Int, rows: Int) {
+        val ch = channel ?: return
+        if (cols <= 0 || rows <= 0) return
+        try {
+            // xterm.js doesn't hand us its cell metrics, so use the WebView's own size once
+            // laid out and fall back to a nominal 8x16 cell. Only cols/rows drive layout;
+            // the pixel fields are advisory (a plain int field read is racy but harmless).
+            val widthPx = terminalWebView.width.takeIf { it > 0 } ?: (cols * 8)
+            val heightPx = terminalWebView.height.takeIf { it > 0 } ?: (rows * 16)
+            ch.setPtySize(cols, rows, widthPx, heightPx)
+        } catch (e: Exception) {
+            // Swallowing this silently is what hid the 80x24 bug for so long.
+            FileLogger.w(TAG, "setPtySize(${cols}x${rows}) failed: $e")
+        }
     }
 
     fun disconnect() {
-        isConnected = false
-        reconnectAttempts = MAX_RECONNECT_ATTEMPTS // prevent auto-reconnect
+        stopped = true // prevent auto-reconnect
         currentServer = null
+        sessionGeneration.incrementAndGet() // orphan the current read loop
+        reconnectJob?.cancel(); reconnectJob = null
         readJob?.cancel(); readJob = null
-        activeForwards.clear()
-        try { channel?.disconnect() } catch (_: Exception) {}
-        try { session?.disconnect() } catch (_: Exception) {}
-        channel = null; session = null; inputStream = null; outputStream = null
+        dropTransport()
         FileLogger.d(TAG, "SSH disconnected")
     }
 
-    fun destroy() { disconnect(); scope.cancel() }
-
-    fun getScrollback(): String {
-        // Will be called from JS bridge
-        return "" // placeholder — actual export done via JS
-    }
+    fun destroy() { unregisterNetworkCallback(); disconnect(); scope.cancel() }
 
     private fun applyColorScheme(scheme: String) {
         terminalWebView.post {
@@ -489,8 +796,6 @@ class SshSessionManager(
         terminalWebView.post { terminalWebView.evaluateJavascript("writeInfo($safe)", null) }
     }
 
-    private fun fingerprintHex(fp: String): String = fp
-
     @Suppress("unused")
     inner class TerminalBridge {
         @JavascriptInterface
@@ -499,10 +804,12 @@ class SshSessionManager(
         @JavascriptInterface
         fun onTerminalReady(cols: Int, rows: Int) {
             FileLogger.d(TAG, "Terminal ready: ${cols}x${rows}")
-            val fontSize = AppSettings.run { context.terminalFontSize }
-            if (fontSize != 14) {
+            val fontSize = context.terminalFontSize
+            val scrollback = context.terminalScrollback
+            if (fontSize != 14 || scrollback != 10000) {
                 terminalWebView.post {
-                    terminalWebView.evaluateJavascript("setFontSize($fontSize)", null)
+                    if (fontSize != 14) terminalWebView.evaluateJavascript("setFontSize($fontSize)", null)
+                    if (scrollback != 10000) terminalWebView.evaluateJavascript("setScrollback($scrollback)", null)
                 }
             }
             resize(cols, rows)
@@ -513,9 +820,10 @@ class SshSessionManager(
 
         @JavascriptInterface
         fun copyToClipboard(text: String) {
-            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-            cm.setPrimaryClip(android.content.ClipData.newPlainText("terminal", text))
-            haptic()
+            // No haptic here: OSC 52 writes reach this same method, so a remote host printing
+            // escape sequences could buzz the device at will. The JS side vibrates explicitly on
+            // the two user-initiated copy paths instead.
+            TerminalClipboard.copy(context, text)
         }
 
         @JavascriptInterface
@@ -538,10 +846,14 @@ class SshSessionManager(
         }
 
         @JavascriptInterface
-        fun getClipboard(): String {
-            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-            return cm.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
-        }
+        fun getClipboard(): String = TerminalClipboard.read(context)
+
+        /**
+         * Gate for the OSC 52 *query* path: a remote host asking to read our clipboard.
+         * Writes are harmless, reads let a compromised host exfiltrate the last thing copied.
+         */
+        @JavascriptInterface
+        fun osc52ReadAllowed(): Boolean = context.sshOsc52ClipboardRead
 
         @JavascriptInterface
         fun exportScrollback(content: String) {
