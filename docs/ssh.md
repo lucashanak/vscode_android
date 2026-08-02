@@ -48,16 +48,52 @@ Configure in server settings. Format:
 
 ### Auto-Reconnect
 
-When connection drops (WiFi switch, network timeout):
-1. Terminal shows "Connection lost. Reconnecting (1/3)..."
-2. Waits 2-3 seconds between attempts
-3. Configurable: attempts count and timeout in Settings
+When a connection drops (WiFi switch, network timeout):
+
+1. Terminal shows "Connection lost. Reconnecting (n/m)..."
+2. Backoff is exponential with jitter, not a fixed delay. In the foreground the first retry is
+   immediate, then 2s, 4s, 8s… capped at 30s. In the background it starts at 2s and caps at 60s.
+3. The app watches the network directly (`registerDefaultNetworkCallback`), so a WiFi→cellular
+   handover triggers a reconnect as soon as the new route appears rather than waiting for the
+   blocked read to time out. Losing the network tears the transport down immediately so the
+   terminal doesn't appear frozen while a dead socket waits for its keepalive to expire.
+4. Returning to the app also sweeps for a dead session — the network callback only fires on a
+   change, and after a long spell in the background connectivity is usually already up.
+5. Settings honoured: **Auto-reconnect** (turning it off really does stop it), **attempts** (applies
+   in the foreground, where the user can see what's happening) and **connect timeout**.
+
+In the background retries are unbounded *for network failures* by design: a fixed cap means a
+session that exhausts it stays dead for good, which is wrong for a phone that spends most of its
+time asleep. Retrying stops immediately for failures that repeating cannot fix — a rejected or
+changed host key, bad credentials, an unusable key, or an unresolvable hostname — and the terminal
+says which one it was. Retrying a bad password forever would re-send it every cycle, which earns a
+`fail2ban` ban or an account lockout rather than a connection.
+
+The attempt counter measures a session that will not *stay* up, not just one that will not start:
+it only resets after a connection has held for a while. Otherwise a server whose shell exits
+immediately (`/sbin/nologin`, a failing `ForceCommand`, a `startupCommand` ending in `exit`) would
+reconnect forever without the configured limit ever applying.
+
+Shell state does not survive a reconnect — use tmux for that.
 
 ### Known Hosts (TOFU)
 
-- First connection: fingerprint saved automatically
-- Subsequent connections: verified against saved fingerprint
-- If fingerprint changes: warning dialog with Accept/Reject
+- First connection: fingerprint pinned automatically
+- Subsequent connections: verified against the pinned fingerprint
+- If the fingerprint changes: warning dialog showing both the old and new fingerprint, with
+  Accept/Reject
+
+Verification happens **during key exchange, before any credential is sent**. This matters: an
+earlier version compared fingerprints only after the session had fully connected, by which point
+the password had already been transmitted — so the warning described a compromise that had already
+happened. Fingerprints are SHA256 and can be compared against `ssh-keygen -lf <keyfile>` on the
+server.
+
+The tmux, SFTP and mosh paths share the same verification. They pin a first-seen key silently
+(there is no interactive prompt on those paths) but always **reject** a changed key rather than
+asking.
+
+Pins are stored encrypted; see [Credential storage](#credential-storage).
 
 ### Mosh
 
@@ -102,6 +138,52 @@ In tmux, scrolling up enters **copy-mode** (shows `[line/total]` indicator). Scr
 - **Clear** — clear terminal screen
 - **Search** — open search bar
 - **Export Log** — share scrollback as text file
+
+### Clipboard
+
+**Copy** — select text (long-press, double-tap, or drag the selection handles) and tap Copy on the
+selection toolbar, or use the context menu.
+
+**Paste** — via the selection toolbar or context menu. Pasted text goes through xterm.js rather
+than straight into the SSH stream, which means:
+
+- **Bracketed paste** is honoured when the remote program has enabled it (`ESC[?2004h`), so pasting
+  multi-line text into vim no longer triggers cascading auto-indent, and shells that support it can
+  tell a paste from typing. Note that a program which never enables the mode still receives each
+  newline as Enter — bracketed paste is opt-in by the *remote* side, and markers are deliberately
+  not sent otherwise (a program that hasn't asked for them renders `[200~` literally).
+- ESC and C1 control bytes are stripped from pasted text, so clipboard contents can't inject escape
+  sequences into the terminal or forge the paste end-marker.
+- `\r\n` and `\n` are normalised to `\r`.
+
+**OSC 52** — remote programs can put text on the Android clipboard by emitting
+`ESC]52;c;<base64>`. This is what makes `tmux` copy-mode, vim/neovim with `clipboard=unnamedplus`,
+and tools like `yank` work across the SSH link. The tmux attach command sets `set-clipboard on` and
+`terminal-features ',*:clipboard'` automatically, since tmux does not forward OSC 52 by default.
+
+Clipboard **reading** by the remote host (the `ESC]52;c;?` query form) is **off by default** and
+must be enabled explicitly in Settings. A compromised or malicious host could otherwise silently
+read whatever you last copied — passwords, tokens, OTPs — with nothing shown in the terminal. Most
+terminals (iTerm2, kitty, wezterm, xterm) default this off for the same reason. Writing is always
+allowed, as it is comparatively harmless.
+
+Generated private keys are copied with Android's `IS_SENSITIVE` flag so they stay out of the
+clipboard preview and history.
+
+### Credential storage
+
+Passwords, private keys and Cloudflare tokens are stored in `EncryptedSharedPreferences` with an
+AES256-GCM key held in the Android Keystore. Host key pins are encrypted the same way, since an
+attacker able to rewrite them would defeat host verification. Existing plaintext entries are
+migrated automatically on first launch after upgrading.
+
+Backup is disabled (`allowBackup="false"`, plus data-extraction rules excluding the credential
+stores), so secrets cannot be pulled off the device with `adb backup` or carried out by
+device-to-device transfer.
+
+**Consequence worth knowing:** because the master key lives in the Keystore and cannot be exported,
+saved servers do not survive a device migration, and if the device credential store is ever reset
+the saved servers will need to be re-entered.
 
 ### Search
 
