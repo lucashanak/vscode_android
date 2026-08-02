@@ -163,6 +163,18 @@ fitAddon.fit();
 // Send user input to Android
 term.onData(data => { if (A) A.onTerminalInput(data); });
 
+// Terminal bell (\a from the remote). Rate-limited: a hostile/broken remote can
+// spam bells in a tight loop, and each haptic call posts to the main thread —
+// cap to one effect per second, drop the rest (no queueing suppressed bells).
+let lastBellTime = 0;
+term.onBell(() => {
+    const now = Date.now();
+    if (now - lastBellTime < 1000) return;
+    lastBellTime = now;
+    if (A) A.haptic();
+    showToast('Bell');
+});
+
 // OSC 52 — remote host manipulates the local clipboard.
 // Write is always honoured. Read is gated: a compromised host could otherwise
 // silently exfiltrate whatever was last copied, with no trace in the terminal.
@@ -236,6 +248,7 @@ function showCtxMenu(x, y) {
 }
 
 function hideCtxMenu() { ctxMenu.style.display = 'none'; }
+
 
 // ======================== 1-FINGER SCROLL + LONG-PRESS SELECT ========================
 // Handled natively in Android/Kotlin (setupTouchHandlers) which calls
