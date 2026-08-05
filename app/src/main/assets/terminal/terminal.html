@@ -298,27 +298,14 @@ function selectWordAt(px, py) {
     }
 }
 
-// 2-finger tap → context menu (scroll/pinch handled natively in Kotlin)
-let ctxMenuTapStart = 0, ctxMenuTapPos = {x:0,y:0}, ctxMenuTapMoved = false;
-termEl.addEventListener('touchstart', e => {
-    if (e.touches.length === 2) {
-        ctxMenuTapStart = Date.now();
-        ctxMenuTapMoved = false;
-        ctxMenuTapPos = {
-            x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-            y: (e.touches[0].clientY + e.touches[1].clientY) / 2
-        };
-    }
-}, {passive:true});
-termEl.addEventListener('touchmove', e => {
-    if (e.touches.length === 2) ctxMenuTapMoved = true;
-}, {passive:true});
-termEl.addEventListener('touchend', e => {
-    if (ctxMenuTapStart > 0 && !ctxMenuTapMoved && Date.now() - ctxMenuTapStart < 400) {
-        showCtxMenu(ctxMenuTapPos.x, ctxMenuTapPos.y);
-    }
-    if (e.touches.length === 0) ctxMenuTapStart = 0;
-}, {passive:true});
+// The context menu is opened by a two-finger long press, detected natively in
+// SshSessionManager.setupTwoFingerScroll, which calls showCtxMenu() directly.
+//
+// It used to be detected here as a two-finger *tap*, but any two-finger touchmove
+// disqualified it and two fingers always drift by a pixel or two, so it essentially
+// never fired. Kotlin also consumes the pointer-up after a two-finger gesture, so
+// touchend often never arrived either. Native detection has the full pointer state
+// and can tell a deliberate hold from a scroll or pinch.
 
 // Dismiss menu/toolbar on single tap outside
 document.addEventListener('touchstart', e => {

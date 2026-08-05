@@ -129,6 +129,12 @@ class SshSessionManager(
     companion object {
         private const val TAG = "SshSession"
         private const val READ_BUF_SIZE = 8192
+        /**
+         * Hold two fingers this long to open the terminal context menu. Longer than the one-finger
+         * word-select press (500ms would collide) but long enough that a scroll or pinch has
+         * already committed to `mode` by then.
+         */
+        private const val TWO_FINGER_MENU_MS = 400L
         /** A session that died this fast will very likely die again — brake the retry. */
         private const val SHORT_SESSION_MS = 3_000L
         private const val SHORT_SESSION_FLOOR_MS = 2_000L
@@ -170,6 +176,8 @@ class SshSessionManager(
             var twoFingerStartDist = 0f
             var startFontSize = 14
             var mode: String? = null // "scroll" | "pinch"
+            var twoFingerMenuRunnable: Runnable? = null
+            var twoFingerMenuShown = false
             var scrollAccum2f = 0f
 
             // 1-finger state
@@ -236,9 +244,29 @@ class SshSessionManager(
                             twoFingerStartY = (event.getY(0) + event.getY(1)) / 2f
                             mode = null
                             scrollAccum2f = 0f
+                            twoFingerMenuShown = false
                             webView.evaluateJavascript(
                                 "typeof term!=='undefined'?term.options.fontSize:14"
                             ) { r -> startFontSize = r?.toIntOrNull() ?: 14 }
+
+                            // Two-finger long press opens the context menu. Detected here rather
+                            // than in JS: the JS version disqualified the gesture on *any*
+                            // two-finger touchmove, and two fingers always jitter by a pixel or
+                            // two, so it practically never fired. Holding is also far easier to
+                            // tell apart from a scroll or a pinch than a quick tap was, since
+                            // `mode` stays null until the movement thresholds below are crossed.
+                            val menuX = (event.getX(0) + event.getX(1)) / 2f / density
+                            val menuY = (event.getY(0) + event.getY(1)) / 2f / density
+                            twoFingerMenuRunnable?.let { handler.removeCallbacks(it) }
+                            twoFingerMenuRunnable = Runnable {
+                                if (twoFingerActive && mode == null) {
+                                    twoFingerMenuShown = true
+                                    webView.evaluateJavascript(
+                                        "showCtxMenu($menuX,$menuY);if(A)A.haptic()", null
+                                    )
+                                }
+                            }
+                            handler.postDelayed(twoFingerMenuRunnable!!, TWO_FINGER_MENU_MS)
                         }
                         false
                     }
@@ -254,6 +282,11 @@ class SshSessionManager(
 
                             if (mode == null && (distChange > 20f || yChange > 15f)) {
                                 mode = if (distChange > yChange * 2f) "pinch" else "scroll"
+                                // Committed to a scroll or pinch, so this was never a long press.
+                                // Movement below these thresholds deliberately does NOT cancel:
+                                // holding two fingers still always drifts a little, and treating
+                                // that as intent is what broke the old gesture.
+                                twoFingerMenuRunnable?.let { handler.removeCallbacks(it) }
                             }
 
                             when (mode) {
@@ -310,11 +343,13 @@ class SshSessionManager(
                     android.view.MotionEvent.ACTION_UP,
                     android.view.MotionEvent.ACTION_CANCEL -> {
                         longPressRunnable?.let { handler.removeCallbacks(it) }
+                        twoFingerMenuRunnable?.let { handler.removeCallbacks(it) }
                         val was2f = twoFingerActive
                         val was1fScroll = oneFingerScrolling
-                        val wasLongPress = longPressHandled
+                        val wasLongPress = longPressHandled || twoFingerMenuShown
                         twoFingerActive = false
                         mode = null
+                        twoFingerMenuShown = false
                         oneFingerScrolling = false
                         // Consume UP after scroll/long-press to prevent browser
                         // from synthesizing click that would clear selection

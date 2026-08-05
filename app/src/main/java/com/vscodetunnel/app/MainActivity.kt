@@ -1,6 +1,9 @@
 package com.vscodetunnel.app
 
-import android.app.AlertDialog
+// androidx, not android.app: the framework AlertDialog ignores Material3 theme attributes, so
+// AppDialogTheme's colorPrimary never reached the buttons and CANCEL/SAVE rendered in Material's
+// default purple at roughly 1.2:1 contrast — measured from a screenshot, effectively invisible.
+import androidx.appcompat.app.AlertDialog
 import android.app.Dialog
 import android.content.Intent
 import android.content.SharedPreferences
@@ -698,12 +701,14 @@ class MainActivity : AppCompatActivity() {
             })
         }
 
-        val nameField = addField("Display name (optional)", existing?.name ?: "")
-        val hostField = addField("Host", existing?.host ?: "")
-        val portField = addField("Port", (existing?.port ?: defaultSshPort).toString(),
+        // Hints carry an example; the label above each field carries the name. Repeating the name
+        // in both just doubles the text on an already tall dialog.
+        val nameField = addField("e.g. work laptop", existing?.name ?: "")
+        val hostField = addField("example.com or 10.0.0.5", existing?.host ?: "")
+        val portField = addField("22", (existing?.port ?: defaultSshPort).toString(),
             android.text.InputType.TYPE_CLASS_NUMBER)
-        val userField = addField("Username", existing?.username ?: defaultSshUser)
-        val passField = addField("Password", existing?.password ?: "",
+        val userField = addField("e.g. root", existing?.username ?: defaultSshUser)
+        val passField = addField("leave empty when using a key", existing?.password ?: "",
             android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD)
         val keyField = addField("Private key (paste PEM or use file picker)", existing?.privateKey ?: "",
             android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE)
@@ -715,11 +720,14 @@ class MainActivity : AppCompatActivity() {
         val snippetsField = addField("Snippets (comma-separated commands)",
             existing?.snippets?.joinToString(",") ?: "")
 
-        layout.addView(nameField)
-        layout.addView(hostField)
-        layout.addView(portField)
-        layout.addView(userField)
-        layout.addView(passField)
+        // Labels, not just hints. A hint vanishes the moment the field has a value, so a saved
+        // server showed five unlabelled boxes — a name, a host, a number, a username and six
+        // password dots, with nothing saying which was which.
+        addLabel("Display name (optional)"); layout.addView(nameField)
+        addLabel("Host"); layout.addView(hostField)
+        addLabel("Port"); layout.addView(portField)
+        addLabel("Username"); layout.addView(userField)
+        addLabel("Password"); layout.addView(passField)
         addLabel("Authentication key (optional)")
         layout.addView(keyField)
         layout.addView(keyPassField)

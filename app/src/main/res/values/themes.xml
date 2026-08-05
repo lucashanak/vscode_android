@@ -13,5 +13,21 @@
         <item name="android:windowBackground">@color/surface</item>
         <item name="colorPrimary">@color/primary</item>
         <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <!-- Stated explicitly rather than inherited. The dialog buttons are the primary actions in
+             a long form, and relying on the theme to tint them is what left SAVE at ~1.2:1
+             contrast. Pinning the style means the buttons cannot silently lose their colour again
+             if the parent theme or the Material version changes. -->
+        <item name="buttonBarPositiveButtonStyle">@style/AppDialogButton</item>
+        <item name="buttonBarNegativeButtonStyle">@style/AppDialogButton</item>
+        <item name="buttonBarNeutralButtonStyle">@style/AppDialogButton</item>
+    </style>
+
+    <style name="AppDialogButton" parent="Widget.Material3.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/primary</item>
+        <item name="android:textSize">15sp</item>
+        <item name="rippleColor">@color/primary</item>
     </style>
 </resources>
