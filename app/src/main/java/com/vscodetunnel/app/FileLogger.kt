@@ -1,6 +1,7 @@
 package com.vscodetunnel.app
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import java.io.File
 import java.text.SimpleDateFormat
@@ -15,9 +16,43 @@ object FileLogger {
     private var logFile: File? = null
     private val dateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
 
+    /**
+     * Empty in the main process, ":tab0"-style suffix in a GeckoView child process.
+     *
+     * GeckoView ships services declared with `android:process=":tab0"`, `":socket"`, `":gpu"` and
+     * friends *inside our own package*, and Android instantiates the manifest's Application class
+     * (`.App`) once per process. So `init` — and therefore the "=== App started ===" banner — runs
+     * once per process, not once per app launch. Tagging child-process lines makes the apparent
+     * duplication self-explaining instead of looking like a double-init bug.
+     */
+    private var procSuffix = ""
+    private var isMainProcess = true
+
     fun init(context: Context) {
         logFile = File(context.filesDir, FILE_NAME)
-        log("I", "FileLogger", "=== App started, version=${BuildConfig.VERSION_NAME} ===")
+        val proc = currentProcessName(context)
+        isMainProcess = proc == context.packageName
+        procSuffix = if (isMainProcess) "" else proc.substringAfter(':', proc).let { ":$it" }
+        log("I", "FileLogger", "=== App started, version=${BuildConfig.VERSION_NAME} " +
+            "proc=$proc pid=${android.os.Process.myPid()} ===")
+    }
+
+    /**
+     * `/proc/self/cmdline` first because it works on every API level we support (minSdk 26) —
+     * `Application.getProcessName()` only landed in API 28.
+     */
+    private fun currentProcessName(context: Context): String {
+        try {
+            // cmdline is a NUL-separated argv; argv[0] is the name Android gave this process
+            val cmdline = File("/proc/self/cmdline").readText()
+                .substringBefore('\u0000').trim()
+            if (cmdline.isNotEmpty()) return cmdline
+        } catch (_: Exception) {
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            android.app.Application.getProcessName()?.let { return it }
+        }
+        return context.packageName
     }
 
     fun log(level: String, tag: String, message: String, throwable: Throwable? = null) {
@@ -25,7 +60,7 @@ object FileLogger {
         try {
             val time = dateFormat.format(Date())
             val line = buildString {
-                append("$time $level/$tag: $message")
+                append("$time $level/$tag$procSuffix: $message")
                 if (throwable != null) {
                     append("\n  ${throwable::class.java.simpleName}: ${throwable.message}")
                     for (frame in throwable.stackTrace.take(8)) {
@@ -35,8 +70,12 @@ object FileLogger {
                 append("\n")
             }
 
-            // Truncate if too large
-            if (file.exists() && file.length() > MAX_SIZE) {
+            // Truncate if too large — main process only. This read-then-rewrite is not atomic, and
+            // a GeckoView child process (see [procSuffix]) appends to the same file: if a child's
+            // O_APPEND write lands between the read and the rewrite, that write is silently lost.
+            // Appends themselves are safe (O_APPEND seeks to EOF atomically per write), so confining
+            // the rewrite to one process removes the only path that can actually eat log content.
+            if (isMainProcess && file.exists() && file.length() > MAX_SIZE) {
                 val tail = file.readText().takeLast(MAX_SIZE / 2)
                 file.writeText("--- truncated ---\n$tail")
             }

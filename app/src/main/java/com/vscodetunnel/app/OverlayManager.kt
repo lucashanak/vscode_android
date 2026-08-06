@@ -17,7 +17,12 @@ class OverlayManager(
     private val cursorView: View,
     private val floatingToggle: View,
     private val onVisibilityChanged: (Boolean) -> Unit,
-    private val onBackToMenu: () -> Unit = {}
+    private val onBackToMenu: () -> Unit = {},
+    /**
+     * Reload the page the overlay is driving. Exposed on the keyboard toolbar because a wedged
+     * VS Code is exactly when the user needs it, and the keyboard is what is on screen then.
+     */
+    private val onReloadPage: () -> Unit = {}
 ) {
     companion object {
         private const val TAG = "OverlayManager"
@@ -156,9 +161,23 @@ class OverlayManager(
             override fun onPortMessage(message: Any, port: WebExtension.Port) {
                 try {
                     val json = message as? org.json.JSONObject ?: return
-                    if (json.optString("type") == "cursorType") {
-                        val cursor = json.optString("cursor", "default")
-                        geckoView.post { updateCursorType(cursor) }
+                    when (json.optString("type")) {
+                        "cursorType" -> {
+                            val cursor = json.optString("cursor", "default")
+                            geckoView.post { updateCursorType(cursor) }
+                        }
+                        // The page describing its own state. Logged as one line: with the tunnel
+                        // confirmed healthy from a desktop, this is the only evidence that
+                        // distinguishes "workbench never rendered" from "rendered then died".
+                        "diag" -> FileLogger.d(TAG, "page diag: " +
+                            "reason=${json.optString("reason")} " +
+                            "readyState=${json.optString("readyState")} " +
+                            "online=${json.opt("online")} vis=${json.optString("visibility")} " +
+                            "workbench=${json.opt("workbench")}/${json.opt("workbenchChildren")} " +
+                            "bodyChildren=${json.opt("bodyChildren")} " +
+                            "sw=${json.opt("swController")} " +
+                            "caches=${json.opt("caches")} " +
+                            "texts=${json.optJSONArray("texts")}")
                     }
                 } catch (_: Exception) {}
             }
@@ -249,6 +268,25 @@ class OverlayManager(
         } catch (e: Exception) {
             FileLogger.w(TAG, "Failed to send to content script: $e")
         }
+    }
+
+    /**
+     * Ask the page to describe itself; the answer arrives asynchronously and is logged as
+     * `page diag:`.
+     *
+     * Worth calling immediately *before* a recovery reload — that snapshot is taken while the
+     * session is still broken, which is the only moment the evidence exists. After the reload the
+     * page is fresh and tells us nothing about what went wrong.
+     *
+     * A no-op when the port is down, which is itself diagnostic: a content script that never
+     * connected means the page never got far enough to run one.
+     */
+    fun requestDiag(reason: String) {
+        if (port == null) {
+            FileLogger.d(TAG, "diag requested ($reason) but no content script port — page never loaded one")
+            return
+        }
+        sendToContentScript("diagRequest", JSONObject().put("reason", reason))
     }
 
     private fun updateCursor(dx: Float, dy: Float) {
@@ -552,6 +590,13 @@ class OverlayManager(
         @JavascriptInterface
         fun backToMenu() {
             geckoView.post { hide(); onBackToMenu() }
+        }
+
+        @JavascriptInterface
+        fun reloadPage() {
+            // Keep the overlay up: a reload is a recovery step, and hiding the keyboard would make
+            // the user re-open it to carry on working.
+            geckoView.post { onReloadPage() }
         }
 
         @JavascriptInterface

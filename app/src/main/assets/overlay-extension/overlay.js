@@ -201,6 +201,84 @@
         }, seconds * 1000);
     }
 
+    // ====================== DIAGNOSTIC SNAPSHOT ======================
+    // The native side can see that a load happened but not what the page ended up showing, which is
+    // exactly the gap when vscode.dev renders blank or sits on "Reconnecting…" — see
+    // docs/vscode-cache.md. This runs inside the page, so it can answer that directly.
+    //
+    // Everything here is best-effort by design: it inspects a third-party DOM we do not control, so
+    // a selector that stops matching must yield a null field, never an exception that takes the rest
+    // of the overlay down with it.
+
+    // Places VS Code surfaces connection trouble. Ordered cheapest/most specific first; all optional.
+    const DIAG_TEXT_SELECTORS = [
+        '.monaco-dialog-box .dialog-message-text',      // "Cannot reconnect. Please reload the window."
+        '.notification-list-item-message',              // reconnection toasts
+        '.monaco-workbench .progress-container',        // indeterminate progress while reconnecting
+        '.statusbar .remote-indicator',                 // remote/tunnel status ("Reconnecting…")
+        '#status\\.host',                               // id of that same indicator in older builds
+    ];
+
+    function safe(fn) {
+        // Every field is independently guarded: one broken probe must not void the whole snapshot.
+        try { return fn(); } catch (e) { return null; }
+    }
+
+    function collectDiagText() {
+        const found = [];
+        for (const sel of DIAG_TEXT_SELECTORS) {
+            const hit = safe(() => {
+                const el = document.querySelector(sel);
+                if (!el) return null;
+                const txt = (el.textContent || '').trim().replace(/\s+/g, ' ');
+                return txt ? {sel: sel, text: txt.slice(0, 200)} : null;
+            });
+            if (hit) found.push(hit);
+        }
+        return found;
+    }
+
+    function buildDiag(reason) {
+        const wb = safe(() => document.querySelector('.monaco-workbench'));
+        const diag = {
+            type: 'diag',
+            reason: reason,
+            readyState: safe(() => document.readyState),
+            href: safe(() => location.href),
+            title: safe(() => document.title),
+            online: safe(() => navigator.onLine),
+            visibility: safe(() => document.visibilityState),
+            // Present-but-empty is the signature of the blank-workbench case, so record both.
+            workbench: !!wb,
+            workbenchChildren: wb ? safe(() => wb.childElementCount) : null,
+            bodyChildren: safe(() => document.body ? document.body.childElementCount : null),
+            swController: safe(() => !!(navigator.serviceWorker && navigator.serviceWorker.controller)),
+            texts: safe(collectDiagText) || [],
+            caches: null,
+        };
+        // caches.keys() is async and may be unavailable (or reject); never let it block the send.
+        return new Promise(resolve => {
+            let settled = false;
+            const done = () => { if (!settled) { settled = true; resolve(diag); } };
+            setTimeout(done, 1000);
+            try {
+                if (!window.caches || !caches.keys) return done();
+                caches.keys().then(keys => {
+                    diag.caches = keys;
+                    done();
+                }, done);
+            } catch (e) { done(); }
+        });
+    }
+
+    let lastAutoDiag = 0;
+    function sendDiag(reason) {
+        buildDiag(reason).then(diag => {
+            if (!activePort) return;
+            try { activePort.postMessage(diag); } catch (e) {}
+        }, () => {});
+    }
+
     // ====================== PORT CONNECTION ======================
     function connect() {
         try {
@@ -224,8 +302,21 @@
                     case 'colorInvert':
                         setColorInvert(!!msg.enabled);
                         break;
+                    case 'diagRequest':
+                        sendDiag(msg.reason || 'request');
+                        break;
                 }
             });
+
+            // One shot per connection, after a settle delay so the workbench has had a chance to
+            // render — a snapshot taken at document_idle would say "blank" for every healthy load
+            // too. Throttled because onDisconnect retries every second: a flapping port must not
+            // turn a hung page into a log spammer. No interval anywhere; on-demand covers the rest.
+            const now = Date.now();
+            if (now - lastAutoDiag > 30000) {
+                lastAutoDiag = now;
+                setTimeout(() => sendDiag('connect'), 3000);
+            }
             port.onDisconnect.addListener(() => {
                 // Reconnect after a delay (page navigation, etc.)
                 setTimeout(connect, 1000);

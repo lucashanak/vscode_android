@@ -236,6 +236,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
     <div class="spacer"></div>
     <button class="tool-btn tab-btn" id="tpToggle">TP</button>
     <button class="tool-btn" id="invertBtn" title="Invert colors (sunlight)">☀</button>
+    <button class="tool-btn" id="reloadBtn" title="Reload VS Code (recovers a stuck session)">↻</button>
     <button class="tool-btn" id="hideBtn">Hide</button>
 </div>
 
@@ -1564,6 +1565,28 @@ function applyInvert(enabled) {
 document.getElementById('invertBtn').addEventListener('pointerdown', e => {
     e.preventDefault();
     if (typeof A.toggleInvert === 'function') A.toggleInvert();
+});
+
+// Reload VS Code. Confirmed on a second tap rather than fired on the first: this sits next to
+// Hide on a toolbar used while typing, and an accidental reload mid-edit would be infuriating.
+// Nothing is lost by reloading — VS Code restores its own editor state — but the interruption is.
+let reloadArmed = 0;
+document.getElementById('reloadBtn').addEventListener('pointerdown', e => {
+    e.preventDefault();
+    const btn = e.currentTarget;
+    const now = Date.now();
+    if (now - reloadArmed < 3000) {
+        reloadArmed = 0;
+        btn.textContent = '↻';
+        if (typeof A.reloadPage === 'function') A.reloadPage();
+        return;
+    }
+    reloadArmed = now;
+    btn.textContent = '?';
+    try { A.haptic(); } catch (_) {}
+    setTimeout(() => {
+        if (reloadArmed) { reloadArmed = 0; btn.textContent = '↻'; }
+    }, 3000);
 });
 
 // Prevent focus stealing

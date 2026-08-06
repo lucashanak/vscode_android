@@ -213,7 +213,8 @@ class MainActivity : AppCompatActivity() {
         val floatingToggle = findViewById<Button>(R.id.floatingToggle)
         overlayManager = OverlayManager(geckoView, overlayWebView, cursorDot, floatingToggle,
             onVisibilityChanged = { visible -> onOverlayVisibilityChanged(visible) },
-            onBackToMenu = { suspendSession() }
+            onBackToMenu = { suspendSession() },
+            onReloadPage = { reloadCurrentTunnel("keyboard button") }
         )
         overlayManager.setup()
         overlayManager.alwaysSuppressInput = suppressSystemKeyboard
@@ -2345,7 +2346,10 @@ class MainActivity : AppCompatActivity() {
         val runtime = GeckoManager.getRuntime(this)
         session.open(runtime)
 
-        session.navigationDelegate = object : GeckoSession.NavigationDelegate {
+        // Wrapped so load failures get logged. A delegate is a single slot and this one is ours, so
+        // the logging has to be layered on here rather than set in GeckoManager.
+        session.navigationDelegate = GeckoManager.withLoadErrorLogging(
+        object : GeckoSession.NavigationDelegate {
             override fun onNewSession(
                 session: GeckoSession,
                 uri: String
@@ -2371,7 +2375,7 @@ class MainActivity : AppCompatActivity() {
                 if (url == null) return
                 runOnUiThread { updateSessionUrl(session, url) }
             }
-        }
+        })
 
         session.contentDelegate = object : GeckoSession.ContentDelegate {
             override fun onCloseRequest(session: GeckoSession) {
@@ -3310,6 +3314,39 @@ class MainActivity : AppCompatActivity() {
             FileLogger.w(TAG, "Session index moved while reloading; skipping")
         }
         autoRefreshInFlight = false
+    }
+
+    /**
+     * Reload the active tunnel page. The recovery step for a wedged session, per
+     * docs/vscode-cache.md — nothing in the cache is stale, what dies is in-page state.
+     *
+     * Unlike the automatic path this does NOT wait for a validated network: the user asked for it
+     * explicitly and is looking at the screen, so refusing silently would be worse than trying and
+     * failing. The network state is logged so a failure is still explicable afterwards.
+     */
+    private fun reloadCurrentTunnel(reason: String) {
+        val idx = currentSessionIdx
+        if (idx !in tunnelSessions.indices) {
+            FileLogger.w(TAG, "Reload requested ($reason) but no active tunnel session")
+            return
+        }
+        val info = tunnelSessions[idx]
+        FileLogger.d(TAG, "Reloading tunnel ($reason): ${info.url} validatedNetwork=${hasValidatedNetwork()}")
+
+        // Ask the page to describe itself first. The reload destroys the broken state, so this is
+        // the only moment that evidence exists — and the snapshot is what will eventually explain
+        // *why* it wedged, rather than just recovering it again. The delay covers the content
+        // script's internal 1s cap on probing Cache Storage; without it the reload would kill the
+        // page before the answer arrives. Worth the wait when the alternative is a hung session.
+        overlayManager.requestDiag("beforeReload")
+        geckoView.postDelayed({
+            val stillIdx = currentSessionIdx
+            if (stillIdx in tunnelSessions.indices && tunnelSessions[stillIdx].url == info.url) {
+                tunnelSessions[stillIdx].session.reload()
+            } else {
+                FileLogger.w(TAG, "Session changed while capturing diag; reload skipped")
+            }
+        }, 1200)
     }
 
     /**

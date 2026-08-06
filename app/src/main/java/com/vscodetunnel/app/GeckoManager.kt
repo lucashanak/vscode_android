@@ -2,12 +2,15 @@ package com.vscodetunnel.app
 
 import android.content.Context
 // Using FileLogger instead of android.util.Log for crash debugging
+import org.mozilla.geckoview.AllowOrDeny
+import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.StorageController
 import org.mozilla.geckoview.WebExtension
+import org.mozilla.geckoview.WebRequestError
 
 object GeckoManager {
     private const val TAG = "GeckoManager"
@@ -67,12 +70,129 @@ object GeckoManager {
 
     fun getOverlayExtension(): WebExtension? = overlayExtension
 
-    fun createTunnelSession(): GeckoSession {
+    fun createTunnelSession(label: String = "tunnel"): GeckoSession {
         val settings = GeckoSessionSettings.Builder()
             .userAgentOverride(CHROME_USER_AGENT)
             .usePrivateMode(false)
             .build()
-        return GeckoSession(settings)
+        val session = GeckoSession(settings)
+        session.progressDelegate = loadProgressLogger(label)
+        return session
+    }
+
+    /**
+     * Reports the document load lifecycle, which is otherwise entirely invisible in the log.
+     *
+     * The distinction this exists to capture: a page that never fires `onPageStop` at all, versus one
+     * that stops with `success=false`, versus one that loads clean and only *then* goes blank. Those
+     * are three different bugs and the log could not previously tell them apart — see
+     * docs/vscode-cache.md, where the root cause turned out to be in-page state after a successful
+     * load, not the load itself.
+     *
+     * `progressDelegate` is a free slot: nothing else in the app assigns it, so taking it here
+     * cannot clobber a delegate someone else wanted. Progress is logged per 25% bucket rather than
+     * per callback — a hung load must leave a trail of how far it got without becoming a spammer.
+     */
+    private fun loadProgressLogger(label: String) = object : GeckoSession.ProgressDelegate {
+        private var startedAt = 0L
+        private var maxProgress = 0
+        private var lastBucket = -1
+
+        override fun onPageStart(session: GeckoSession, url: String) {
+            startedAt = System.currentTimeMillis()
+            maxProgress = 0
+            lastBucket = -1
+            FileLogger.d(TAG, "[$label] pageStart $url")
+        }
+
+        override fun onPageStop(session: GeckoSession, success: Boolean) {
+            val ms = if (startedAt == 0L) -1 else System.currentTimeMillis() - startedAt
+            FileLogger.d(TAG, "[$label] pageStop success=$success after=${ms}ms maxProgress=$maxProgress")
+        }
+
+        override fun onProgressChange(session: GeckoSession, progress: Int) {
+            if (progress > maxProgress) maxProgress = progress
+            val bucket = progress / 25
+            if (bucket != lastBucket) {
+                lastBucket = bucket
+                FileLogger.d(TAG, "[$label] progress=$progress%")
+            }
+        }
+
+        override fun onSecurityChange(
+            session: GeckoSession,
+            info: GeckoSession.ProgressDelegate.SecurityInformation
+        ) {
+            // Blocked mixed *active* content is a plausible cause of a workbench that renders empty,
+            // and it produces no other log evidence at all.
+            FileLogger.d(TAG, "[$label] security origin=${info.origin} secure=${info.isSecure} " +
+                "mode=${info.securityMode} mixedActive=${info.mixedModeActive} " +
+                "mixedPassive=${info.mixedModePassive}")
+        }
+    }
+
+    /**
+     * Wraps an existing [GeckoSession.NavigationDelegate] so load errors get logged, forwarding every
+     * other callback untouched.
+     *
+     * A delegate is a single slot and MainActivity legitimately owns the navigation one (onNewSession,
+     * onLoadRequest, onLocationChange), so this cannot be assigned here — the caller has to opt in:
+     *
+     *     session.navigationDelegate = GeckoManager.withLoadErrorLogging(
+     *         object : GeckoSession.NavigationDelegate { ... })
+     *
+     * `onSubframeLoadRequest` is deliberately forwarded without logging: vscode.dev drives webviews
+     * and the auth flow through iframes, so logging those would bury the useful lines.
+     */
+    fun withLoadErrorLogging(
+        delegate: GeckoSession.NavigationDelegate,
+        label: String = "tunnel"
+    ): GeckoSession.NavigationDelegate = object : GeckoSession.NavigationDelegate {
+        override fun onLoadError(
+            session: GeckoSession,
+            uri: String?,
+            error: WebRequestError
+        ): GeckoResult<String>? {
+            FileLogger.e(TAG, "[$label] loadError uri=$uri " +
+                "category=${errorCategoryName(error.category)}(${error.category}) code=${error.code}")
+            return delegate.onLoadError(session, uri, error)
+        }
+
+        override fun onLocationChange(
+            session: GeckoSession,
+            url: String?,
+            perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>,
+            hasUserGesture: Boolean
+        ) = delegate.onLocationChange(session, url, perms, hasUserGesture)
+
+        override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) =
+            delegate.onCanGoBack(session, canGoBack)
+
+        override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) =
+            delegate.onCanGoForward(session, canGoForward)
+
+        override fun onLoadRequest(
+            session: GeckoSession,
+            request: GeckoSession.NavigationDelegate.LoadRequest
+        ): GeckoResult<AllowOrDeny>? = delegate.onLoadRequest(session, request)
+
+        override fun onSubframeLoadRequest(
+            session: GeckoSession,
+            request: GeckoSession.NavigationDelegate.LoadRequest
+        ): GeckoResult<AllowOrDeny>? = delegate.onSubframeLoadRequest(session, request)
+
+        override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? =
+            delegate.onNewSession(session, uri)
+    }
+
+    private fun errorCategoryName(category: Int) = when (category) {
+        WebRequestError.ERROR_CATEGORY_SECURITY -> "security"
+        WebRequestError.ERROR_CATEGORY_NETWORK -> "network"
+        WebRequestError.ERROR_CATEGORY_CONTENT -> "content"
+        WebRequestError.ERROR_CATEGORY_URI -> "uri"
+        WebRequestError.ERROR_CATEGORY_PROXY -> "proxy"
+        WebRequestError.ERROR_CATEGORY_SAFEBROWSING -> "safebrowsing"
+        else -> "unknown"
     }
 
     /**
