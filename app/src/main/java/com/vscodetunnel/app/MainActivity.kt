@@ -2183,11 +2183,13 @@ class MainActivity : AppCompatActivity() {
 
         // === MAINTENANCE ===
         section("Maintenance")
-        label("Auto-refresh stale VS Code after N min in background (0 = off)")
+        label("Reload stale VS Code after N min in background (0 = off)")
         val staleRefreshField = field("10", tunnelStaleRefreshMin.toString(), android.text.InputType.TYPE_CLASS_NUMBER)
         layout.addView(staleRefreshField)
+        label("Full reset is the fallback if a reload doesn't recover it. It signs you out of " +
+            "VS Code and re-downloads the editor (~70 MB), so it isn't done automatically.")
         val clearCacheBtn = Button(this).apply {
-            text = "Clear VS Code cache"
+            text = "Reset VS Code (signs you out)"
             isAllCaps = false; textSize = 14f
             setTextColor(resources.getColor(R.color.text_white, theme))
             setBackgroundColor(resources.getColor(R.color.surface_variant, theme))
@@ -2197,12 +2199,13 @@ class MainActivity : AppCompatActivity() {
             lp.topMargin = dp(4)
             layoutParams = lp
             setOnClickListener {
-                isEnabled = false; text = "Clearing..."
+                isEnabled = false; text = "Resetting..."
                 GeckoManager.clearBrowsingData(this@MainActivity) {
                     runOnUiThread {
-                        text = "Cache cleared"
+                        text = "Reset done"
                         android.widget.Toast.makeText(this@MainActivity,
-                            "VS Code cache cleared. Reopen tunnel to reload.", android.widget.Toast.LENGTH_LONG).show()
+                            "VS Code reset. Reopen the tunnel — you'll need to sign in again.",
+                            android.widget.Toast.LENGTH_LONG).show()
                     }
                 }
             }
@@ -2308,9 +2311,11 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Cold-start staleness check: if profile on disk is older than threshold
-        // (or timestamp is missing — typical after upgrade), clear caches BEFORE
-        // loading so we don't bootstrap into a stale SW/DOM state.
+        // Cold-start staleness check. There is no live page to reload here, so this drops
+        // vscode.dev's own document cache before loading — narrowly. It deliberately does NOT use
+        // the full reset: that would take the stored sign-in and the service worker's ~72 MB
+        // precache with it, and neither can be the problem. Scoping by base domain also spares the
+        // workbench bundle automatically, since that is served from main.vscode-cdn.net.
         val thresholdMin = tunnelStaleRefreshMin
         if (thresholdMin > 0 && !coldStartStaleHandled) {
             coldStartStaleHandled = true
@@ -2320,13 +2325,8 @@ class MainActivity : AppCompatActivity() {
             if (stale) {
                 val why = if (lastActive == 0L) "no timestamp (fresh install/upgrade)"
                     else "idle ${(System.currentTimeMillis() - lastActive) / 1000}s"
-                FileLogger.d(TAG, "Cold-start pre-clear: $why")
-                android.widget.Toast.makeText(
-                    this,
-                    "Clearing stale VS Code cache…",
-                    android.widget.Toast.LENGTH_SHORT
-                ).show()
-                GeckoManager.clearBrowsingData(this) {
+                FileLogger.d(TAG, "Cold-start: refreshing $url document cache ($why)")
+                GeckoManager.clearTunnelDocumentCache(this) {
                     runOnUiThread { openTunnel(url) }
                 }
                 return
@@ -3284,23 +3284,47 @@ class MainActivity : AppCompatActivity() {
         val idleMs = System.currentTimeMillis() - lastBackgroundTimeMs
         if (idleMs < thresholdMin * 60_000L) return
 
-        FileLogger.d(TAG, "Tunnel idle ${idleMs / 1000}s ≥ ${thresholdMin}min — auto-refreshing stale VS Code session")
-        autoRefreshInFlight = true
-        android.widget.Toast.makeText(
-            this,
-            "Refreshing stale VS Code session…",
-            android.widget.Toast.LENGTH_SHORT
-        ).show()
-        GeckoManager.clearBrowsingData(this) {
-            runOnUiThread {
-                autoRefreshInFlight = false
-                lastBackgroundTimeMs = System.currentTimeMillis()
-                val idx = currentSessionIdx
-                if (idx in tunnelSessions.indices && tunnelSessions[idx].url == url) {
-                    tunnelSessions[idx].session.loadUri(url)
-                }
-            }
+        // Reload, don't clear. What actually dies over a long idle is in-page state: VS Code's
+        // reconnection logic sets a *static* permanent-failure flag, so every existing connection
+        // dies and every new one dies on construction too. A reload gives it a fresh JS context and
+        // a fresh reconnection token. Nothing in the cache is stale — the workbench assets are
+        // commit-pinned with a one-year max-age, so a new release is a new URL, and the entry
+        // document revalidates on its own after 150s. Clearing here used to also destroy the stored
+        // sign-in and ~72 MB of service worker precache. See docs/vscode-cache.md.
+        if (!hasValidatedNetwork()) {
+            // Reloading without a working route is worse than waiting. VS Code decrypts its stored
+            // credentials with a key half fetched over the network, and that fetch gives up after
+            // ~1.4s — on failure it *deletes* the credentials. Waking from doze often beats the
+            // radio, so an eager reload can turn a recoverable hang into a forced re-login.
+            FileLogger.d(TAG, "Tunnel idle ${idleMs / 1000}s but no validated network yet — deferring reload")
+            return
         }
+
+        FileLogger.d(TAG, "Tunnel idle ${idleMs / 1000}s ≥ ${thresholdMin}min — reloading VS Code session")
+        autoRefreshInFlight = true
+        lastBackgroundTimeMs = System.currentTimeMillis()
+        val idx = currentSessionIdx
+        if (idx in tunnelSessions.indices && tunnelSessions[idx].url == url) {
+            tunnelSessions[idx].session.reload()
+        } else {
+            FileLogger.w(TAG, "Session index moved while reloading; skipping")
+        }
+        autoRefreshInFlight = false
+    }
+
+    /**
+     * Whether there is a route that actually carries traffic, not merely an interface that exists.
+     *
+     * `onAvailable` fires before validation completes, and a reload issued in that window can cost
+     * the user their stored sign-in (see the note at the call site), so this asks for
+     * NET_CAPABILITY_VALIDATED specifically.
+     */
+    private fun hasValidatedNetwork(): Boolean {
+        val cm = getSystemService(CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            ?: return false
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork ?: return false) ?: return false
+        return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     // --- Auto Reconnect ---

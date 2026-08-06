@@ -12,6 +12,12 @@ import org.mozilla.geckoview.WebExtension
 object GeckoManager {
     private const val TAG = "GeckoManager"
 
+    /**
+     * Base domain of the editor itself. Note the workbench bundle lives on `main.vscode-cdn.net`,
+     * a separate base domain, which is what lets a scoped clear here spare the expensive assets.
+     */
+    private const val TUNNEL_BASE_DOMAIN = "vscode.dev"
+
     private var runtime: GeckoRuntime? = null
     private var overlayExtension: WebExtension? = null
 
@@ -69,18 +75,53 @@ object GeckoManager {
         return GeckoSession(settings)
     }
 
+    /**
+     * The big hammer, for the explicit "Clear VS Code cache" button only.
+     *
+     * Deliberately NOT used for automatic recovery. `DOM_STORAGES` maps to Gecko's
+     * `CLEAR_DOM_QUOTA`, documented as "LocalStorage, IndexedDB, ServiceWorkers, DOM Cache and so
+     * on" — so a single call also takes out the stored sign-in
+     * (localStorage `stable.secrets.provider`), the Microsoft auth keys (`msal.db`), the service
+     * worker's ~72 MB precache, and the workbench layout. It is a real reset, not a cache flush,
+     * which is exactly why it belongs behind a button the user pressed on purpose.
+     *
+     * Cookies are preserved, but that does not save the sign-in on its own: the encrypted blob those
+     * cookies unlock lives in localStorage, which this clears.
+     */
     fun clearBrowsingData(context: Context, onDone: (() -> Unit)? = null) {
         val rt = runtime ?: getRuntime(context)
-        // Clear stale data but keep cookies (GitHub auth)
         val flags = StorageController.ClearFlags.ALL_CACHES or
             StorageController.ClearFlags.DOM_STORAGES or
-            StorageController.ClearFlags.AUTH_SESSIONS or
-            StorageController.ClearFlags.SITE_SETTINGS
+            StorageController.ClearFlags.AUTH_SESSIONS
+        FileLogger.w(TAG, "Full reset requested: clearing caches, DOM storage and auth sessions")
         rt.storageController.clearData(flags).accept({
             FileLogger.d(TAG, "GeckoView browsing data cleared")
             onDone?.invoke()
         }) { throwable ->
             FileLogger.e(TAG, "Failed to clear browsing data", throwable)
+            onDone?.invoke()
+        }
+    }
+
+    /**
+     * Drops only vscode.dev's own HTTP/image cache — the 342 KB entry document and friends.
+     *
+     * Two things make this cheap where [clearBrowsingData] is expensive. It is scoped by base
+     * domain, and the workbench bundle is served from `main.vscode-cdn.net`, a *different* base
+     * domain, so the multi-megabyte commit-pinned assets are untouched. And it omits
+     * `DOM_STORAGES`, so the sign-in, the auth keys and the service worker precache all survive.
+     *
+     * Used for the cold-start path, where there is no live page to reload.
+     */
+    fun clearTunnelDocumentCache(context: Context, onDone: (() -> Unit)? = null) {
+        val rt = runtime ?: getRuntime(context)
+        val flags = StorageController.ClearFlags.NETWORK_CACHE or
+            StorageController.ClearFlags.IMAGE_CACHE
+        rt.storageController.clearDataFromBaseDomain(TUNNEL_BASE_DOMAIN, flags).accept({
+            FileLogger.d(TAG, "Cleared $TUNNEL_BASE_DOMAIN document cache (sign-in and CDN assets kept)")
+            onDone?.invoke()
+        }) { throwable ->
+            FileLogger.e(TAG, "Failed to clear $TUNNEL_BASE_DOMAIN document cache", throwable)
             onDone?.invoke()
         }
     }
