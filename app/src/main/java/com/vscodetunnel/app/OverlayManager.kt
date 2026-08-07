@@ -172,12 +172,17 @@ class OverlayManager(
                         "diag" -> FileLogger.d(TAG, "page diag: " +
                             "reason=${json.optString("reason")} " +
                             "readyState=${json.optString("readyState")} " +
+                            // href matters: without it there is no way to tell a snapshot of the
+                            // real page from one of some other document the script attached to.
+                            "href=${json.optString("href")} " +
                             "online=${json.opt("online")} vis=${json.optString("visibility")} " +
                             "workbench=${json.opt("workbench")}/${json.opt("workbenchChildren")} " +
                             "bodyChildren=${json.opt("bodyChildren")} " +
                             "sw=${json.opt("swController")} " +
+                            "dpr=${json.opt("dpr")} inner=${json.optString("inner")} " +
                             "caches=${json.opt("caches")} " +
-                            "texts=${json.optJSONArray("texts")}")
+                            "texts=${json.optJSONArray("texts")} " +
+                            "errors=${json.optJSONArray("errors")}")
                     }
                 } catch (_: Exception) {}
             }

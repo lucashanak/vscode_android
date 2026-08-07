@@ -1567,26 +1567,20 @@ document.getElementById('invertBtn').addEventListener('pointerdown', e => {
     if (typeof A.toggleInvert === 'function') A.toggleInvert();
 });
 
-// Reload VS Code. Confirmed on a second tap rather than fired on the first: this sits next to
-// Hide on a toolbar used while typing, and an accidental reload mid-edit would be infuriating.
-// Nothing is lost by reloading — VS Code restores its own editor state — but the interruption is.
-let reloadArmed = 0;
+// Reload VS Code. Fires on the first tap.
+//
+// This used to require a confirming second tap within 3s, to guard against an accidental reload
+// while typing. That was the wrong trade: the user pressed it twice believing they had triggered
+// two reloads, when each tap had only re-armed it, so nothing ever reloaded. A control whose whole
+// purpose is recovering a wedged session must work on the first press. Reloading costs nothing —
+// VS Code restores its own editor state — so guarding it was never worth the confusion.
 document.getElementById('reloadBtn').addEventListener('pointerdown', e => {
     e.preventDefault();
     const btn = e.currentTarget;
-    const now = Date.now();
-    if (now - reloadArmed < 3000) {
-        reloadArmed = 0;
-        btn.textContent = '↻';
-        if (typeof A.reloadPage === 'function') A.reloadPage();
-        return;
-    }
-    reloadArmed = now;
-    btn.textContent = '?';
+    btn.textContent = '…';
+    setTimeout(() => { btn.textContent = '↻'; }, 2000);
     try { A.haptic(); } catch (_) {}
-    setTimeout(() => {
-        if (reloadArmed) { reloadArmed = 0; btn.textContent = '↻'; }
-    }, 3000);
+    if (typeof A.reloadPage === 'function') A.reloadPage();
 });
 
 // Prevent focus stealing

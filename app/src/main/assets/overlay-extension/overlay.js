@@ -224,6 +224,26 @@
         try { return fn(); } catch (e) { return null; }
     }
 
+    // Script errors from the page. The device shows a document that loads cleanly — 200s,
+    // readyState=complete, no load error — yet never mounts .monaco-workbench, and a healthy load
+    // mounts it within 3s. That pattern means the bootstrap threw or is stuck, and neither is
+    // visible from the native side. Capped hard: a broken page can throw in a loop, and this rides
+    // the same channel as the rest of the diagnostics.
+    const pageErrors = [];
+    function noteError(what) {
+        if (pageErrors.length >= 8) return;
+        const s = String(what).replace(/\s+/g, ' ').slice(0, 300);
+        if (!pageErrors.includes(s)) pageErrors.push(s);
+    }
+    try {
+        window.addEventListener('error', e => {
+            noteError(e.message + (e.filename ? ' @' + e.filename.split('/').pop() + ':' + e.lineno : ''));
+        }, true);
+        window.addEventListener('unhandledrejection', e => {
+            noteError('unhandledrejection: ' + (e.reason && (e.reason.message || e.reason)));
+        }, true);
+    } catch (e) { /* listeners are best-effort; never break the overlay over diagnostics */ }
+
     function collectDiagText() {
         const found = [];
         for (const sel of DIAG_TEXT_SELECTORS) {
@@ -254,6 +274,12 @@
             bodyChildren: safe(() => document.body ? document.body.childElementCount : null),
             swController: safe(() => !!(navigator.serviceWorker && navigator.serviceWorker.controller)),
             texts: safe(collectDiagText) || [],
+            errors: pageErrors.slice(),
+            // displayDensityOverride is applied natively for the zoom setting, and is a prime
+            // suspect for a bootstrap that never lays out. It is invisible from the native side, so
+            // report what the page actually sees.
+            dpr: safe(() => window.devicePixelRatio),
+            inner: safe(() => window.innerWidth + 'x' + window.innerHeight),
             caches: null,
         };
         // caches.keys() is async and may be unavailable (or reject); never let it block the send.
