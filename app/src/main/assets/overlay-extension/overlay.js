@@ -270,8 +270,8 @@
         "  var done=function(){try{window.dispatchEvent(new CustomEvent('__vsct_probe_res'," +
         "    {detail:JSON.stringify(out)}));}catch(e){}};" +
         "  var t0=Date.now(),fin=false,f=function(){if(!fin){fin=true;done();}};" +
-        "  setTimeout(f,4500);" +
-        "  try{var c=new AbortController();setTimeout(function(){try{c.abort();}catch(e){}},4000);" +
+        "  setTimeout(f,3000);" +
+        "  try{var c=new AbortController();setTimeout(function(){try{c.abort();}catch(e){}},2500);" +
         "    fetch('https://auth.vscode.dev',{method:'POST',credentials:'include',signal:c.signal})" +
         "      .then(function(r){return r.text().then(function(b){return {s:r.status,n:b.length};}," +
         "                                            function(){return {s:r.status,n:-1};});})" +
@@ -378,7 +378,7 @@
             let pending = 3;
             const finish = () => { if (!settled) { settled = true; resolve(diag); } };
             const part = () => { if (--pending <= 0) finish(); };
-            setTimeout(finish, 5000);
+            setTimeout(finish, 4500);
 
             try {
                 if (!window.caches || !caches.keys) part();
@@ -420,24 +420,36 @@
                 }
             } catch (e) { diag.idb = 'threw:' + (e && e.name); part(); }
 
-            // Fold in the page-world answer once it lands.
-            requestPageWorldProbe();
-            let waited = 0;
-            const poll = setInterval(() => {
-                waited += 250;
-                if (pageWorld || waited >= 4800) {
-                    clearInterval(poll);
+            // Fold in the page-world answer when it arrives.
+            //
+            // Event-driven, not polled. The previous version polled every 250ms and gave up at
+            // 4800ms — which is not a multiple of 250, so the first tick that could satisfy it was
+            // 5000ms, exactly when the outer cap resolved the promise. pw stayed null on every
+            // capture and the whole page-world measurement was silently lost.
+            //
+            // Budget, and it has to stay ordered: page world answers by 3000ms (its fetch aborts at
+            // 2500ms), this waits until 3500ms, the outer cap is 4500ms.
+            {
+                let folded = false;
+                const fold = () => {
+                    if (folded) return;
+                    folded = true;
                     if (pageWorld) {
                         diag.pw = true;
                         diag.hosts = pageWorld.hosts;
                         diag.res = pageWorld.res;
                         diag.auth = pageWorld.auth;
                     } else {
-                        diag.pw = false;   // injection never answered; the fields are unknown, not zero
+                        diag.pw = false;  // never answered: unknown, not zero
                     }
                     part();
-                }
-            }, 250);
+                };
+                const onRes = () => { setTimeout(fold, 0); };   // let the parse listener run first
+                try { window.addEventListener('__vsct_probe_res', onRes, { once: true, capture: true }); }
+                catch (e) { /* fall through to the timer */ }
+                setTimeout(fold, 3500);
+                requestPageWorldProbe();
+            }
         });
     }
 

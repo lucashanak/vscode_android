@@ -3336,7 +3336,7 @@ class MainActivity : AppCompatActivity() {
         // Ask the page to describe itself first. The reload destroys the broken state, so this is
         // the only moment that evidence exists — and the snapshot is what will eventually explain
         // *why* it wedged, rather than just recovering it again. The delay has to clear the content
-        // script's own 5s cap, which is set by the auth.vscode.dev and IndexedDB probes: a request that never
+        // script's own 4.5s cap, which the page-world probes sit inside: a request that never
         // settles is the current prime suspect, so cutting that probe short would drop exactly the
         // field worth having. A few seconds is a fair price against a session that is already stuck.
         overlayManager.requestDiag("beforeReload")
@@ -3347,7 +3347,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 FileLogger.w(TAG, "Session changed while capturing diag; reload skipped")
             }
-        }, 5300)
+        }, 5000)
     }
 
     /**
