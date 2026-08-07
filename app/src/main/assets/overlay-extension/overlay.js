@@ -244,56 +244,69 @@
         }, true);
     } catch (e) { /* listeners are best-effort; never break the overlay over diagnostics */ }
 
-    // Everything measured about the page has to run in the page's own world, not the content
-    // script's. Learned the hard way: a content-script fetch to auth.vscode.dev rejected with
-    // TypeError in 0-3ms on every capture, which read like the page being blocked — but the
-    // extension declares no host permissions, so the request never left the sandbox. The number was
-    // an artefact of the probe. Anything read from an isolated world is suspect for the same reason,
-    // resource timing included, so the probes live here instead and report what VS Code itself sees.
+    // Reaching into the page without injecting a script.
     //
-    // Bridged over CustomEvents with JSON strings: structured clone across the world boundary is
-    // the one thing that reliably survives.
-    const PAGE_WORLD_PROBE = "(function(){try{" +
-        // console.warn/error, which an isolated world cannot observe at all
-        "var send=function(kind,args){try{var s=kind+': '+Array.prototype.map.call(args,function(a){" +
-        "  try{return (a&&a.message)?a.message:(typeof a==='object'?JSON.stringify(a).slice(0,200):String(a));}" +
-        "  catch(e){return '?';}}).join(' ');" +
-        "  window.dispatchEvent(new CustomEvent('__vsct_console',{detail:s.slice(0,260)}));}catch(e){}};" +
-        "['error','warn'].forEach(function(k){var o=console[k];console[k]=function(){" +
-        "  send(k,arguments); try{return o.apply(console,arguments);}catch(e){}};});" +
-        // on request, measure from in here and answer once
-        "window.addEventListener('__vsct_probe_req',function(){" +
-        "  var out={pw:true,hosts:{},res:0,auth:null};" +
-        "  try{var es=performance.getEntriesByType('resource');out.res=es.length;" +
-        "    for(var i=0;i<es.length;i++){try{var h=new URL(es[i].name).host;out.hosts[h]=(out.hosts[h]||0)+1;}catch(e){}}" +
-        "  }catch(e){}" +
-        "  var done=function(){try{window.dispatchEvent(new CustomEvent('__vsct_probe_res'," +
-        "    {detail:JSON.stringify(out)}));}catch(e){}};" +
-        "  var t0=Date.now(),fin=false,f=function(){if(!fin){fin=true;done();}};" +
-        "  setTimeout(f,3000);" +
-        "  try{var c=new AbortController();setTimeout(function(){try{c.abort();}catch(e){}},2500);" +
-        "    fetch('https://auth.vscode.dev',{method:'POST',credentials:'include',signal:c.signal})" +
-        "      .then(function(r){return r.text().then(function(b){return {s:r.status,n:b.length};}," +
-        "                                            function(){return {s:r.status,n:-1};});})" +
-        "      .then(function(r){out.auth='ok:'+r.s+' len='+r.n+' '+(Date.now()-t0)+'ms';}," +
-        "            function(e){out.auth=((e&&e.name==='AbortError')?'timeout':'error:'+(e&&e.name))+" +
-        "                                 ' '+(Date.now()-t0)+'ms';})" +
-        "      .then(f);" +
-        "  }catch(e){out.auth='threw:'+(e&&e.name);f();}" +
-        "},true);" +
-        "}catch(e){}})();";
-
-    // Latest page-world answer, or null if the injection never reported — which is itself worth
-    // knowing, since it would mean these numbers are simply unavailable rather than zero.
+    // The previous approach appended an inline <script> to run in the page world. That can never
+    // work here: vscode.dev serves `script-src 'self' 'sha256-...' 'unsafe-eval' <cdn hosts>` with
+    // no 'unsafe-inline', so the element is refused by CSP — which is exactly what pw=false was
+    // reporting. Gecko gives content scripts `wrappedJSObject` for this instead: it is the page's
+    // own object graph, no element, no CSP involvement.
+    //
+    // The probe fetch now runs with extension privileges (the manifest grants auth.vscode.dev),
+    // which answers the question that matters — can this device reach the host at all. The page's
+    // CSP is not the obstacle for the page itself: connect-src explicitly lists auth.vscode.dev.
     let pageWorld = null;
-    try {
-        window.addEventListener('__vsct_probe_res', e => {
-            try { pageWorld = JSON.parse(String(e.detail)); } catch (_) { pageWorld = null; }
-        }, true);
-    } catch (e) { /* best-effort */ }
+
+    function pageConsoleHook() {
+        // console.warn/error happen in the page's world, invisible to an isolated content script.
+        // exportFunction is what lets a content-script function be called from page code.
+        try {
+            if (typeof exportFunction !== 'function' || !window.wrappedJSObject) return false;
+            const w = window.wrappedJSObject;
+            ['error', 'warn'].forEach(kind => {
+                const original = w.console[kind];
+                exportFunction(function () {
+                    try {
+                        const parts = [];
+                        for (let i = 0; i < arguments.length && i < 4; i++) {
+                            const a = arguments[i];
+                            parts.push(a && a.message ? String(a.message) : String(a));
+                        }
+                        noteError('console.' + kind + ': ' + parts.join(' '));
+                    } catch (e) {}
+                    try { return original.apply(w.console, arguments); } catch (e) {}
+                }, w.console, { defineAs: kind });
+            });
+            return true;
+        } catch (e) { return false; }
+    }
+    const consoleHooked = pageConsoleHook();
 
     function requestPageWorldProbe() {
-        try { window.dispatchEvent(new CustomEvent('__vsct_probe_req')); } catch (e) {}
+        // Resource timing, read through the page's own performance object.
+        const out = { pw: true, hooked: consoleHooked, hosts: {}, res: 0, auth: null };
+        try {
+            const perf = (window.wrappedJSObject && window.wrappedJSObject.performance) || performance;
+            const es = perf.getEntriesByType('resource');
+            out.res = es.length;
+            for (let i = 0; i < es.length; i++) {
+                try { const h = new URL(es[i].name).host; out.hosts[h] = (out.hosts[h] || 0) + 1; }
+                catch (e) {}
+            }
+        } catch (e) { out.res = -1; }
+
+        const t0 = Date.now();
+        const ctl = new AbortController();
+        const abort = setTimeout(() => { try { ctl.abort(); } catch (e) {} }, 2500);
+        return fetch('https://auth.vscode.dev', {
+            method: 'POST', credentials: 'include', signal: ctl.signal
+        }).then(
+            r => r.text().then(b => ({ s: r.status, n: b.length }), () => ({ s: r.status, n: -1 }))
+        ).then(
+            r => { out.auth = 'ok:' + r.s + ' len=' + r.n + ' ' + (Date.now() - t0) + 'ms'; },
+            e => { out.auth = ((e && e.name === 'AbortError') ? 'timeout' : 'error:' + (e && e.name)) +
+                              ' ' + (Date.now() - t0) + 'ms'; }
+        ).then(() => { clearTimeout(abort); pageWorld = out; return out; });
     }
 
     // Console output from the page itself.
@@ -305,15 +318,7 @@
     //
     // Only warn/error are taken, each clamped, few kept: this is a third-party page and its error
     // text is not ours to hoard. It does mean the log can contain page error strings.
-    try {
-        window.addEventListener('__vsct_console', e => {
-            try { noteError('console: ' + String(e.detail).slice(0, 260)); } catch (_) {}
-        }, true);
-        const inject = document.createElement('script');
-        inject.textContent = PAGE_WORLD_PROBE;
-        (document.head || document.documentElement).appendChild(inject);
-        inject.remove();
-    } catch (e) { /* page-world injection is best-effort too */ }
+    // The hook itself is installed by pageConsoleHook() above, via wrappedJSObject.
 
     function collectDiagText() {
         const found = [];
@@ -361,9 +366,10 @@
             // invisible to all of it.
             text: safe(() => (document.body.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 220)),
             // Per-host completed-request counts and the auth reachability check both come from
-            // the page's own world (see PAGE_WORLD_PROBE) — read from here they would be
+            // the page's own world (see requestPageWorldProbe) — read from here they would be
             // meaningless. `pw` says whether that answer actually arrived.
             pw: null,
+            hooked: null,
             hosts: null,
             res: null,
             auth: null,
@@ -420,15 +426,9 @@
                 }
             } catch (e) { diag.idb = 'threw:' + (e && e.name); part(); }
 
-            // Fold in the page-world answer when it arrives.
-            //
-            // Event-driven, not polled. The previous version polled every 250ms and gave up at
-            // 4800ms — which is not a multiple of 250, so the first tick that could satisfy it was
-            // 5000ms, exactly when the outer cap resolved the promise. pw stayed null on every
-            // capture and the whole page-world measurement was silently lost.
-            //
-            // Budget, and it has to stay ordered: page world answers by 3000ms (its fetch aborts at
-            // 2500ms), this waits until 3500ms, the outer cap is 4500ms.
+            // Fold in the probe result. It is a promise now, not an event, so there is no
+            // cross-world handshake left to mistime — the previous two attempts failed on exactly
+            // that (an unreachable poll threshold, then a CSP-refused script element).
             {
                 let folded = false;
                 const fold = () => {
@@ -436,19 +436,17 @@
                     folded = true;
                     if (pageWorld) {
                         diag.pw = true;
+                        diag.hooked = pageWorld.hooked;
                         diag.hosts = pageWorld.hosts;
                         diag.res = pageWorld.res;
                         diag.auth = pageWorld.auth;
                     } else {
-                        diag.pw = false;  // never answered: unknown, not zero
+                        diag.pw = false;   // never produced a result: unknown, not zero
                     }
                     part();
                 };
-                const onRes = () => { setTimeout(fold, 0); };   // let the parse listener run first
-                try { window.addEventListener('__vsct_probe_res', onRes, { once: true, capture: true }); }
-                catch (e) { /* fall through to the timer */ }
                 setTimeout(fold, 3500);
-                requestPageWorldProbe();
+                try { requestPageWorldProbe().then(fold, fold); } catch (e) { fold(); }
             }
         });
     }

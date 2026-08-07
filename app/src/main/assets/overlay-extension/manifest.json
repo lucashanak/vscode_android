@@ -11,7 +11,8 @@
   "permissions": [
     "nativeMessaging",
     "nativeMessagingFromContent",
-    "geckoViewAddons"
+    "geckoViewAddons",
+    "https://auth.vscode.dev/*"
   ],
   "content_scripts": [
     {
@@ -20,8 +21,12 @@
         "*://*.vscode.dev/*",
         "*://insiders.vscode.dev/*"
       ],
-      "js": ["overlay.js"],
-      "css": ["overlay.css"],
+      "js": [
+        "overlay.js"
+      ],
+      "css": [
+        "overlay.css"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }
