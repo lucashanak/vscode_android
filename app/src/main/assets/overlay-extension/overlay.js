@@ -244,6 +244,58 @@
         }, true);
     } catch (e) { /* listeners are best-effort; never break the overlay over diagnostics */ }
 
+    // Everything measured about the page has to run in the page's own world, not the content
+    // script's. Learned the hard way: a content-script fetch to auth.vscode.dev rejected with
+    // TypeError in 0-3ms on every capture, which read like the page being blocked — but the
+    // extension declares no host permissions, so the request never left the sandbox. The number was
+    // an artefact of the probe. Anything read from an isolated world is suspect for the same reason,
+    // resource timing included, so the probes live here instead and report what VS Code itself sees.
+    //
+    // Bridged over CustomEvents with JSON strings: structured clone across the world boundary is
+    // the one thing that reliably survives.
+    const PAGE_WORLD_PROBE = "(function(){try{" +
+        // console.warn/error, which an isolated world cannot observe at all
+        "var send=function(kind,args){try{var s=kind+': '+Array.prototype.map.call(args,function(a){" +
+        "  try{return (a&&a.message)?a.message:(typeof a==='object'?JSON.stringify(a).slice(0,200):String(a));}" +
+        "  catch(e){return '?';}}).join(' ');" +
+        "  window.dispatchEvent(new CustomEvent('__vsct_console',{detail:s.slice(0,260)}));}catch(e){}};" +
+        "['error','warn'].forEach(function(k){var o=console[k];console[k]=function(){" +
+        "  send(k,arguments); try{return o.apply(console,arguments);}catch(e){}};});" +
+        // on request, measure from in here and answer once
+        "window.addEventListener('__vsct_probe_req',function(){" +
+        "  var out={pw:true,hosts:{},res:0,auth:null};" +
+        "  try{var es=performance.getEntriesByType('resource');out.res=es.length;" +
+        "    for(var i=0;i<es.length;i++){try{var h=new URL(es[i].name).host;out.hosts[h]=(out.hosts[h]||0)+1;}catch(e){}}" +
+        "  }catch(e){}" +
+        "  var done=function(){try{window.dispatchEvent(new CustomEvent('__vsct_probe_res'," +
+        "    {detail:JSON.stringify(out)}));}catch(e){}};" +
+        "  var t0=Date.now(),fin=false,f=function(){if(!fin){fin=true;done();}};" +
+        "  setTimeout(f,4500);" +
+        "  try{var c=new AbortController();setTimeout(function(){try{c.abort();}catch(e){}},4000);" +
+        "    fetch('https://auth.vscode.dev',{method:'POST',credentials:'include',signal:c.signal})" +
+        "      .then(function(r){return r.text().then(function(b){return {s:r.status,n:b.length};}," +
+        "                                            function(){return {s:r.status,n:-1};});})" +
+        "      .then(function(r){out.auth='ok:'+r.s+' len='+r.n+' '+(Date.now()-t0)+'ms';}," +
+        "            function(e){out.auth=((e&&e.name==='AbortError')?'timeout':'error:'+(e&&e.name))+" +
+        "                                 ' '+(Date.now()-t0)+'ms';})" +
+        "      .then(f);" +
+        "  }catch(e){out.auth='threw:'+(e&&e.name);f();}" +
+        "},true);" +
+        "}catch(e){}})();";
+
+    // Latest page-world answer, or null if the injection never reported — which is itself worth
+    // knowing, since it would mean these numbers are simply unavailable rather than zero.
+    let pageWorld = null;
+    try {
+        window.addEventListener('__vsct_probe_res', e => {
+            try { pageWorld = JSON.parse(String(e.detail)); } catch (_) { pageWorld = null; }
+        }, true);
+    } catch (e) { /* best-effort */ }
+
+    function requestPageWorldProbe() {
+        try { window.dispatchEvent(new CustomEvent('__vsct_probe_req')); } catch (e) {}
+    }
+
     // Console output from the page itself.
     //
     // This was the blind spot that made "errors=[]" misleading: a content script runs in an
@@ -258,14 +310,7 @@
             try { noteError('console: ' + String(e.detail).slice(0, 260)); } catch (_) {}
         }, true);
         const inject = document.createElement('script');
-        inject.textContent = "(function(){try{" +
-            "var send=function(kind,args){try{var s=kind+': '+Array.prototype.map.call(args,function(a){" +
-            "  try{return (a&&a.message)?a.message:(typeof a==='object'?JSON.stringify(a).slice(0,200):String(a));}" +
-            "  catch(e){return '?';}}).join(' ');" +
-            "  window.dispatchEvent(new CustomEvent('__vsct_console',{detail:s.slice(0,260)}));}catch(e){}};" +
-            "['error','warn'].forEach(function(k){var o=console[k];console[k]=function(){" +
-            "  send(k,arguments); try{return o.apply(console,arguments);}catch(e){}};});" +
-            "}catch(e){}})();";
+        inject.textContent = PAGE_WORLD_PROBE;
         (document.head || document.documentElement).appendChild(inject);
         inject.remove();
     } catch (e) { /* page-world injection is best-effort too */ }
@@ -315,20 +360,16 @@
             // sign-in prompt, a consent wall or an unsupported-browser notice would have been
             // invisible to all of it.
             text: safe(() => (document.body.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 220)),
-            // Per-host completed-request counts. A healthy load finishes ~61 requests across 7
-            // hosts; a host that is absent here is the one whose fetch never came back, which is
-            // the shape of a bootstrap that waits with no error to show.
-            hosts: safe(() => {
-                const h = {};
-                for (const e of performance.getEntriesByType('resource')) {
-                    try { const k = new URL(e.name).host; h[k] = (h[k] || 0) + 1; } catch (_) {}
-                }
-                return h;
-            }),
+            // Per-host completed-request counts and the auth reachability check both come from
+            // the page's own world (see PAGE_WORLD_PROBE) — read from here they would be
+            // meaningless. `pw` says whether that answer actually arrived.
+            pw: null,
+            hosts: null,
+            res: null,
+            auth: null,
             caches: null,
             idb: null,
             idbNames: null,
-            auth: null,
         };
         // Both probes are async and either may be unavailable, reject, or — the case that matters —
         // never settle at all. The whole thing is capped so a stuck page still gets a snapshot out.
@@ -379,31 +420,24 @@
                 }
             } catch (e) { diag.idb = 'threw:' + (e && e.name); part(); }
 
-            // Can this origin reach auth.vscode.dev?
-            //
-            // The device completes exactly three CDN requests and then issues none at all — no
-            // auth.vscode.dev, no unpkg, nothing — while a healthy load finishes ~61 across seven
-            // hosts. A pending request leaves no resource-timing entry, so "absent" and "never
-            // returned" look identical from outside. This asks directly.
-            //
-            // VS Code's bootstrap POSTs here with credentials to fetch half of the key that
-            // decrypts its stored sign-in, retries four times over ~1.4s, and on failure deletes
-            // those credentials. From a healthy Gecko it answers 200 in ~150ms even signed out.
-            //
-            // Only the status, elapsed time and body *length* are recorded — the body is key
-            // material and does not belong in a log.
-            try {
-                const t0 = Date.now();
-                const ctl = new AbortController();
-                const abort = setTimeout(() => ctl.abort(), 4000);
-                fetch('https://auth.vscode.dev', {
-                    method: 'POST', credentials: 'include', signal: ctl.signal
-                }).then(res => res.text().then(b => ({ s: res.status, n: b.length }), () => ({ s: res.status, n: -1 })))
-                  .then(r => { diag.auth = 'ok:' + r.s + ' len=' + r.n + ' ' + (Date.now() - t0) + 'ms'; },
-                        e => { diag.auth = (e && e.name === 'AbortError' ? 'timeout' : 'error:' + (e && e.name)) +
-                                          ' ' + (Date.now() - t0) + 'ms'; })
-                  .then(() => { clearTimeout(abort); part(); });
-            } catch (e) { diag.auth = 'threw:' + (e && e.name); part(); }
+            // Fold in the page-world answer once it lands.
+            requestPageWorldProbe();
+            let waited = 0;
+            const poll = setInterval(() => {
+                waited += 250;
+                if (pageWorld || waited >= 4800) {
+                    clearInterval(poll);
+                    if (pageWorld) {
+                        diag.pw = true;
+                        diag.hosts = pageWorld.hosts;
+                        diag.res = pageWorld.res;
+                        diag.auth = pageWorld.auth;
+                    } else {
+                        diag.pw = false;   // injection never answered; the fields are unknown, not zero
+                    }
+                    part();
+                }
+            }, 250);
         });
     }
 

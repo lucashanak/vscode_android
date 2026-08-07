@@ -184,14 +184,14 @@ class OverlayManager(
                             // (the painted splash); stopping at the splash is what the screenshots
                             // show. hosts names the request that never came back.
                             "bodyKids=${json.opt("bodyKids")} " +
-                            "hosts=${json.opt("hosts")} " +
+                            "pw=${json.opt("pw")} hosts=${json.opt("hosts")} res=${json.opt("res")} " +
                             "text=\"${json.optString("text")}\" " +
                             "caches=${json.opt("caches")} " +
                             // idb=timeout is the one to look for: an open request that never
                             // settles is what microsoft/vscode#145647 blames for a blank workbench.
                             "idb=${json.opt("idb")} idbNames=${json.opt("idbNames")} " +
-                            // auth is the pointed question: the bootstrap POSTs there to unlock its
-                            // stored sign-in, and a healthy Gecko answers 200 in ~150ms.
+                            // auth/hosts/res are measured in the page's own world; pw=false means that
+                            // answer never arrived, so they are unknown rather than zero.
                             "auth=${json.opt("auth")} " +
                             "texts=${json.optJSONArray("texts")} " +
                             "errors=${json.optJSONArray("errors")}")
