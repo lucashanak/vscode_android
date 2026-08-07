@@ -3335,9 +3335,10 @@ class MainActivity : AppCompatActivity() {
 
         // Ask the page to describe itself first. The reload destroys the broken state, so this is
         // the only moment that evidence exists — and the snapshot is what will eventually explain
-        // *why* it wedged, rather than just recovering it again. The delay covers the content
-        // script's internal 1s cap on probing Cache Storage; without it the reload would kill the
-        // page before the answer arrives. Worth the wait when the alternative is a hung session.
+        // *why* it wedged, rather than just recovering it again. The delay has to clear the content
+        // script's own 3.5s cap, which is set by the IndexedDB open probe: a request that never
+        // settles is the current prime suspect, so cutting that probe short would drop exactly the
+        // field worth having. A few seconds is a fair price against a session that is already stuck.
         overlayManager.requestDiag("beforeReload")
         geckoView.postDelayed({
             val stillIdx = currentSessionIdx
@@ -3346,7 +3347,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 FileLogger.w(TAG, "Session changed while capturing diag; reload skipped")
             }
-        }, 1200)
+        }, 3800)
     }
 
     /**

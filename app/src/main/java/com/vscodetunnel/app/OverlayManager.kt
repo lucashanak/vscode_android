@@ -181,6 +181,9 @@ class OverlayManager(
                             "sw=${json.opt("swController")} " +
                             "dpr=${json.opt("dpr")} inner=${json.optString("inner")} " +
                             "caches=${json.opt("caches")} " +
+                            // idb=timeout is the one to look for: an open request that never
+                            // settles is what microsoft/vscode#145647 blames for a blank workbench.
+                            "idb=${json.opt("idb")} idbNames=${json.opt("idbNames")} " +
                             "texts=${json.optJSONArray("texts")} " +
                             "errors=${json.optJSONArray("errors")}")
                     }

@@ -281,19 +281,57 @@
             dpr: safe(() => window.devicePixelRatio),
             inner: safe(() => window.innerWidth + 'x' + window.innerHeight),
             caches: null,
+            idb: null,
+            idbNames: null,
         };
-        // caches.keys() is async and may be unavailable (or reject); never let it block the send.
+        // Both probes are async and either may be unavailable, reject, or — the case that matters —
+        // never settle at all. The whole thing is capped so a stuck page still gets a snapshot out.
         return new Promise(resolve => {
             let settled = false;
-            const done = () => { if (!settled) { settled = true; resolve(diag); } };
-            setTimeout(done, 1000);
+            let pending = 2;
+            const finish = () => { if (!settled) { settled = true; resolve(diag); } };
+            const part = () => { if (--pending <= 0) finish(); };
+            setTimeout(finish, 3500);
+
             try {
-                if (!window.caches || !caches.keys) return done();
-                caches.keys().then(keys => {
-                    diag.caches = keys;
-                    done();
-                }, done);
-            } catch (e) { done(); }
+                if (!window.caches || !caches.keys) part();
+                else caches.keys().then(keys => { diag.caches = keys; part(); }, part);
+            } catch (e) { part(); }
+
+            // Can this origin open IndexedDB at all?
+            //
+            // This is the decisive probe. The bootstrap awaits `validateDbIsOpen` and never mounts
+            // the workbench, with no error anywhere — and microsoft/vscode#145647 ("Firefox: blank
+            // page opening vscode.dev", open since 2022) has a VS Code maintainer concluding
+            // "the overall issue is this where we fail to open IndexedDB", with one reporter
+            // tracing it to enhanced tracking protection. An open request that neither succeeds nor
+            // errors explains every observation here, and it is invisible from outside.
+            //
+            // 'timeout' is therefore the interesting answer, not a failure of the probe.
+            try {
+                if (!window.indexedDB) { diag.idb = 'unavailable'; part(); }
+                else {
+                    const NAME = '__vscodetunnel_idb_probe__';
+                    const req = indexedDB.open(NAME, 1);
+                    const t = setTimeout(() => { if (diag.idb === null) { diag.idb = 'timeout'; part(); } }, 3000);
+                    const settle = (v) => {
+                        if (diag.idb !== null) return;
+                        clearTimeout(t); diag.idb = v; part();
+                    };
+                    req.onsuccess = () => {
+                        try { req.result.close(); indexedDB.deleteDatabase(NAME); } catch (e) {}
+                        settle('ok');
+                    };
+                    req.onerror = () => settle('error:' + (req.error && req.error.name));
+                    req.onblocked = () => settle('blocked');
+                    // Separate from the open probe: enumerating tells us whether VS Code's own
+                    // databases were ever created (msal.db, vscode-web-db, vscode-web-state-db-*).
+                    if (indexedDB.databases) {
+                        indexedDB.databases().then(
+                            dbs => { diag.idbNames = dbs.map(d => d.name); }, () => {});
+                    }
+                }
+            } catch (e) { diag.idb = 'threw:' + (e && e.name); part(); }
         });
     }
 
