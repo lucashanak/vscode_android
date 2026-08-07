@@ -244,6 +244,32 @@
         }, true);
     } catch (e) { /* listeners are best-effort; never break the overlay over diagnostics */ }
 
+    // Console output from the page itself.
+    //
+    // This was the blind spot that made "errors=[]" misleading: a content script runs in an
+    // isolated world and cannot see the page's console, and VS Code reports plenty of failures
+    // that way — including the handler that wipes stored credentials, which only does
+    // console.error. So a real failure could be happening with the snapshot reporting none.
+    //
+    // Only warn/error are taken, each clamped, few kept: this is a third-party page and its error
+    // text is not ours to hoard. It does mean the log can contain page error strings.
+    try {
+        window.addEventListener('__vsct_console', e => {
+            try { noteError('console: ' + String(e.detail).slice(0, 260)); } catch (_) {}
+        }, true);
+        const inject = document.createElement('script');
+        inject.textContent = "(function(){try{" +
+            "var send=function(kind,args){try{var s=kind+': '+Array.prototype.map.call(args,function(a){" +
+            "  try{return (a&&a.message)?a.message:(typeof a==='object'?JSON.stringify(a).slice(0,200):String(a));}" +
+            "  catch(e){return '?';}}).join(' ');" +
+            "  window.dispatchEvent(new CustomEvent('__vsct_console',{detail:s.slice(0,260)}));}catch(e){}};" +
+            "['error','warn'].forEach(function(k){var o=console[k];console[k]=function(){" +
+            "  send(k,arguments); try{return o.apply(console,arguments);}catch(e){}};});" +
+            "}catch(e){}})();";
+        (document.head || document.documentElement).appendChild(inject);
+        inject.remove();
+    } catch (e) { /* page-world injection is best-effort too */ }
+
     function collectDiagText() {
         const found = [];
         for (const sel of DIAG_TEXT_SELECTORS) {
@@ -302,15 +328,16 @@
             caches: null,
             idb: null,
             idbNames: null,
+            auth: null,
         };
         // Both probes are async and either may be unavailable, reject, or — the case that matters —
         // never settle at all. The whole thing is capped so a stuck page still gets a snapshot out.
         return new Promise(resolve => {
             let settled = false;
-            let pending = 2;
+            let pending = 3;
             const finish = () => { if (!settled) { settled = true; resolve(diag); } };
             const part = () => { if (--pending <= 0) finish(); };
-            setTimeout(finish, 3500);
+            setTimeout(finish, 5000);
 
             try {
                 if (!window.caches || !caches.keys) part();
@@ -351,6 +378,32 @@
                     }
                 }
             } catch (e) { diag.idb = 'threw:' + (e && e.name); part(); }
+
+            // Can this origin reach auth.vscode.dev?
+            //
+            // The device completes exactly three CDN requests and then issues none at all — no
+            // auth.vscode.dev, no unpkg, nothing — while a healthy load finishes ~61 across seven
+            // hosts. A pending request leaves no resource-timing entry, so "absent" and "never
+            // returned" look identical from outside. This asks directly.
+            //
+            // VS Code's bootstrap POSTs here with credentials to fetch half of the key that
+            // decrypts its stored sign-in, retries four times over ~1.4s, and on failure deletes
+            // those credentials. From a healthy Gecko it answers 200 in ~150ms even signed out.
+            //
+            // Only the status, elapsed time and body *length* are recorded — the body is key
+            // material and does not belong in a log.
+            try {
+                const t0 = Date.now();
+                const ctl = new AbortController();
+                const abort = setTimeout(() => ctl.abort(), 4000);
+                fetch('https://auth.vscode.dev', {
+                    method: 'POST', credentials: 'include', signal: ctl.signal
+                }).then(res => res.text().then(b => ({ s: res.status, n: b.length }), () => ({ s: res.status, n: -1 })))
+                  .then(r => { diag.auth = 'ok:' + r.s + ' len=' + r.n + ' ' + (Date.now() - t0) + 'ms'; },
+                        e => { diag.auth = (e && e.name === 'AbortError' ? 'timeout' : 'error:' + (e && e.name)) +
+                                          ' ' + (Date.now() - t0) + 'ms'; })
+                  .then(() => { clearTimeout(abort); part(); });
+            } catch (e) { diag.auth = 'threw:' + (e && e.name); part(); }
         });
     }
 

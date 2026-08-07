@@ -190,6 +190,9 @@ class OverlayManager(
                             // idb=timeout is the one to look for: an open request that never
                             // settles is what microsoft/vscode#145647 blames for a blank workbench.
                             "idb=${json.opt("idb")} idbNames=${json.opt("idbNames")} " +
+                            // auth is the pointed question: the bootstrap POSTs there to unlock its
+                            // stored sign-in, and a healthy Gecko answers 200 in ~150ms.
+                            "auth=${json.opt("auth")} " +
                             "texts=${json.optJSONArray("texts")} " +
                             "errors=${json.optJSONArray("errors")}")
                     }
