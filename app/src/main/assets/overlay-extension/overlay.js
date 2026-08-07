@@ -280,6 +280,25 @@
             // report what the page actually sees.
             dpr: safe(() => window.devicePixelRatio),
             inner: safe(() => window.innerWidth + 'x' + window.innerHeight),
+            // Which body children exist. A healthy load ends with DIV.vs-dark — the workbench
+            // container — after the DIV.loading splash. The device reports exactly one child fewer,
+            // so naming them says which stage it stopped at rather than just counting.
+            bodyKids: safe(() => Array.prototype.slice.call(document.body.children, 0, 12)
+                .map(c => c.tagName + '.' + String(c.className || '').split(' ')[0])),
+            // What is actually on screen. Everything so far probed VS Code's own selectors, so a
+            // sign-in prompt, a consent wall or an unsupported-browser notice would have been
+            // invisible to all of it.
+            text: safe(() => (document.body.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 220)),
+            // Per-host completed-request counts. A healthy load finishes ~61 requests across 7
+            // hosts; a host that is absent here is the one whose fetch never came back, which is
+            // the shape of a bootstrap that waits with no error to show.
+            hosts: safe(() => {
+                const h = {};
+                for (const e of performance.getEntriesByType('resource')) {
+                    try { const k = new URL(e.name).host; h[k] = (h[k] || 0) + 1; } catch (_) {}
+                }
+                return h;
+            }),
             caches: null,
             idb: null,
             idbNames: null,

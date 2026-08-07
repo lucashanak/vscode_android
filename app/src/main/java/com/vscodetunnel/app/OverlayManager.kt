@@ -180,6 +180,12 @@ class OverlayManager(
                             "bodyChildren=${json.opt("bodyChildren")} " +
                             "sw=${json.opt("swController")} " +
                             "dpr=${json.opt("dpr")} inner=${json.optString("inner")} " +
+                            // A healthy load ends in DIV.vs-dark (the workbench) after DIV.loading
+                            // (the painted splash); stopping at the splash is what the screenshots
+                            // show. hosts names the request that never came back.
+                            "bodyKids=${json.opt("bodyKids")} " +
+                            "hosts=${json.opt("hosts")} " +
+                            "text=\"${json.optString("text")}\" " +
                             "caches=${json.opt("caches")} " +
                             // idb=timeout is the one to look for: an open request that never
                             // settles is what microsoft/vscode#145647 blames for a blank workbench.
