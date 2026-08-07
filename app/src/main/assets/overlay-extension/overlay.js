@@ -320,6 +320,23 @@
     // text is not ours to hoard. It does mean the log can contain page error strings.
     // The hook itself is installed by pageConsoleHook() above, via wrappedJSObject.
 
+    // Content Security Policy violations.
+    //
+    // These never reach the page's `console` object — the browser logs them itself — so the console
+    // hook is blind to them and `errors=[]` cannot rule them out. Given the page enforces
+    // `require-trusted-types-for 'script'` and loads its workbench bundle dynamically, a blocked
+    // script creation would stop the bootstrap exactly where it stops: after the three initial
+    // downloads, silently.
+    try {
+        document.addEventListener('securitypolicyviolation', e => {
+            try {
+                noteError('csp: ' + e.violatedDirective + ' blocked=' +
+                          String(e.blockedURI || '').slice(0, 80) +
+                          (e.sample ? ' sample=' + String(e.sample).slice(0, 60) : ''));
+            } catch (_) {}
+        }, true);
+    } catch (e) { /* best-effort */ }
+
     function collectDiagText() {
         const found = [];
         for (const sel of DIAG_TEXT_SELECTORS) {
@@ -370,6 +387,19 @@
             // meaningless. `pw` says whether that answer actually arrived.
             pw: null,
             hooked: null,
+            tt: safe(() => typeof window.trustedTypes),
+            globals: safe(() => {
+                const w = (window.wrappedJSObject || window);
+                const out = [];
+                for (const k of ['define', '_VSCODE_WEB_BOOTSTRAP_', '_VSCODE_FILE_ROOT',
+                                 '_VSCODE_NLS_MESSAGES', '_VSCODE_WEB_PACKAGE_TTP',
+                                 'MonacoPerformanceMarks', 'MonacoEnvironment']) {
+                    let t = 'missing';
+                    try { t = typeof w[k]; } catch (e) { t = 'err'; }
+                    if (t !== 'undefined') out.push(k);
+                }
+                return out;
+            }),
             hosts: null,
             res: null,
             auth: null,
