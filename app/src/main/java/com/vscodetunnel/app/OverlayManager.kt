@@ -184,7 +184,11 @@ class OverlayManager(
                             // (the painted splash); stopping at the splash is what the screenshots
                             // show. hosts names the request that never came back.
                             "bodyKids=${json.opt("bodyKids")} " +
-                            "pw=${json.opt("pw")} hooked=${json.opt("hooked")} tt=${json.opt("tt")} globals=${json.opt("globals")} hosts=${json.opt("hosts")} res=${json.opt("res")} " +
+                            "pw=${json.opt("pw")} hooked=${json.opt("hooked")} tt=${json.opt("tt")} " +
+                            // early is the count from the document_start listeners. -1 means that
+                            // script never ran, which is a different problem from "no errors".
+                            "early=${json.opt("early")} globals=${json.opt("globals")} " +
+                            "hosts=${json.opt("hosts")} res=${json.opt("res")} " +
                             "text=\"${json.optString("text")}\" " +
                             "caches=${json.opt("caches")} " +
                             // idb=timeout is the one to look for: an open request that never

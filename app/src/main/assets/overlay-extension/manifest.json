@@ -22,6 +22,18 @@
         "*://insiders.vscode.dev/*"
       ],
       "js": [
+        "early.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "*://vscode.dev/*",
+        "*://*.vscode.dev/*",
+        "*://insiders.vscode.dev/*"
+      ],
+      "js": [
         "overlay.js"
       ],
       "css": [

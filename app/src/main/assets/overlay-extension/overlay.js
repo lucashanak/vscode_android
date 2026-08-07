@@ -320,6 +320,24 @@
     // text is not ours to hoard. It does mean the log can contain page error strings.
     // The hook itself is installed by pageConsoleHook() above, via wrappedJSObject.
 
+    // Anything early.js caught before this script attached.
+    //
+    // This is where the real evidence should be: the page's module bootstrap runs while the
+    // document is still parsing, so a failure there happens long before document_idle. Draining
+    // rather than peeking, so a stale entry from a previous load cannot be mistaken for a fresh one.
+    let earlyCount = null;
+    try {
+        const raw = sessionStorage.getItem('__vsct_early');
+        if (raw !== null) {
+            const list = JSON.parse(raw);
+            earlyCount = list.length;
+            list.forEach(x => noteError(String(x)));
+            sessionStorage.removeItem('__vsct_early');
+        } else {
+            earlyCount = -1;   // early.js never ran, or storage is unavailable
+        }
+    } catch (e) { earlyCount = -2; }
+
     // Content Security Policy violations.
     //
     // These never reach the page's `console` object — the browser logs them itself — so the console
@@ -387,6 +405,7 @@
             // meaningless. `pw` says whether that answer actually arrived.
             pw: null,
             hooked: null,
+            early: safe(() => earlyCount),
             tt: safe(() => typeof window.trustedTypes),
             globals: safe(() => {
                 const w = (window.wrappedJSObject || window);
