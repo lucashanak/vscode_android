@@ -67,6 +67,7 @@ object LogcatBridge {
     private var gecko = 0L
     private var dropped = 0L
     private var lastError: String? = null
+    private var probeLines = -2   // -2 = not attempted yet, -1 = the probe itself threw
 
     @Volatile private var reader: Thread? = null
 
@@ -115,9 +116,9 @@ object LogcatBridge {
             generalLines = generalBuf.toList()
             signalBuf.clear()
             generalBuf.clear()
-            header = "[$reason] seen=$seen gecko=$gecko signal=${signalLines.size} " +
-                "general=${generalLines.size} dropped=$dropped alive=${reader?.isAlive == true}" +
-                (lastError?.let { " error=$it" } ?: "")
+            header = "[$reason] seen=$seen gecko=$gecko probe=$probeLines " +
+                "signal=${signalLines.size} general=${generalLines.size} dropped=$dropped " +
+                "alive=${reader?.isAlive == true}" + (lastError?.let { " error=$it" } ?: "")
         }
         // Always written, even with nothing to show: seen=0 means the reader never got any lines
         // (logcat refused), gecko=0 means it is reading but no tag matched, and a non-zero gecko with
@@ -128,7 +129,33 @@ object LogcatBridge {
         generalLines.forEach { FileLogger.d(TAG, "  $it") }
     }
 
+    /**
+     * One-shot `logcat -d`, so a silent reader can be explained.
+     *
+     * The follow reader came back with `seen=0 alive=true` on the affected device — alive, and not a
+     * single line, our own `Log.d` output included. That points at the platform refusing log access,
+     * but it could equally be an unsupported `-T` flag, and those call for different responses. A
+     * dump-and-exit run without `-T` settles it: `probe=0` alongside `seen=0` means access is denied,
+     * whereas a non-zero probe means the follow invocation is at fault.
+     */
+    private fun probeDump(): Int {
+        return try {
+            val proc = ProcessBuilder("logcat", "-d", "-t", "20")
+                .redirectErrorStream(true)
+                .start()
+            var n = 0
+            proc.inputStream.bufferedReader().use { r -> while (r.readLine() != null) n++ }
+            proc.waitFor()
+            n
+        } catch (t: Throwable) {
+            synchronized(lock) { lastError = "probe: " + (t.message ?: t.javaClass.simpleName) }
+            -1
+        }
+    }
+
     private fun pump() {
+        val probe = probeDump()
+        synchronized(lock) { probeLines = probe }
         try {
             // -v tag gives "E/Tag: message", the cheapest format to split. -T 1 starts at the tail
             // rather than replaying the whole buffer, so the log reflects this run.

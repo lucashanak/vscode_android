@@ -189,6 +189,10 @@ class OverlayManager(
                                 // early is the count from the document_start listeners. -1 means that
                                 // script never ran, which is a different problem from "no errors".
                                 "early=${json.opt("early")} globals=${json.opt("globals")} " +
+                                // The page cannot see why a module load failed -- Gecko reports that
+                                // internally -- so this reproduces the import and reports the real
+                                // Error. imp/impBytes is the first evidence of the *reason*.
+                                "imp=${json.opt("imp")} impBytes=${json.opt("impBytes")} " +
                                 "hosts=${json.opt("hosts")} res=${json.opt("res")} " +
                                 "resList=${json.opt("resList")} " +
                                 "text=\"${json.optString("text")}\" " +

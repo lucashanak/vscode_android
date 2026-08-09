@@ -335,6 +335,65 @@
         ).then(() => { clearTimeout(abort); pageWorld = out; return out; });
     }
 
+    // Import the bundle ourselves, and read the error the page will not give us.
+    //
+    // Gecko reports a failed module load internally, not through the page's console, and the logcat
+    // route to those internal messages turned out to be closed on the affected device: the reader
+    // was alive and had read literally nothing, so this app cannot read its own logs there.
+    //
+    // But the failure can be *reproduced* instead of overheard. A dynamic import of the same URL, in
+    // the page's own world, under the page's CSP and cache, rejects with a real Error — name and
+    // message included. A SyntaxError names a truncated or corrupt body, a TypeError a CORS or
+    // network failure, and an out-of-memory says so; those lead in completely different directions
+    // and nothing measured so far distinguishes them.
+    //
+    // eval is the way in. The page's CSP carries 'unsafe-eval' but no 'unsafe-inline', so an injected
+    // <script> is refused (which is what an earlier attempt discovered) while eval is permitted.
+    // Verified on a healthy page before shipping: import() inside eval resolves normally there.
+    //
+    // Runs only when the page is already broken, and once. The import is followed — not preceded —
+    // by a byte count of the same URL, so our own fetch cannot influence the import's outcome.
+    let impState = 'idle';
+    function startImportProbe() {
+        if (impState !== 'idle') return;
+        try {
+            const w = window.wrappedJSObject;
+            if (!w) { impState = 'nowrap'; return; }
+            // A healthy load has already defined this; there is nothing to diagnose and no reason to
+            // pull a 17 MB module a second time.
+            if (typeof w.define !== 'undefined') { impState = 'skip:healthy'; return; }
+            let big = null;
+            const es = w.performance.getEntriesByType('resource');
+            for (let i = 0; i < es.length; i++) {
+                if (String(es[i].name).indexOf('workbench.web.main.internal.js') !== -1) {
+                    big = String(es[i].name);
+                    break;
+                }
+            }
+            if (!big) { impState = 'nourl'; return; }
+            const u = JSON.stringify(big);
+            impState = 'running';
+            w.eval(
+                "window.__vsctImp='pending';(async()=>{" +
+                "try{const m=await import(" + u + ");" +
+                "window.__vsctImp='ok exports='+Object.keys(m).length;}" +
+                "catch(e){window.__vsctImp='FAIL '+(e&&e.name)+': '+String(e&&e.message).slice(0,180);}" +
+                // Length of the body actually served here. Resource timing cannot show this — the CDN
+                // sends no Timing-Allow-Origin, so its size fields read 0 — but a CORS fetch from
+                // this origin can read the body, and streaming it keeps 17 MB out of memory. There is
+                // no hardcoded expected value: the commit in the URL changes, so the number is only
+                // meaningful next to a fresh measurement of the same URL.
+                "try{const r=await fetch(" + u + ",{mode:'cors'});const rd=r.body.getReader();" +
+                "let n=0;for(;;){const c=await rd.read();if(c.done)break;n+=c.value.byteLength;}" +
+                "window.__vsctBytes=r.status+':'+n;}" +
+                "catch(e){window.__vsctBytes='FAIL '+(e&&e.name);}" +
+                "})();"
+            );
+        } catch (e) {
+            impState = 'error:' + (e && e.name);
+        }
+    }
+
     // Console output from the page itself.
     //
     // This was the blind spot that made "errors=[]" misleading: a content script runs in an
@@ -442,6 +501,19 @@
             pw: null,
             hooked: null,
             early: safe(() => earlyCount),
+            // Started here rather than at script load: at document_idle the bootstrap may not have
+            // given up yet, and a snapshot is by definition a moment worth asking about. The result
+            // therefore lands in a later snapshot -- pressing reload is what surfaces it.
+            imp: safe(() => {
+                startImportProbe();
+                const w = window.wrappedJSObject;
+                const r = w && w.__vsctImp;
+                return impState + (r ? ' | ' + String(r) : '');
+            }),
+            impBytes: safe(() => {
+                const w = window.wrappedJSObject;
+                return (w && w.__vsctBytes) ? String(w.__vsctBytes) : null;
+            }),
             tt: safe(() => typeof window.trustedTypes),
             globals: safe(() => {
                 const w = (window.wrappedJSObject || window);
