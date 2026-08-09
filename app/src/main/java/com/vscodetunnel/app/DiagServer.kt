@@ -1,5 +1,6 @@
 package com.vscodetunnel.app
 
+import android.content.Context
 import java.io.BufferedOutputStream
 import java.io.OutputStream
 import java.net.InetAddress
@@ -25,12 +26,30 @@ import java.net.URLDecoder
  *
  * The matrix, each case an isolated document with its own response headers:
  *
- *   1  1 KB module, same origin                          — does module loading work at all
- *   2  1 KB module, cross origin                         — does a CORS module import work
- *   3  17.7 MB module, same origin                       — does the size alone break it
- *   4  17.7 MB module, cross origin                      — size plus CORS
+ *   1  1 KB module, same origin                           — does module loading work at all
+ *   2  1 KB module, cross origin                          — does a CORS module import work
+ *   3  17.7 MB module, same origin                        — does the size alone break it
+ *   4  17.7 MB module, cross origin                       — size plus CORS
  *   5  4 + a 325 KB inline module doing the static import — the exact shape of vscode.dev
- *   6  5 under require-trusted-types-for 'script'         — the last measured difference
+ *   6  5 under require-trusted-types-for 'script'         — Trusted Types enforcement
+ *   7  the REAL bundle, same origin                       — the file's own content and compile cost
+ *   8  the REAL bundle, cross origin, 325 KB inline       — the closest reproduction available
+ *
+ * Cases 1-6 all passed on the affected device, which retires "GeckoView cannot load a large
+ * cross-origin module from inside a large inline module" — it does, faultlessly. It also exposed a
+ * limit of those cases that has to be said plainly: a generated module is 17.7 MB of comments, so it
+ * tests transfer size and almost no compile cost, whereas the real bundle is 17.7 MB of dense
+ * minified code. Hence 7 and 8, which serve the genuine file.
+ *
+ * **Reading 7 and 8 correctly.** The real bundle expects globals that only VS Code's bootstrap sets,
+ * so it is *supposed* to throw once it runs. Measured on a working browser, the healthy outcome is:
+ *
+ *   FAIL:window-error: Error: !!! NLS MISSING: 2055 !!!
+ *
+ * That is a success for this purpose — it means the module instantiated and executed. The failure
+ * that matters is `FAIL:error-event-on-script-element` or `FAIL:resource-error:<script>`, which is
+ * instantiation failing, and that is the signature seen on vscode.dev. Without this baseline, a
+ * healthy result here reads as a failure.
  *
  * Results come back through an HTTP request to /report, which lands in [FileLogger]. No content
  * script, no extension, no page console, nothing that has already proved unreachable.
@@ -50,13 +69,16 @@ object DiagServer {
     @Volatile private var portMain = -1
     @Volatile private var portAlt = -1
     @Volatile private var running = false
+    @Volatile private var appContext: Context? = null
+    private val bundleLock = Any()
 
     /**
      * Starts both listeners and returns the harness URL, or null if it could not bind.
      *
      * Idempotent: a second call returns the already-running harness rather than binding again.
      */
-    fun start(): String? {
+    fun start(context: Context): String? {
+        appContext = context.applicationContext
         if (running && portMain > 0) return "http://127.0.0.1:$portMain/harness"
         return try {
             val main = ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"))
@@ -113,6 +135,7 @@ object DiagServer {
             "/harness" -> sendHtml(out, harnessHtml(), null)
             "/case" -> sendHtml(out, caseHtml(query), if (query["tt"] == "1") TT_CSP else null)
             "/mod.js" -> sendModule(out, (query["size"] ?: "0").toIntOrNull() ?: 0)
+            "/real.js" -> sendRealBundle(out)
             "/report" -> {
                 val case = query["case"] ?: "?"
                 val result = query["r"] ?: "?"
@@ -188,10 +211,67 @@ object DiagServer {
         }
     }
 
+    /**
+     * Serves the genuine workbench bundle, fetched once from the CDN and cached on disk.
+     *
+     * Cases 1-6 all passed on the affected device, which retires "GeckoView cannot load a large
+     * cross-origin module" and leaves the real file's own content as the open question — a generated
+     * module of padding compiles to almost nothing, whereas 17.7 MB of dense minified code does not.
+     * Serving the real bytes from here separates content from origin: if it fails same-origin too, the
+     * file is the problem; if it loads, the problem is in how vscode.dev loads it.
+     *
+     * The URL cannot be hardcoded because its commit changes; the content script records whichever one
+     * the page actually requested (see OverlayManager), so the tunnel has to have been opened once.
+     */
+    private fun sendRealBundle(out: OutputStream) {
+        val ctx = appContext
+        val url = ctx?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+            ?.getString("last_bundle_url", null)
+        if (ctx == null || url.isNullOrEmpty()) {
+            FileLogger.w(TAG, "No bundle URL recorded yet — open the tunnel once, then re-run")
+            sendHtml(out, "no bundle url", null)
+            return
+        }
+        val cached = java.io.File(ctx.cacheDir, "real-bundle.js")
+        synchronized(bundleLock) {
+            if (!cached.exists() || cached.length() < 1_000_000) {
+                try {
+                    val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                        setRequestProperty("User-Agent", CHROME_UA)
+                        // Identity encoding: the file is served to the browser uncompressed, so
+                        // storing it decoded keeps Content-Length honest without a second pass.
+                        setRequestProperty("Accept-Encoding", "identity")
+                        connectTimeout = 20_000
+                        readTimeout = 60_000
+                    }
+                    conn.inputStream.use { input ->
+                        cached.outputStream().use { file -> input.copyTo(file, 64 * 1024) }
+                    }
+                    FileLogger.w(TAG, "Fetched real bundle: ${cached.length()} bytes")
+                } catch (t: Throwable) {
+                    FileLogger.e(TAG, "Could not fetch the real bundle", t)
+                    try { cached.delete() } catch (_: Throwable) {}
+                    sendHtml(out, "fetch failed", null)
+                    return
+                }
+            }
+        }
+        val head = "HTTP/1.1 200 OK\r\n" +
+            "Content-Type: application/javascript; charset=utf-8\r\n" +
+            "Content-Length: ${cached.length()}\r\n" +
+            "Access-Control-Allow-Origin: *\r\n" +
+            "Cache-Control: no-store\r\n" +
+            "Connection: close\r\n\r\n"
+        out.write(head.toByteArray(Charsets.US_ASCII))
+        cached.inputStream().use { it.copyTo(out, 64 * 1024) }
+    }
+
+    private const val CHROME_UA = GeckoManager.CHROME_USER_AGENT
+
     /** Case parameters, kept next to the matrix in the class comment. */
     private data class Case(
         val id: Int, val size: Int, val cross: Boolean, val inlineBytes: Int, val tt: Boolean,
-        val label: String
+        val label: String, val real: Boolean = false
     )
 
     private fun cases() = listOf(
@@ -200,14 +280,19 @@ object DiagServer {
         Case(3, BIG_SIZE, false, 0, false, "17.7MB same-origin"),
         Case(4, BIG_SIZE, true, 0, false, "17.7MB cross-origin"),
         Case(5, BIG_SIZE, true, INLINE_SIZE, false, "17.7MB cross + 325KB inline module"),
-        Case(6, BIG_SIZE, true, INLINE_SIZE, true, "case 5 + require-trusted-types-for")
+        Case(6, BIG_SIZE, true, INLINE_SIZE, true, "case 5 + require-trusted-types-for"),
+        // The generated module is 17.7 MB of comments, which tests transfer size and almost no
+        // compile cost. 17.7 MB of dense minified code is a different question, and cases 1-6 passing
+        // on the device is what makes it the question that matters. These two serve the real file.
+        Case(7, 0, false, 0, false, "REAL bundle, same origin", real = true),
+        Case(8, 0, true, INLINE_SIZE, false, "REAL bundle, cross origin, 325KB inline", real = true)
     )
 
     private fun harnessHtml(): String {
         val frames = cases().joinToString(",\n") { c ->
             "  {id:${c.id}, url:'/case?case=${c.id}&size=${c.size}" +
                 "&cross=${if (c.cross) 1 else 0}&inline=${c.inlineBytes}" +
-                "&tt=${if (c.tt) 1 else 0}', label:${quote(c.label)}}"
+                "&tt=${if (c.tt) 1 else 0}&real=${if (c.real) 1 else 0}', label:${quote(c.label)}}"
         }
         // Sequential, not parallel: two 17.7 MB module compilations at once would muddy every result
         // and could fail for reasons that have nothing to do with the question.
@@ -258,7 +343,7 @@ next();
         val cross = q["cross"] == "1"
         val inlineBytes = (q["inline"] ?: "0").toIntOrNull() ?: 0
         val origin = if (cross) "http://127.0.0.1:$portAlt" else ""
-        val modUrl = "$origin/mod.js?size=$size"
+        val modUrl = if (q["real"] == "1") "$origin/real.js" else "$origin/mod.js?size=$size"
 
         val loader = if (inlineBytes > 0) {
             // Padding first so the import statement sits deep inside a large module, as it does in

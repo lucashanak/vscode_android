@@ -2212,7 +2212,7 @@ class MainActivity : AppCompatActivity() {
             lp.topMargin = dp(4)
             layoutParams = lp
             setOnClickListener {
-                val url = DiagServer.start()
+                val url = DiagServer.start(this@MainActivity)
                 if (url == null) {
                     android.widget.Toast.makeText(this@MainActivity,
                         "Could not start the diagnostic server — see the log.",

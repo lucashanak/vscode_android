@@ -210,6 +210,16 @@ class OverlayManager(
                             // module load at all — the browser reports that itself — so the two
                             // halves of the evidence only mean something side by side.
                             LogcatBridge.dump(json.optString("reason", "diag"))
+
+                            // Remember the commit-pinned bundle URL so DiagServer can re-serve the
+                            // real file. Its commit changes, so it cannot be hardcoded, and the page
+                            // is the only thing that knows which one it actually asked for.
+                            val bundle = json.optString("impUrl")
+                            if (bundle.startsWith("https://main.vscode-cdn.net/")) {
+                                geckoView.context
+                                    .getSharedPreferences("app_settings", android.content.Context.MODE_PRIVATE)
+                                    .edit().putString("last_bundle_url", bundle).apply()
+                            }
                         }
                     }
                 } catch (_: Exception) {}

@@ -312,6 +312,12 @@
                 try {
                     const e = es[i];
                     const path = new URL(e.name).pathname;
+                    if (path.indexOf('workbench.web.main.internal.js') !== -1) {
+                        // Handed to the app so DiagServer can re-serve the real bundle locally: a
+                        // generated module of padding tests transfer size, not the compile cost of
+                        // 17 MB of dense minified code, which is a different question entirely.
+                        out.impUrl = e.name;
+                    }
                     out.resList.push(
                         path.slice(path.lastIndexOf('/') + 1).slice(0, 34) +
                         '|' + (e.initiatorType || '?') +
@@ -535,6 +541,7 @@
             hosts: null,
             res: null,
             resList: null,
+            impUrl: null,
             auth: null,
             caches: null,
             idb: null,
@@ -603,6 +610,7 @@
                         diag.hosts = pageWorld.hosts;
                         diag.res = pageWorld.res;
                         diag.resList = pageWorld.resList;
+                        diag.impUrl = pageWorld.impUrl;
                         diag.auth = pageWorld.auth;
                     } else {
                         diag.pw = false;   // never produced a result: unknown, not zero

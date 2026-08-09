@@ -39,47 +39,37 @@ object GeckoManager {
     /**
      * Gecko preferences, written out for `configFilePath` since GeckoView exposes no direct pref API.
      *
-     * One pref, and it is a hypothesis under test rather than a setting anybody asked for.
+     * Currently empty, and deliberately so. Two prefs have occupied it and both were disproved on the
+     * device, which is worth recording where the next hypothesis will be typed:
      *
-     * The previous occupant of this file disabled `dom.script_loader.bytecode_cache.enabled`, on the
-     * theory that a 17.7 MB script overruns the cache entry's alternate-data limit (bug 1448476) and
-     * leaves it corrupt. That is now settled and gone: the workbench still wedged with the bytecode
-     * cache off, and a byte count of the cached bundle came back identical to a fresh copy —
-     * 17 874 565 both ways, matching what a healthy desktop browser downloads. The body is intact,
-     * so nothing in that family survives, and keeping the pref would cost start-up time for nothing.
+     *   dom.script_loader.bytecode_cache.enabled=false — for the theory that a 17.7 MB script
+     *     overruns the cache entry's alternate-data limit (bug 1448476) and leaves it corrupt. The
+     *     workbench still wedged, and a streamed byte count of the cached bundle came back identical
+     *     to a fresh copy: 17 874 565 both ways, the same figure a healthy desktop downloads.
      *
-     * What is left is the one difference measured between this device and every environment where the
-     * workbench does mount, and it is not a flag but a different code path:
+     *   dom.security.trusted_types.enabled=false — for the one difference then measured between this
+     *     device and every environment where the workbench mounts. It worked exactly as intended:
+     *     `_VSCODE_WEB_PACKAGE_TTP` disappeared, so vscode.dev took the same bootstrap branch as a
+     *     working desktop. It still wedged.
      *
-     *   desktop Firefox 146/147:  trustedTypes undefined, _VSCODE_WEB_PACKAGE_TTP undefined, loads
-     *   GeckoView 149 here:       trustedTypes object,    _VSCODE_WEB_PACKAGE_TTP defined,   wedges
-     *
-     * vscode.dev only creates that policy global when `window.trustedTypes` exists, so on this device
-     * its bootstrap takes the Trusted Types branch — the branch that produces script URLs — and
-     * nowhere this has been tested successfully does. GeckoView enables Trusted Types even though
-     * mozilla-central still defaults `dom.security.trusted_types.enabled` to false, and 149 enforces
-     * `require-trusted-types-for`, which 146 and 147 both log as an unknown directive. That is why an
-     * earlier "Trusted Types refuted" conclusion was worthless: it enabled the API on a build that
-     * ignored the directive, so it tested the API's presence and not its enforcement.
-     *
-     * Enforcement cannot be reproduced here — 147 is the newest build obtainable — so the test has to
-     * run on the device, and it runs in the honest direction: remove the suspect. If the workbench
-     * appears, Trusted Types enforcement is the cause and this pref is also the workaround. If it
-     * still wedges, the last measured difference is eliminated.
-     *
-     * The cost is real but small: Trusted Types are defence-in-depth against DOM XSS for pages that
-     * opt in via CSP, and vscode.dev is the only page this app loads. Not something to keep
-     * indefinitely without deciding to.
+     * Neither is worth keeping — one costs script start-up time, the other is a security feature — so
+     * both are gone rather than left behind as sediment.
      */
     private fun writeGeckoConfig(context: Context): java.io.File {
         val file = java.io.File(context.filesDir, "gecko-config.yaml")
         val yaml = """
             prefs:
-              dom.security.trusted_types.enabled: false
+              # Intentionally empty. Two prefs have been tried here and both were disproved:
+              # dom.script_loader.bytecode_cache.enabled=false (the wedge persisted, and the cached
+              # bundle measured byte-identical to a fresh copy) and
+              # dom.security.trusted_types.enabled=false (_VSCODE_WEB_PACKAGE_TTP duly disappeared,
+              # so the page took the same bootstrap branch as a working desktop, and it still wedged).
+              # Neither is worth keeping: one costs script start-up time, the other is a security
+              # feature. The file stays so the next hypothesis has somewhere to go.
         """.trimIndent() + "\n"
         return try {
             if (!file.exists() || file.readText() != yaml) file.writeText(yaml)
-            FileLogger.d(TAG, "Gecko config written: Trusted Types disabled (blank-workbench test)")
+            FileLogger.d(TAG, "Gecko config written: no pref overrides (both hypotheses disproved)")
             file
         } catch (t: Throwable) {
             FileLogger.e(TAG, "Failed to write Gecko config", t)
