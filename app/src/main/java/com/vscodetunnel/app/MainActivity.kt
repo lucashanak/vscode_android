@@ -2197,6 +2197,34 @@ class MainActivity : AppCompatActivity() {
         layout.addView(staleRefreshField)
         label("Full reset is the fallback if a reload doesn't recover it. It signs you out of " +
             "VS Code and re-downloads the editor (~70 MB), so it isn't done automatically.")
+        label("Module diagnostics loads six locally-served test pages that vary one factor each — " +
+            "module size, same vs cross origin, a large inline module, and Trusted Types — to find " +
+            "which one breaks the editor. Takes about 90 seconds; results go to the log as " +
+            "\"CASE n → …\". Nothing is sent anywhere: the pages are served by this app to itself.")
+        val diagBtn = Button(this).apply {
+            text = "Run module diagnostics (~90 s)"
+            isAllCaps = false; textSize = 14f
+            setTextColor(resources.getColor(R.color.text_white, theme))
+            setBackgroundColor(resources.getColor(R.color.surface_variant, theme))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            lp.topMargin = dp(4)
+            layoutParams = lp
+            setOnClickListener {
+                val url = DiagServer.start()
+                if (url == null) {
+                    android.widget.Toast.makeText(this@MainActivity,
+                        "Could not start the diagnostic server — see the log.",
+                        android.widget.Toast.LENGTH_LONG).show()
+                } else {
+                    isEnabled = false; text = "Running — watch the log"
+                    openTunnel(url)
+                }
+            }
+        }
+        layout.addView(diagBtn)
+
         val clearCacheBtn = Button(this).apply {
             text = "Reset VS Code (signs you out)"
             isAllCaps = false; textSize = 14f
