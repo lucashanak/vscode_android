@@ -263,6 +263,10 @@
         try {
             if (typeof exportFunction !== 'function' || !window.wrappedJSObject) return false;
             const w = window.wrappedJSObject;
+            // early.js hooks the same console at document_start and its capture is strictly better —
+            // it is in place before the page's own scripts run. Wrapping again would only duplicate
+            // every message, so defer to it and say so in the report.
+            try { if (sessionStorage.getItem('__vsct_conhook') === '1') return 'early'; } catch (_) {}
             ['error', 'warn'].forEach(kind => {
                 const original = w.console[kind];
                 exportFunction(function () {
@@ -325,18 +329,25 @@
     // This is where the real evidence should be: the page's module bootstrap runs while the
     // document is still parsing, so a failure there happens long before document_idle. Draining
     // rather than peeking, so a stale entry from a previous load cannot be mistaken for a fresh one.
+    // Drained at every snapshot, not once at load: early.js keeps its console hook installed for
+    // the life of the page, so a message logged after this script attached would otherwise sit in
+    // storage unread. The count accumulates across drains.
     let earlyCount = null;
-    try {
-        const raw = sessionStorage.getItem('__vsct_early');
-        if (raw !== null) {
-            const list = JSON.parse(raw);
-            earlyCount = list.length;
-            list.forEach(x => noteError(String(x)));
-            sessionStorage.removeItem('__vsct_early');
-        } else {
-            earlyCount = -1;   // early.js never ran, or storage is unavailable
-        }
-    } catch (e) { earlyCount = -2; }
+    function drainEarly() {
+        try {
+            const raw = sessionStorage.getItem('__vsct_early');
+            if (raw !== null) {
+                const list = JSON.parse(raw);
+                if (earlyCount === null || earlyCount < 0) earlyCount = 0;
+                earlyCount += list.length;
+                list.forEach(x => noteError(String(x)));
+                sessionStorage.removeItem('__vsct_early');
+            } else if (earlyCount === null) {
+                earlyCount = -1;   // early.js never ran, or storage is unavailable
+            }
+        } catch (e) { if (earlyCount === null) earlyCount = -2; }
+    }
+    drainEarly();
 
     // Content Security Policy violations.
     //
@@ -370,6 +381,9 @@
     }
 
     function buildDiag(reason) {
+        // Before anything is read, so console output early.js captured since the last snapshot
+        // lands in this one's `errors` rather than the next.
+        drainEarly();
         const wb = safe(() => document.querySelector('.monaco-workbench'));
         const diag = {
             type: 'diag',
