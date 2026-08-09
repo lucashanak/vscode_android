@@ -12,7 +12,8 @@
     "nativeMessaging",
     "nativeMessagingFromContent",
     "geckoViewAddons",
-    "https://auth.vscode.dev/*"
+    "https://auth.vscode.dev/*",
+    "https://main.vscode-cdn.net/*"
   ],
   "content_scripts": [
     {

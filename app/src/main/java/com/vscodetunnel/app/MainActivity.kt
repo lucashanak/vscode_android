@@ -73,6 +73,14 @@ import androidx.biometric.BiometricPrompt
 class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "VSCodeTunnel"
+
+        /**
+         * How long a gap makes the next reload press a fresh attempt rather than an escalation.
+         *
+         * Consecutive presses against a wedged workbench come seconds apart; a tap tomorrow should
+         * not inherit today's position on the ladder and skip straight to clearing the CDN cache.
+         */
+        private const val RUNG_RESET_MS = 120_000L
         private const val PREFS_AUTH = "auth"
         private const val PREFS_RECENT = "recent"
         private const val KEY_TOKEN = "token"
@@ -3324,6 +3332,10 @@ class MainActivity : AppCompatActivity() {
      * explicitly and is looking at the screen, so refusing silently would be worse than trying and
      * failing. The network state is logged so a failure is still explicable afterwards.
      */
+    /** Position on the reload button's escalation ladder — see [reloadCurrentTunnel]. */
+    private var reloadRung = 0
+    private var lastReloadPressAt = 0L
+
     private fun reloadCurrentTunnel(reason: String) {
         val idx = currentSessionIdx
         if (idx !in tunnelSessions.indices) {
@@ -3343,13 +3355,69 @@ class MainActivity : AppCompatActivity() {
         // cost that showed up in a real log — the user backgrounded the app during those 5s, the
         // session changed, and the reload was dropped entirely. A button that does nothing is worse
         // than a slightly thinner snapshot, and the auth probe that matters settles in ~300ms.
+        // Repeated presses escalate. Nothing escalates on its own — each rung needs a deliberate tap.
+        //
+        // The user already presses this button more than once when the workbench is wedged ("2x
+        // refresh button to neopravil"), and every one of those presses did the identical thing, so
+        // pressing again could never do more than the first press did. Now each press goes one step
+        // further, and which step restores the workbench is itself the finding:
+        //
+        //   1. reload                     — the page's own state
+        //   2. drop the CDN asset cache   — the cached bundle. Never once replaced by any automatic
+        //                                   path: reloads reuse it and the cold-start clear is scoped
+        //                                   to vscode.dev, a different base domain.
+        //   3. point at the full reset    — DOM storage, service worker, auth. Not done here: it
+        //                                   costs the sign-in, so it stays a deliberate act in
+        //                                   Settings rather than something a third tap can trigger.
+        //
+        // A press well after the previous one is a fresh problem rather than an escalation, so the
+        // ladder resets — otherwise a tap tomorrow would inherit today's position.
+        val now = System.currentTimeMillis()
+        if (now - lastReloadPressAt > RUNG_RESET_MS) reloadRung = 0
+        lastReloadPressAt = now
+        val rung = reloadRung
+        reloadRung = (reloadRung + 1).coerceAtMost(2)
+        FileLogger.w(TAG, "Recovery rung ${rung + 1}/3 ($reason)")
+
+        // Ask the page to describe itself first: the reload destroys the broken state, so this is
+        // the only moment that evidence exists.
+        //
+        // This used to wait 5s to clear the content script's own 4.5s probe cap, on the reasoning
+        // that a request which never settles was the prime suspect and cutting the probe short would
+        // drop the field worth having. That has been overtaken twice. The stall is now pinned to an
+        // inline module script that fails outright, not to a hanging request; and the wait had a
+        // cost that showed up in a real log — the user backgrounded the app during those 5s, the
+        // session changed, and the reload was dropped entirely. A button that does nothing is worse
+        // than a slightly thinner snapshot, and the auth probe that matters settles in ~300ms.
         overlayManager.requestDiag("beforeReload")
         geckoView.postDelayed({
             val stillIdx = currentSessionIdx
-            if (stillIdx in tunnelSessions.indices && tunnelSessions[stillIdx].url == info.url) {
-                tunnelSessions[stillIdx].session.reload()
-            } else {
+            if (stillIdx !in tunnelSessions.indices || tunnelSessions[stillIdx].url != info.url) {
                 FileLogger.w(TAG, "Session changed while capturing diag; reload skipped")
+                return@postDelayed
+            }
+            when (rung) {
+                0 -> tunnelSessions[stillIdx].session.reload()
+                1 -> GeckoManager.clearCdnAssetCache(this) {
+                    runOnUiThread {
+                        val i = currentSessionIdx
+                        if (i in tunnelSessions.indices && tunnelSessions[i].url == info.url) {
+                            tunnelSessions[i].session.reload()
+                        }
+                        android.widget.Toast.makeText(
+                            this, "Cleared cached VS Code assets — reloading",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+                else -> {
+                    tunnelSessions[stillIdx].session.reload()
+                    android.widget.Toast.makeText(
+                        this,
+                        "Still stuck. Next step: Settings → \"Reset VS Code\" (signs you out).",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
             }
         }, 1500)
     }

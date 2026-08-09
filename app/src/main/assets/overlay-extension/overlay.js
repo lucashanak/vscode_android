@@ -335,35 +335,56 @@
         ).then(() => { clearTimeout(abort); pageWorld = out; return out; });
     }
 
-    // Import the bundle ourselves, and read the error the page will not give us.
+    // Measure the bundle the device actually has: cached copy against a fresh one.
     //
-    // Gecko reports a failed module load internally, not through the page's console, and the logcat
-    // route to those internal messages turned out to be closed on the affected device: the reader
-    // was alive and had read literally nothing, so this app cannot read its own logs there.
+    // The previous attempt here ran a dynamic import() through the page's eval, to read the real
+    // Error behind the module failure. The device answered that plainly: Trusted Types blocked it.
     //
-    // But the failure can be *reproduced* instead of overheard. A dynamic import of the same URL, in
-    // the page's own world, under the page's CSP and cache, rejects with a real Error — name and
-    // message included. A SyntaxError names a truncated or corrupt body, a TypeError a CORS or
-    // network failure, and an out-of-memory says so; those lead in completely different directions
-    // and nothing measured so far distinguishes them.
+    //   csp: require-trusted-types-for blocked=trusted-types-sink sample=eval|window.__vsctImp=...
     //
-    // eval is the way in. The page's CSP carries 'unsafe-eval' but no 'unsafe-inline', so an injected
-    // <script> is refused (which is what an earlier attempt discovered) while eval is permitted.
-    // Verified on a healthy page before shipping: import() inside eval resolves normally there.
+    // Worth recording what that settled. The CSP-violation channel demonstrably works — it caught
+    // this — so the absence of any `csp:` entry for the page's own scripts is now a verified negative
+    // rather than an empty field. It also invalidates an earlier claim of mine: Trusted Types were
+    // "refuted" using desktop Firefox, but that build logged `require-trusted-types-for` as an
+    // unknown directive, so enforcement was never actually tested. GeckoView 149 enforces it.
     //
-    // Runs only when the page is already broken, and once. The import is followed — not preceded —
-    // by a byte count of the same URL, so our own fetch cannot influence the import's outcome.
+    // With eval, the page console and Gecko's own log all closed off, the remaining question that can
+    // still be answered is whether the bytes are intact. Research points at the size class: Gecko
+    // keeps compiled bytecode as alternate data inside the script's HTTP cache entry, and bug 1448476
+    // records 15+ MB scripts overrunning the maximum entry size and leaving it corrupt — "caches
+    // correctly at first, unusable on later visits". This bundle is 17.7 MB decoded. That bug was
+    // fixed in Firefox 61, so this is not a diagnosis; but if the cached copy differs in length from
+    // a fresh one, corruption stops being a theory.
+    //
+    // Runs from the content script rather than the page, so eval and Trusted Types do not apply; the
+    // manifest grants main.vscode-cdn.net for it. Streamed, so 17 MB is never held in memory. Once,
+    // and only when the page is already broken — a healthy load pays nothing.
     let impState = 'idle';
+    let impCached = null;
+    let impFresh = null;
+
+    function countBytes(url, mode) {
+        return fetch(url, { cache: mode }).then(r => {
+            if (!r.ok) return 'status ' + r.status;
+            const reader = r.body.getReader();
+            let n = 0;
+            const step = () => reader.read().then(c => {
+                if (c.done) return n;
+                n += c.value.byteLength;
+                return step();
+            });
+            return step();
+        }).catch(e => 'FAIL ' + (e && e.name));
+    }
+
     function startImportProbe() {
         if (impState !== 'idle') return;
         try {
             const w = window.wrappedJSObject;
-            if (!w) { impState = 'nowrap'; return; }
-            // A healthy load has already defined this; there is nothing to diagnose and no reason to
-            // pull a 17 MB module a second time.
-            if (typeof w.define !== 'undefined') { impState = 'skip:healthy'; return; }
+            // A healthy load already has this; nothing to diagnose and no reason to pull megabytes.
+            if (w && typeof w.define !== 'undefined') { impState = 'skip:healthy'; return; }
             let big = null;
-            const es = w.performance.getEntriesByType('resource');
+            const es = (w ? w.performance : performance).getEntriesByType('resource');
             for (let i = 0; i < es.length; i++) {
                 if (String(es[i].name).indexOf('workbench.web.main.internal.js') !== -1) {
                     big = String(es[i].name);
@@ -371,24 +392,14 @@
                 }
             }
             if (!big) { impState = 'nourl'; return; }
-            const u = JSON.stringify(big);
             impState = 'running';
-            w.eval(
-                "window.__vsctImp='pending';(async()=>{" +
-                "try{const m=await import(" + u + ");" +
-                "window.__vsctImp='ok exports='+Object.keys(m).length;}" +
-                "catch(e){window.__vsctImp='FAIL '+(e&&e.name)+': '+String(e&&e.message).slice(0,180);}" +
-                // Length of the body actually served here. Resource timing cannot show this — the CDN
-                // sends no Timing-Allow-Origin, so its size fields read 0 — but a CORS fetch from
-                // this origin can read the body, and streaming it keeps 17 MB out of memory. There is
-                // no hardcoded expected value: the commit in the URL changes, so the number is only
-                // meaningful next to a fresh measurement of the same URL.
-                "try{const r=await fetch(" + u + ",{mode:'cors'});const rd=r.body.getReader();" +
-                "let n=0;for(;;){const c=await rd.read();if(c.done)break;n+=c.value.byteLength;}" +
-                "window.__vsctBytes=r.status+':'+n;}" +
-                "catch(e){window.__vsctBytes='FAIL '+(e&&e.name);}" +
-                "})();"
-            );
+            // Cached first, then fresh — reversing them would let the fresh fetch overwrite the very
+            // copy being measured.
+            countBytes(big, 'force-cache').then(n => {
+                impCached = n;
+                return countBytes(big, 'reload');
+            }).then(n => { impFresh = n; impState = 'done'; },
+                    e => { impState = 'error:' + (e && e.name); });
         } catch (e) {
             impState = 'error:' + (e && e.name);
         }
@@ -504,16 +515,10 @@
             // Started here rather than at script load: at document_idle the bootstrap may not have
             // given up yet, and a snapshot is by definition a moment worth asking about. The result
             // therefore lands in a later snapshot -- pressing reload is what surfaces it.
-            imp: safe(() => {
-                startImportProbe();
-                const w = window.wrappedJSObject;
-                const r = w && w.__vsctImp;
-                return impState + (r ? ' | ' + String(r) : '');
-            }),
-            impBytes: safe(() => {
-                const w = window.wrappedJSObject;
-                return (w && w.__vsctBytes) ? String(w.__vsctBytes) : null;
-            }),
+            imp: safe(() => { startImportProbe(); return impState; }),
+            // Equal lengths clear the cached body; different lengths convict it.
+            impBytes: safe(() => (impCached === null && impFresh === null)
+                ? null : ('cached=' + impCached + ' fresh=' + impFresh)),
             tt: safe(() => typeof window.trustedTypes),
             globals: safe(() => {
                 const w = (window.wrappedJSObject || window);

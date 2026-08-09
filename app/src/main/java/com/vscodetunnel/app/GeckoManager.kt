@@ -21,6 +21,9 @@ object GeckoManager {
      */
     private const val TUNNEL_BASE_DOMAIN = "vscode.dev"
 
+    /** Where the commit-pinned workbench assets live — a different base domain from the editor. */
+    private const val CDN_BASE_DOMAIN = "vscode-cdn.net"
+
     private var runtime: GeckoRuntime? = null
     private var overlayExtension: WebExtension? = null
 
@@ -32,6 +35,43 @@ object GeckoManager {
     const val CHROME_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/135.0.0.0 Mobile Safari/537.36"
+
+    /**
+     * Gecko preferences, written out for `configFilePath` since GeckoView exposes no direct pref API.
+     *
+     * One pref, and it is a hypothesis under test rather than a setting anybody asked for.
+     *
+     * The blank workbench comes down to a module graph that fails to instantiate with the bundle
+     * already in cache, no CSP violation, nothing on the page's console, and no way left to ask the
+     * page directly. What research turned up is a mechanism that fits every observation at once:
+     * Gecko stores compiled bytecode as "alternate data" inside the HTTP cache entry for a script,
+     * and bug 1448476 records large scripts (15+ MB, generating ~30 MB of bytecode) overrunning the
+     * maximum entry size and leaving the entry corrupt — "caches correctly at first, unusable on
+     * later visits". This bundle is 17.7 MB decoded, its entry lives on `main.vscode-cdn.net` where
+     * [clearTunnelDocumentCache] deliberately never reaches, and only a full clear has ever fixed it.
+     *
+     * That specific bug was fixed in Firefox 61 and this is GeckoView 149, so this is emphatically
+     * not a diagnosis — but Android's cache limits are far smaller than the desktop figures in that
+     * report, and the size class is the first thing found that explains the shape of the failure.
+     * Turning the bytecode cache off removes that path entirely: if the wedging stops, the cause is
+     * localised; if it continues, a whole family of explanations is eliminated. Costs a little
+     * script start-up time and nothing else.
+     */
+    private fun writeGeckoConfig(context: Context): java.io.File {
+        val file = java.io.File(context.filesDir, "gecko-config.yaml")
+        val yaml = """
+            prefs:
+              dom.script_loader.bytecode_cache.enabled: false
+        """.trimIndent() + "\n"
+        return try {
+            if (!file.exists() || file.readText() != yaml) file.writeText(yaml)
+            FileLogger.d(TAG, "Gecko config written: bytecode cache disabled (blank-workbench test)")
+            file
+        } catch (t: Throwable) {
+            FileLogger.e(TAG, "Failed to write Gecko config", t)
+            file
+        }
+    }
 
     fun getRuntime(context: Context): GeckoRuntime {
         if (runtime == null) {
@@ -54,6 +94,8 @@ object GeckoManager {
                 builder.locales(arrayOf(lang))
                 FileLogger.d(TAG, "VSCode language: $lang")
             }
+
+            builder.configFilePath(writeGeckoConfig(context).absolutePath)
 
             val settings = builder.build()
             runtime = GeckoRuntime.create(context.applicationContext, settings)
@@ -245,6 +287,30 @@ object GeckoManager {
             onDone?.invoke()
         }) { throwable ->
             FileLogger.e(TAG, "Failed to clear $TUNNEL_BASE_DOMAIN document cache", throwable)
+            onDone?.invoke()
+        }
+    }
+
+    /**
+     * Drops the CDN's cached assets — the multi-megabyte workbench bundle above all.
+     *
+     * The deliberate counterpart to [clearTunnelDocumentCache], which scopes itself to `vscode.dev`
+     * precisely so these stay put. That was the right trade while the bundle was assumed healthy, but
+     * it also means no automatic path has ever replaced this copy: reloads reuse it, the cold-start
+     * clear cannot see it, and only a full reset — which costs the sign-in — has ever cleared it.
+     *
+     * So this is the missing middle rung. It costs a ~4.5 MB re-download and keeps DOM storage, the
+     * sign-in and the auth keys untouched.
+     */
+    fun clearCdnAssetCache(context: Context, onDone: (() -> Unit)? = null) {
+        val rt = runtime ?: getRuntime(context)
+        val flags = StorageController.ClearFlags.NETWORK_CACHE or
+            StorageController.ClearFlags.IMAGE_CACHE
+        rt.storageController.clearDataFromBaseDomain(CDN_BASE_DOMAIN, flags).accept({
+            FileLogger.w(TAG, "Cleared $CDN_BASE_DOMAIN asset cache (sign-in kept)")
+            onDone?.invoke()
+        }) { throwable ->
+            FileLogger.e(TAG, "Failed to clear $CDN_BASE_DOMAIN asset cache", throwable)
             onDone?.invoke()
         }
     }
