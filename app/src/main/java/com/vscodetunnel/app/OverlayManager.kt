@@ -189,6 +189,7 @@ class OverlayManager(
                             // script never ran, which is a different problem from "no errors".
                             "early=${json.opt("early")} globals=${json.opt("globals")} " +
                             "hosts=${json.opt("hosts")} res=${json.opt("res")} " +
+                            "resList=${json.opt("resList")} " +
                             "text=\"${json.optString("text")}\" " +
                             "caches=${json.opt("caches")} " +
                             // idb=timeout is the one to look for: an open request that never

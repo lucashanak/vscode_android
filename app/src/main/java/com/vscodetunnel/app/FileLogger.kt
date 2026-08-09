@@ -28,6 +28,15 @@ object FileLogger {
     private var procSuffix = ""
     private var isMainProcess = true
 
+    /**
+     * Whether this is the app's own process rather than one of GeckoView's child processes.
+     *
+     * Exposed because `init` runs once per process (see above), so anything that must happen exactly
+     * once per launch — [LogcatBridge] reads a buffer shared by every process in this UID — needs to
+     * ask, not assume.
+     */
+    val isMain: Boolean get() = isMainProcess
+
     fun init(context: Context) {
         logFile = File(context.filesDir, FILE_NAME)
         val proc = currentProcessName(context)

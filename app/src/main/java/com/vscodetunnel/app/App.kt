@@ -7,6 +7,10 @@ class App : Application() {
         super.onCreate()
         FileLogger.init(this)
 
+        // Gecko's internal messages — the only place a failed module load is reported — go to
+        // logcat, which nothing was reading. One reader in the main process covers every process.
+        if (FileLogger.isMain) LogcatBridge.start()
+
         // Catch uncaught exceptions to log
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->

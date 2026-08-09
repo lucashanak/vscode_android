@@ -3333,12 +3333,16 @@ class MainActivity : AppCompatActivity() {
         val info = tunnelSessions[idx]
         FileLogger.d(TAG, "Reloading tunnel ($reason): ${info.url} validatedNetwork=${hasValidatedNetwork()}")
 
-        // Ask the page to describe itself first. The reload destroys the broken state, so this is
-        // the only moment that evidence exists — and the snapshot is what will eventually explain
-        // *why* it wedged, rather than just recovering it again. The delay has to clear the content
-        // script's own 4.5s cap, which the page-world probes sit inside: a request that never
-        // settles is the current prime suspect, so cutting that probe short would drop exactly the
-        // field worth having. A few seconds is a fair price against a session that is already stuck.
+        // Ask the page to describe itself first: the reload destroys the broken state, so this is
+        // the only moment that evidence exists.
+        //
+        // This used to wait 5s to clear the content script's own 4.5s probe cap, on the reasoning
+        // that a request which never settles was the prime suspect and cutting the probe short would
+        // drop the field worth having. That has been overtaken twice. The stall is now pinned to an
+        // inline module script that fails outright, not to a hanging request; and the wait had a
+        // cost that showed up in a real log — the user backgrounded the app during those 5s, the
+        // session changed, and the reload was dropped entirely. A button that does nothing is worse
+        // than a slightly thinner snapshot, and the auth probe that matters settles in ~300ms.
         overlayManager.requestDiag("beforeReload")
         geckoView.postDelayed({
             val stillIdx = currentSessionIdx
@@ -3347,7 +3351,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 FileLogger.w(TAG, "Session changed while capturing diag; reload skipped")
             }
-        }, 5000)
+        }, 1500)
     }
 
     /**

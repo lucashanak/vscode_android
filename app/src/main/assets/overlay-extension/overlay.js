@@ -297,6 +297,28 @@
                 try { const h = new URL(es[i].name).host; out.hosts[h] = (out.hosts[h] || 0) + 1; }
                 catch (e) {}
             }
+            // Which resources, not just how many per host.
+            //
+            // Every account of this bug so far has asserted that the workbench bundle downloads and
+            // then fails to run, on the strength of a count: three entries, all on the CDN. The
+            // count cannot support that. It never showed the bundle was one of the three, and a
+            // fetch that failed can leave an entry behind too. So name them, and say whether each
+            // one actually finished — a zero responseEnd is a request that never settled.
+            //
+            // Sizes are deliberately absent: this CDN sends no Timing-Allow-Origin, so every
+            // cross-origin size field reads 0 and would only look like evidence of truncation.
+            out.resList = [];
+            for (let i = 0; i < es.length && i < 8; i++) {
+                try {
+                    const e = es[i];
+                    const path = new URL(e.name).pathname;
+                    out.resList.push(
+                        path.slice(path.lastIndexOf('/') + 1).slice(0, 34) +
+                        '|' + (e.initiatorType || '?') +
+                        '|' + Math.round(e.duration) + 'ms' +
+                        (e.responseEnd ? '' : '|UNFINISHED'));
+                } catch (e2) {}
+            }
         } catch (e) { out.res = -1; }
 
         const t0 = Date.now();
@@ -435,6 +457,7 @@
             }),
             hosts: null,
             res: null,
+            resList: null,
             auth: null,
             caches: null,
             idb: null,
@@ -502,6 +525,7 @@
                         diag.hooked = pageWorld.hooked;
                         diag.hosts = pageWorld.hosts;
                         diag.res = pageWorld.res;
+                        diag.resList = pageWorld.resList;
                         diag.auth = pageWorld.auth;
                     } else {
                         diag.pw = false;   // never produced a result: unknown, not zero
