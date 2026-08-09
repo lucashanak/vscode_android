@@ -169,37 +169,44 @@ class OverlayManager(
                         // The page describing its own state. Logged as one line: with the tunnel
                         // confirmed healthy from a desktop, this is the only evidence that
                         // distinguishes "workbench never rendered" from "rendered then died".
-                        "diag" -> FileLogger.d(TAG, "page diag: " +
-                            "reason=${json.optString("reason")} " +
-                            "readyState=${json.optString("readyState")} " +
-                            // href matters: without it there is no way to tell a snapshot of the
-                            // real page from one of some other document the script attached to.
-                            "href=${json.optString("href")} " +
-                            "online=${json.opt("online")} vis=${json.optString("visibility")} " +
-                            "workbench=${json.opt("workbench")}/${json.opt("workbenchChildren")} " +
-                            "bodyChildren=${json.opt("bodyChildren")} " +
-                            "sw=${json.opt("swController")} " +
-                            "dpr=${json.opt("dpr")} inner=${json.optString("inner")} " +
-                            // A healthy load ends in DIV.vs-dark (the workbench) after DIV.loading
-                            // (the painted splash); stopping at the splash is what the screenshots
-                            // show. hosts names the request that never came back.
-                            "bodyKids=${json.opt("bodyKids")} " +
-                            "pw=${json.opt("pw")} hooked=${json.opt("hooked")} tt=${json.opt("tt")} " +
-                            // early is the count from the document_start listeners. -1 means that
-                            // script never ran, which is a different problem from "no errors".
-                            "early=${json.opt("early")} globals=${json.opt("globals")} " +
-                            "hosts=${json.opt("hosts")} res=${json.opt("res")} " +
-                            "resList=${json.opt("resList")} " +
-                            "text=\"${json.optString("text")}\" " +
-                            "caches=${json.opt("caches")} " +
-                            // idb=timeout is the one to look for: an open request that never
-                            // settles is what microsoft/vscode#145647 blames for a blank workbench.
-                            "idb=${json.opt("idb")} idbNames=${json.opt("idbNames")} " +
-                            // auth/hosts/res are measured in the page's own world; pw=false means that
-                            // answer never arrived, so they are unknown rather than zero.
-                            "auth=${json.opt("auth")} " +
-                            "texts=${json.optJSONArray("texts")} " +
-                            "errors=${json.optJSONArray("errors")}")
+                        "diag" -> {
+                            FileLogger.d(TAG, "page diag: " +
+                                "reason=${json.optString("reason")} " +
+                                "readyState=${json.optString("readyState")} " +
+                                // href matters: without it there is no way to tell a snapshot of the
+                                // real page from one of some other document the script attached to.
+                                "href=${json.optString("href")} " +
+                                "online=${json.opt("online")} vis=${json.optString("visibility")} " +
+                                "workbench=${json.opt("workbench")}/${json.opt("workbenchChildren")} " +
+                                "bodyChildren=${json.opt("bodyChildren")} " +
+                                "sw=${json.opt("swController")} " +
+                                "dpr=${json.opt("dpr")} inner=${json.optString("inner")} " +
+                                // A healthy load ends in DIV.vs-dark (the workbench) after DIV.loading
+                                // (the painted splash); stopping at the splash is what the screenshots
+                                // show. hosts names the request that never came back.
+                                "bodyKids=${json.opt("bodyKids")} " +
+                                "pw=${json.opt("pw")} hooked=${json.opt("hooked")} tt=${json.opt("tt")} " +
+                                // early is the count from the document_start listeners. -1 means that
+                                // script never ran, which is a different problem from "no errors".
+                                "early=${json.opt("early")} globals=${json.opt("globals")} " +
+                                "hosts=${json.opt("hosts")} res=${json.opt("res")} " +
+                                "resList=${json.opt("resList")} " +
+                                "text=\"${json.optString("text")}\" " +
+                                "caches=${json.opt("caches")} " +
+                                // idb=timeout is the one to look for: an open request that never
+                                // settles is what microsoft/vscode#145647 blames for a blank workbench.
+                                "idb=${json.opt("idb")} idbNames=${json.opt("idbNames")} " +
+                                // auth/hosts/res are measured in the page's own world; pw=false means that
+                                // answer never arrived, so they are unknown rather than zero.
+                                "auth=${json.opt("auth")} " +
+                                "texts=${json.optJSONArray("texts")} " +
+                                "errors=${json.optJSONArray("errors")}")
+
+                            // Gecko's own messages for the same moment. The page cannot see a failed
+                            // module load at all — the browser reports that itself — so the two
+                            // halves of the evidence only mean something side by side.
+                            LogcatBridge.dump(json.optString("reason", "diag"))
+                        }
                     }
                 } catch (_: Exception) {}
             }

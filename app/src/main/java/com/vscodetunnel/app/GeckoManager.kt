@@ -103,6 +103,9 @@ object GeckoManager {
             maxProgress = 0
             lastBucket = -1
             FileLogger.d(TAG, "[$label] pageStart $url")
+            // So the Gecko-side messages reported at this load's snapshot belong to this load, and
+            // not to launch-time chatter that arrived first and filled the buffer.
+            LogcatBridge.onNavigation()
         }
 
         override fun onPageStop(session: GeckoSession, success: Boolean) {
