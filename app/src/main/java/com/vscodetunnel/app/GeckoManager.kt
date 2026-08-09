@@ -41,31 +41,45 @@ object GeckoManager {
      *
      * One pref, and it is a hypothesis under test rather than a setting anybody asked for.
      *
-     * The blank workbench comes down to a module graph that fails to instantiate with the bundle
-     * already in cache, no CSP violation, nothing on the page's console, and no way left to ask the
-     * page directly. What research turned up is a mechanism that fits every observation at once:
-     * Gecko stores compiled bytecode as "alternate data" inside the HTTP cache entry for a script,
-     * and bug 1448476 records large scripts (15+ MB, generating ~30 MB of bytecode) overrunning the
-     * maximum entry size and leaving the entry corrupt — "caches correctly at first, unusable on
-     * later visits". This bundle is 17.7 MB decoded, its entry lives on `main.vscode-cdn.net` where
-     * [clearTunnelDocumentCache] deliberately never reaches, and only a full clear has ever fixed it.
+     * The previous occupant of this file disabled `dom.script_loader.bytecode_cache.enabled`, on the
+     * theory that a 17.7 MB script overruns the cache entry's alternate-data limit (bug 1448476) and
+     * leaves it corrupt. That is now settled and gone: the workbench still wedged with the bytecode
+     * cache off, and a byte count of the cached bundle came back identical to a fresh copy —
+     * 17 874 565 both ways, matching what a healthy desktop browser downloads. The body is intact,
+     * so nothing in that family survives, and keeping the pref would cost start-up time for nothing.
      *
-     * That specific bug was fixed in Firefox 61 and this is GeckoView 149, so this is emphatically
-     * not a diagnosis — but Android's cache limits are far smaller than the desktop figures in that
-     * report, and the size class is the first thing found that explains the shape of the failure.
-     * Turning the bytecode cache off removes that path entirely: if the wedging stops, the cause is
-     * localised; if it continues, a whole family of explanations is eliminated. Costs a little
-     * script start-up time and nothing else.
+     * What is left is the one difference measured between this device and every environment where the
+     * workbench does mount, and it is not a flag but a different code path:
+     *
+     *   desktop Firefox 146/147:  trustedTypes undefined, _VSCODE_WEB_PACKAGE_TTP undefined, loads
+     *   GeckoView 149 here:       trustedTypes object,    _VSCODE_WEB_PACKAGE_TTP defined,   wedges
+     *
+     * vscode.dev only creates that policy global when `window.trustedTypes` exists, so on this device
+     * its bootstrap takes the Trusted Types branch — the branch that produces script URLs — and
+     * nowhere this has been tested successfully does. GeckoView enables Trusted Types even though
+     * mozilla-central still defaults `dom.security.trusted_types.enabled` to false, and 149 enforces
+     * `require-trusted-types-for`, which 146 and 147 both log as an unknown directive. That is why an
+     * earlier "Trusted Types refuted" conclusion was worthless: it enabled the API on a build that
+     * ignored the directive, so it tested the API's presence and not its enforcement.
+     *
+     * Enforcement cannot be reproduced here — 147 is the newest build obtainable — so the test has to
+     * run on the device, and it runs in the honest direction: remove the suspect. If the workbench
+     * appears, Trusted Types enforcement is the cause and this pref is also the workaround. If it
+     * still wedges, the last measured difference is eliminated.
+     *
+     * The cost is real but small: Trusted Types are defence-in-depth against DOM XSS for pages that
+     * opt in via CSP, and vscode.dev is the only page this app loads. Not something to keep
+     * indefinitely without deciding to.
      */
     private fun writeGeckoConfig(context: Context): java.io.File {
         val file = java.io.File(context.filesDir, "gecko-config.yaml")
         val yaml = """
             prefs:
-              dom.script_loader.bytecode_cache.enabled: false
+              dom.security.trusted_types.enabled: false
         """.trimIndent() + "\n"
         return try {
             if (!file.exists() || file.readText() != yaml) file.writeText(yaml)
-            FileLogger.d(TAG, "Gecko config written: bytecode cache disabled (blank-workbench test)")
+            FileLogger.d(TAG, "Gecko config written: Trusted Types disabled (blank-workbench test)")
             file
         } catch (t: Throwable) {
             FileLogger.e(TAG, "Failed to write Gecko config", t)
