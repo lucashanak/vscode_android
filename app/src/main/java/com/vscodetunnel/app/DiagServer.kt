@@ -244,6 +244,23 @@ object DiagServer {
      * The URL cannot be hardcoded because its commit changes; the content script records whichever one
      * the page actually requested (see OverlayManager), so the tunnel has to have been opened once.
      */
+    /**
+     * Whether a stored copy is usable as a test input.
+     *
+     * Applied to the cached file and not only to a fresh download, which is the hole that let the
+     * previous round waste a run: the bad artefact was 4 558 349 bytes of gzip, comfortably past the
+     * old 1 MB freshness floor, so it would have been served again unchanged. Anything that fails
+     * this is deleted and re-fetched rather than trusted.
+     */
+    private fun isUsableBundle(file: java.io.File): Boolean {
+        if (!file.exists() || file.length() < 10_000_000) return false
+        return try {
+            val head = ByteArray(2)
+            file.inputStream().use { it.read(head) }
+            !(head[0] == 0x1F.toByte() && head[1] == 0x8B.toByte())
+        } catch (_: Throwable) { false }
+    }
+
     private fun sendRealBundle(out: OutputStream) {
         val ctx = appContext
         val url = ctx?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
@@ -255,7 +272,11 @@ object DiagServer {
         }
         val cached = java.io.File(ctx.cacheDir, "real-bundle.js")
         synchronized(bundleLock) {
-            if (!cached.exists() || cached.length() < 1_000_000) {
+            if (!isUsableBundle(cached)) {
+                if (cached.exists()) {
+                    FileLogger.w(TAG, "Discarding unusable cached bundle: ${cached.length()} bytes")
+                    try { cached.delete() } catch (_: Throwable) {}
+                }
                 try {
                     val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
                         setRequestProperty("User-Agent", CHROME_UA)
@@ -279,15 +300,12 @@ object DiagServer {
                         cached.outputStream().use { file -> input.copyTo(file, 64 * 1024) }
                     }
 
-                    // Validate before serving. Handing an unverified artefact to a test and reading
+                    // Checked before serving. Handing an unverified artefact to a test and reading
                     // its complaint as a finding is precisely what went wrong last round, and a
                     // 4.5 MB gzip blob looked plausible enough in a log line to be believed.
-                    val head = ByteArray(2)
-                    cached.inputStream().use { it.read(head) }
-                    val looksGzip = head[0] == 0x1F.toByte() && head[1] == 0x8B.toByte()
-                    if (looksGzip || cached.length() < 10_000_000) {
-                        FileLogger.e(TAG, "Rejected bundle: ${cached.length()} bytes, " +
-                            "gzip=$looksGzip — expected ~17.7 MB of plain JavaScript")
+                    if (!isUsableBundle(cached)) {
+                        FileLogger.e(TAG, "Rejected bundle: ${cached.length()} bytes — " +
+                            "expected ~17.7 MB of plain JavaScript, not gzip")
                         try { cached.delete() } catch (_: Throwable) {}
                         sendHtml(out, "bundle failed validation", null)
                         return
