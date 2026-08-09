@@ -259,16 +259,40 @@ object DiagServer {
                 try {
                     val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
                         setRequestProperty("User-Agent", CHROME_UA)
-                        // Identity encoding: the file is served to the browser uncompressed, so
-                        // storing it decoded keeps Content-Length honest without a second pass.
-                        setRequestProperty("Accept-Encoding", "identity")
+                        // Accept-Encoding is deliberately NOT set. Setting it to "identity" turned
+                        // this diagnostic into a test of its own bug: it disables
+                        // HttpURLConnection's transparent gunzip, and the CDN sends
+                        // Content-Encoding: gzip regardless of what is asked for (measured). The
+                        // 4.5 MB of gzip then got served as JavaScript, and cases 7-10 duly reported
+                        // "SyntaxError: illegal character U+001F" — 0x1F being the first byte of the
+                        // gzip magic. Left alone, the transparent path decodes and strips the header.
                         connectTimeout = 20_000
                         readTimeout = 60_000
                     }
-                    conn.inputStream.use { input ->
+                    // If the header survived, no transparent decode happened and it has to be done
+                    // here. Belt and braces, because the failure mode above was silent.
+                    val raw = conn.inputStream
+                    val stream = if (conn.contentEncoding?.contains("gzip", true) == true) {
+                        java.util.zip.GZIPInputStream(raw)
+                    } else raw
+                    stream.use { input ->
                         cached.outputStream().use { file -> input.copyTo(file, 64 * 1024) }
                     }
-                    FileLogger.w(TAG, "Fetched real bundle: ${cached.length()} bytes")
+
+                    // Validate before serving. Handing an unverified artefact to a test and reading
+                    // its complaint as a finding is precisely what went wrong last round, and a
+                    // 4.5 MB gzip blob looked plausible enough in a log line to be believed.
+                    val head = ByteArray(2)
+                    cached.inputStream().use { it.read(head) }
+                    val looksGzip = head[0] == 0x1F.toByte() && head[1] == 0x8B.toByte()
+                    if (looksGzip || cached.length() < 10_000_000) {
+                        FileLogger.e(TAG, "Rejected bundle: ${cached.length()} bytes, " +
+                            "gzip=$looksGzip — expected ~17.7 MB of plain JavaScript")
+                        try { cached.delete() } catch (_: Throwable) {}
+                        sendHtml(out, "bundle failed validation", null)
+                        return
+                    }
+                    FileLogger.w(TAG, "Fetched real bundle: ${cached.length()} bytes (validated)")
                 } catch (t: Throwable) {
                     FileLogger.e(TAG, "Could not fetch the real bundle", t)
                     try { cached.delete() } catch (_: Throwable) {}
