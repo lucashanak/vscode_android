@@ -193,6 +193,15 @@ class OverlayManager(
                                 // internally -- so this reproduces the import and reports the real
                                 // Error. imp/impBytes is the first evidence of the *reason*.
                                 "imp=${json.opt("imp")} impBytes=${json.opt("impBytes")} " +
+                                // Which modules the failing inline script asks for, and which of
+                                // them ever produced a request. A MISSING entry is a specifier the
+                                // graph never reached, which is what a silent instantiate failure
+                                // looks like from outside.
+                                "inlineImports=${json.opt("inlineImports")} " +
+                                "loaders=${json.opt("loaders")} " +
+                                // A CORS-mode module load from the page's own origin — the one thing
+                                // never tested, since the byte-count fetch had extension privileges.
+                                "mod=${json.opt("mod")} " +
                                 "hosts=${json.opt("hosts")} res=${json.opt("res")} " +
                                 "resList=${json.opt("resList")} " +
                                 "text=\"${json.optString("text")}\" " +

@@ -341,6 +341,148 @@
         ).then(() => { clearTimeout(abort); pageWorld = out; return out; });
     }
 
+    // Load the bundle the way the page does: a CORS-mode module fetch from this origin.
+    //
+    // This is a gap in everything measured so far. The byte count that proved the body intact was an
+    // *extension* fetch, and the manifest grants main.vscode-cdn.net, so it ran with extension
+    // privileges and never went through a CORS check at all. DiagServer's cases likewise used our own
+    // origin and our own headers. A CORS-mode module import from vscode.dev's origin, under
+    // vscode.dev's CSP, on this device, has never actually been tried.
+    //
+    // A `<script type="module" src=...>` element does exactly that. It is not an inline script, so the
+    // page's CSP (which has no 'unsafe-inline') does not refuse it, and setting `src` is not a Trusted
+    // Types sink, so the enforcement that killed the eval probe does not apply either. The URL is the
+    // one the page already asked for, so nothing new is fetched from anywhere.
+    //
+    // Runs once, and only when the page is already broken.
+    let modState = 'idle';
+    function startModuleElementProbe() {
+        if (modState !== 'idle') return;
+        try {
+            const w = window.wrappedJSObject;
+            if (w && typeof w.define !== 'undefined') { modState = 'skip:healthy'; return; }
+            let url = null;
+            const es = (w ? w.performance : performance).getEntriesByType('resource');
+            for (let i = 0; i < es.length; i++) {
+                if (String(es[i].name).indexOf('workbench.web.main.internal.js') !== -1) {
+                    url = String(es[i].name);
+                    break;
+                }
+            }
+            if (!url) { modState = 'nourl'; return; }
+            modState = 'running';
+            const t0 = Date.now();
+            const el = document.createElement('script');
+            el.type = 'module';
+            el.addEventListener('load', () => {
+                modState = 'ok:module-element-loaded ' + (Date.now() - t0) + 'ms';
+            });
+            el.addEventListener('error', () => {
+                // The same silent shape the page's own script reports. Seeing it here would mean the
+                // failure reproduces from a plain element, with no bootstrap involved.
+                modState = 'FAIL:error-event ' + (Date.now() - t0) + 'ms';
+            });
+            el.src = url;
+            (document.head || document.documentElement).appendChild(el);
+        } catch (e) {
+            modState = 'error:' + (e && e.name);
+        }
+    }
+
+    // Inventory of what loads scripts, and of preloads.
+    //
+    // Two reasons. A healthy page reports 8 scripts against this device's 7, and that difference has
+    // been noted but never explained — it may be one the working bootstrap adds after mounting, which
+    // would make it a consequence rather than a cause, and naming them settles it either way.
+    //
+    // And `<link rel=modulepreload>` with a mismatched `crossorigin` is a known way to kill a module
+    // import silently: the preload lands a response in the map that the later CORS-mode import cannot
+    // use, which produces an error event with nothing on the console — the exact shape seen here. It
+    // is also vscode.dev-specific, so DiagServer could never have reproduced it.
+    function loaderInventory() {
+        const out = { scripts: [], links: [] };
+        try {
+            const ss = document.scripts;
+            for (let i = 0; i < ss.length && i < 12; i++) {
+                const el = ss[i];
+                const src = el.getAttribute('src');
+                const type = el.getAttribute('type') || '-';
+                out.scripts.push(i + ':' + type + ':' + (src === null
+                    ? 'inline(' + (el.textContent || '').length + ')'
+                    : (src === '' ? 'src=""' : src.slice(src.lastIndexOf('/') + 1).slice(0, 32))));
+            }
+        } catch (e) { out.scripts.push('ERR'); }
+        try {
+            const ls = document.querySelectorAll('link[rel]');
+            for (let i = 0; i < ls.length && i < 12; i++) {
+                const el = ls[i];
+                const rel = el.getAttribute('rel') || '';
+                if (rel !== 'modulepreload' && rel !== 'preload' && rel !== 'prefetch') continue;
+                const href = el.getAttribute('href') || '';
+                out.links.push(rel + ':' + (el.getAttribute('crossorigin') === null
+                    ? 'no-crossorigin' : 'crossorigin=' + el.getAttribute('crossorigin')) +
+                    ':' + href.slice(href.lastIndexOf('/') + 1).slice(0, 32));
+            }
+        } catch (e) { out.links.push('ERR'); }
+        return out;
+    }
+
+    // What does the failing inline module actually try to import?
+    //
+    // This is the question the whole investigation should have asked earlier. The device now proves
+    // that the mechanism is sound: DiagServer imported the real 17.7 MB bundle, cross-origin, from
+    // inside a large inline module, under require-trusted-types-for, and it instantiated and executed
+    // (Error: !!! NLS MISSING !!!, the same outcome a healthy desktop gives). Size, compile cost,
+    // CORS, Trusted Types and the bundle's own content are all therefore out.
+    //
+    // Which leaves this element's own module graph. `res=3` says only three requests ever happen, so
+    // if this script imports more than the bundle, the rest never started -- and a graph fetch that
+    // cannot resolve one specifier fails the whole thing with exactly the silent `error` event seen
+    // here. Reading the specifiers is static text extraction, so none of the channels that turned out
+    // to be closed (page console, logcat, eval) are involved.
+    //
+    // Only the specifiers are reported, never the surrounding source: this is a third-party page, and
+    // a list of URLs it fetches is proportionate where a copy of its bootstrap would not be.
+    function inlineModuleImports() {
+        try {
+            const scripts = document.scripts;
+            for (let i = 0; i < scripts.length; i++) {
+                const el = scripts[i];
+                if (el.getAttribute('src') !== null) continue;
+                if ((el.getAttribute('type') || '') !== 'module') continue;
+                const body = el.textContent || '';
+                if (body.indexOf('workbench.web.main') === -1) continue;
+
+                const found = [];
+                // Anchored to real specifier shapes. The first version matched "from" inside
+                // minified code and reported ");if(null===t)return;const r=new URL(e.t" as a MISSING
+                // module — a fabricated finding, caught only by checking against a healthy page.
+                const re = /(?:\bfrom|\bimport)\s*\(?\s*["']((?:https?:\/\/|\.{0,2}\/)[^"']{3,300})["']/g;
+                let m;
+                while ((m = re.exec(body)) !== null && found.length < 8) {
+                    if (found.indexOf(m[1]) === -1) found.push(m[1]);
+                }
+                // Whether each specifier actually produced a request tells the difference between
+                // "never attempted" and "attempted and failed".
+                let fetched = [];
+                try {
+                    const w = window.wrappedJSObject;
+                    const names = ((w ? w.performance : performance).getEntriesByType('resource') || [])
+                        .map(e => String(e.name));
+                    fetched = found.map(spec => {
+                        const tail = spec.slice(spec.lastIndexOf('/') + 1);
+                        const hit = names.some(n => tail && n.indexOf(tail) !== -1);
+                        return (hit ? 'GOT ' : 'MISSING ') + tail.slice(0, 40);
+                    });
+                } catch (e) {}
+                return { len: body.length, count: found.length, specs: fetched };
+            }
+            return { len: 0, count: -1, specs: [] };
+        } catch (e) {
+            return { len: -1, count: -2, specs: [String(e && e.name)] };
+        }
+    }
+
     // Measure the bundle the device actually has: cached copy against a fresh one.
     //
     // The previous attempt here ran a dynamic import() through the page's eval, to read the real
@@ -542,6 +684,9 @@
             res: null,
             resList: null,
             impUrl: null,
+            inlineImports: safe(inlineModuleImports),
+            loaders: safe(loaderInventory),
+            mod: safe(() => { startModuleElementProbe(); return modState; }),
             auth: null,
             caches: null,
             idb: null,
