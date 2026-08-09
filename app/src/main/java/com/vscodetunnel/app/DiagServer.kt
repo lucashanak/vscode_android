@@ -34,6 +34,27 @@ import java.net.URLDecoder
  *   6  5 under require-trusted-types-for 'script'         — Trusted Types enforcement
  *   7  the REAL bundle, same origin                       — the file's own content and compile cost
  *   8  the REAL bundle, cross origin, 325 KB inline       — the closest reproduction available
+ *   9  7 via dynamic import inside try/catch              — reads the Error out loud
+ *  10  8 + Trusted Types, same try/catch                  — the full shape, with the reason readable
+ *
+ * Cases 9 and 10 are the instrument the earlier probing never had. A static import cannot be wrapped,
+ * and on vscode.dev nothing could reach the page world at all: its CSP forbids inline script and
+ * Trusted Types blocked eval. On a page served from here neither applies, so the same import runs
+ * inside try/catch and the Error arrives with its name and message intact.
+ *
+ * Measured on a working browser with the real 17 695 268 bytes behind a 325 KB inline module, the
+ * healthy outcome of 9 and 10 is:
+ *
+ *   ERR:Error: !!! NLS MISSING: 2055 !!!
+ *
+ * which means the inline module parsed, the bundle instantiated *and evaluated*, and only then threw
+ * for want of globals that only VS Code's bootstrap sets. So it reads as a failure and is a pass. What
+ * each other outcome would mean:
+ *
+ *   ERR:TypeError …          network or CORS
+ *   ERR:SyntaxError …        the body itself, despite its bytes matching a healthy download
+ *   ERR:… out of memory …    compile or allocation, the one thing padding could never test
+ *   FAIL:timeout-no-outcome  the import neither resolves nor rejects — the vscode.dev shape exactly
  *
  * Cases 1-6 all passed on the affected device, which retires "GeckoView cannot load a large
  * cross-origin module from inside a large inline module" — it does, faultlessly. It also exposed a
@@ -271,7 +292,7 @@ object DiagServer {
     /** Case parameters, kept next to the matrix in the class comment. */
     private data class Case(
         val id: Int, val size: Int, val cross: Boolean, val inlineBytes: Int, val tt: Boolean,
-        val label: String, val real: Boolean = false
+        val label: String, val real: Boolean = false, val dyn: Boolean = false
     )
 
     private fun cases() = listOf(
@@ -285,14 +306,24 @@ object DiagServer {
         // compile cost. 17.7 MB of dense minified code is a different question, and cases 1-6 passing
         // on the device is what makes it the question that matters. These two serve the real file.
         Case(7, 0, false, 0, false, "REAL bundle, same origin", real = true),
-        Case(8, 0, true, INLINE_SIZE, false, "REAL bundle, cross origin, 325KB inline", real = true)
+        Case(8, 0, true, INLINE_SIZE, false, "REAL bundle, cross origin, 325KB inline", real = true),
+        // The cases that finally read the error out loud. A static import cannot be wrapped, and on
+        // vscode.dev neither eval nor a dynamic import could be reached — its CSP forbids inline
+        // script and Trusted Types blocked eval. On a page served from here there is no such
+        // obstacle, so the same import can run inside try/catch and the Error's name and message go
+        // straight into the log. This is the instrument that seven rounds of probing lacked.
+        Case(9, 0, false, INLINE_SIZE, false,
+            "REAL bundle, same origin, dynamic import in try/catch", real = true, dyn = true),
+        Case(10, 0, true, INLINE_SIZE, true,
+            "REAL bundle, cross + TT, dynamic import in try/catch", real = true, dyn = true)
     )
 
     private fun harnessHtml(): String {
         val frames = cases().joinToString(",\n") { c ->
             "  {id:${c.id}, url:'/case?case=${c.id}&size=${c.size}" +
                 "&cross=${if (c.cross) 1 else 0}&inline=${c.inlineBytes}" +
-                "&tt=${if (c.tt) 1 else 0}&real=${if (c.real) 1 else 0}', label:${quote(c.label)}}"
+                "&tt=${if (c.tt) 1 else 0}&real=${if (c.real) 1 else 0}" +
+                "&dyn=${if (c.dyn) 1 else 0}', label:${quote(c.label)}}"
         }
         // Sequential, not parallel: two 17.7 MB module compilations at once would muddy every result
         // and could fail for reasons that have nothing to do with the question.
@@ -345,7 +376,27 @@ next();
         val origin = if (cross) "http://127.0.0.1:$portAlt" else ""
         val modUrl = if (q["real"] == "1") "$origin/real.js" else "$origin/mod.js?size=$size"
 
-        val loader = if (inlineBytes > 0) {
+        val loader = if (q["dyn"] == "1") {
+            // await import() inside try/catch: the only arrangement that yields the actual Error
+            // rather than a bare "error" event with no message attached.
+            val padding = buildString {
+                val line = "//" + "q".repeat(97) + "\n"
+                repeat((inlineBytes / line.length).coerceAtLeast(1)) { append(line) }
+            }
+            """
+            <script type="module">
+            $padding
+            try {
+                const m = await import(${quote(modUrl)});
+                report('ok:dynamic-import exports=' + Object.keys(m).length);
+            } catch (e) {
+                // Name and message both: a TypeError points at network or CORS, a SyntaxError at the
+                // body, and an out-of-memory says so outright. Those lead in different directions.
+                report('ERR:' + (e && e.name) + ': ' + String(e && e.message).slice(0, 200));
+            }
+            </script>
+            """.trimIndent()
+        } else if (inlineBytes > 0) {
             // Padding first so the import statement sits deep inside a large module, as it does in
             // the real bootstrap, rather than on the first line.
             val padding = buildString {
