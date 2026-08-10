@@ -7,6 +7,25 @@
     // UI is in a native Android WebView (overlay-ui/overlay.html).
     // =====================================================================
 
+    // Where the diagnostics are allowed to run.
+    //
+    // overlay.js now matches every http(s) host, because the keyboard, cursor and input routing have
+    // to work on whatever serves the editor — a self-hosted code-server lives on the user's own
+    // domain, which a static manifest cannot know in advance.
+    //
+    // The investigation machinery must not follow it there. Hooking a page's console, reading its
+    // innerText and probing its resources are defensible on vscode.dev, where they are diagnosing a
+    // specific failure and the user is deliberately collecting a log. On a self-hosted login page they
+    // would put someone's own page content — possibly a username — into a file that gets shared.
+    // So the input plumbing runs everywhere and the diagnostics stay where they belong.
+    const DIAG_ENABLED = (function () {
+        try {
+            const h = location.hostname;
+            return h === 'vscode.dev' || /\.vscode\.dev$/.test(h) ||
+                   h === '127.0.0.1' || h === 'localhost';
+        } catch (e) { return false; }
+    })();
+
     let cursorX = 0, cursorY = 0;
     let lastCursorType = 'default';
     let activePort = null;
@@ -293,7 +312,7 @@
             return true;
         } catch (e) { return false; }
     }
-    const consoleHooked = pageConsoleHook();
+    const consoleHooked = DIAG_ENABLED ? pageConsoleHook() : 'off:not-diag-host';
 
     function requestPageWorldProbe() {
         // Resource timing, read through the page's own performance object.
@@ -720,6 +739,17 @@
     }
 
     function buildDiag(reason) {
+        if (!DIAG_ENABLED) {
+            // Enough to tell whether the editor came up, and nothing else. No page text, no console,
+            // no resource inventory: this is somebody's own server, not the subject of an
+            // investigation.
+            return {
+                type: 'diag', reason: reason, diag: 'minimal:not-diag-host',
+                readyState: safe(() => document.readyState),
+                host: safe(() => location.hostname),
+                workbench: !!safe(() => document.querySelector('.monaco-workbench')),
+            };
+        }
         // Before anything is read, so console output early.js captured since the last snapshot
         // lands in this one's `errors` rather than the next.
         drainEarly();

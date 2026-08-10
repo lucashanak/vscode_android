@@ -2363,7 +2363,7 @@ class MainActivity : AppCompatActivity() {
                 val why = if (lastActive == 0L) "no timestamp (fresh install/upgrade)"
                     else "idle ${(System.currentTimeMillis() - lastActive) / 1000}s"
                 FileLogger.d(TAG, "Cold-start: refreshing $url document cache ($why)")
-                GeckoManager.clearTunnelDocumentCache(this) {
+                GeckoManager.clearTunnelDocumentCache(this, url) {
                     runOnUiThread { openTunnel(url) }
                 }
                 return

@@ -327,17 +327,39 @@ object GeckoManager {
      *
      * Used for the cold-start path, where there is no live page to reload.
      */
-    fun clearTunnelDocumentCache(context: Context, onDone: (() -> Unit)? = null) {
+    fun clearTunnelDocumentCache(context: Context, url: String? = null, onDone: (() -> Unit)? = null) {
         val rt = runtime ?: getRuntime(context)
         val flags = StorageController.ClearFlags.NETWORK_CACHE or
             StorageController.ClearFlags.IMAGE_CACHE
-        rt.storageController.clearDataFromBaseDomain(TUNNEL_BASE_DOMAIN, flags).accept({
-            FileLogger.d(TAG, "Cleared $TUNNEL_BASE_DOMAIN document cache (sign-in and CDN assets kept)")
+        // Scoped to whatever host is actually being opened. It used to be hardcoded to vscode.dev,
+        // which quietly became wrong the moment a self-hosted editor on the user's own domain became
+        // openable: the refresh would clear a domain that had nothing to do with the page.
+        val domain = baseDomainOf(url) ?: TUNNEL_BASE_DOMAIN
+        rt.storageController.clearDataFromBaseDomain(domain, flags).accept({
+            FileLogger.d(TAG, "Cleared $domain document cache (sign-in and CDN assets kept)")
             onDone?.invoke()
         }) { throwable ->
-            FileLogger.e(TAG, "Failed to clear $TUNNEL_BASE_DOMAIN document cache", throwable)
+            FileLogger.e(TAG, "Failed to clear $domain document cache", throwable)
             onDone?.invoke()
         }
+    }
+
+    /**
+     * Registrable domain for a URL, good enough for GeckoView's base-domain scoping.
+     *
+     * Takes the last two labels, which is right for hanaktech.org and vscode.dev alike and wrong for
+     * multi-label suffixes like .co.uk. Returning null on anything unparseable leaves the caller on
+     * its previous behaviour rather than clearing something unintended — the failure mode that matters
+     * here is clearing too much, not too little.
+     */
+    private fun baseDomainOf(url: String?): String? {
+        if (url.isNullOrBlank()) return null
+        return try {
+            val host = java.net.URI(url).host ?: return null
+            if (host.isEmpty() || host[0].isDigit()) return null   // an IP address has no base domain
+            val parts = host.split('.')
+            if (parts.size < 2) null else parts.takeLast(2).joinToString(".")
+        } catch (_: Throwable) { null }
     }
 
     /**

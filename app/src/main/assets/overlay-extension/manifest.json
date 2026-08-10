@@ -32,11 +32,7 @@
     },
     {
       "matches": [
-        "*://vscode.dev/*",
-        "*://*.vscode.dev/*",
-        "*://insiders.vscode.dev/*",
-        "http://127.0.0.1/*",
-        "http://localhost/*"
+        "*://*/*"
       ],
       "js": [
         "overlay.js"
