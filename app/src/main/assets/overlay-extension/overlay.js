@@ -237,7 +237,16 @@
     }
     try {
         window.addEventListener('error', e => {
-            noteError(e.message + (e.filename ? ' @' + e.filename.split('/').pop() + ':' + e.lineno : ''));
+            // Resource errors carry no message, so the old version reported the bare string
+            // "undefined" — which sat in the log looking like a mystery when it was this handler
+            // describing my own injected probe. early.js already distinguished the two; this did not.
+            if (e.target && e.target !== window && e.target.tagName) {
+                noteError('resource-error(late): <' + e.target.tagName.toLowerCase() + '> ' +
+                          String(e.target.src || e.target.href || '').slice(0, 100));
+            } else {
+                noteError(String(e.message) +
+                          (e.filename ? ' @' + e.filename.split('/').pop() + ':' + e.lineno : ''));
+            }
         }, true);
         window.addEventListener('unhandledrejection', e => {
             noteError('unhandledrejection: ' + (e.reason && (e.reason.message || e.reason)));

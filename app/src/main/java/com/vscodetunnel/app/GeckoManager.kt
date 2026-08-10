@@ -3,6 +3,7 @@ package com.vscodetunnel.app
 import android.content.Context
 // Using FileLogger instead of android.util.Log for crash debugging
 import org.mozilla.geckoview.AllowOrDeny
+import org.mozilla.geckoview.ContentBlocking
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
@@ -104,6 +105,14 @@ object GeckoManager {
             val settings = builder.build()
             runtime = GeckoRuntime.create(context.applicationContext, settings)
             FileLogger.d(TAG, "GeckoRuntime created")
+
+            val cb = settings.contentBlocking
+            FileLogger.w(TAG, "ContentBlocking: etpLevel=${cb.enhancedTrackingProtectionLevel} " +
+                "etpCategory=${cb.enhancedTrackingProtectionCategory} " +
+                "antiTracking=${cb.antiTrackingCategories} " +
+                "safeBrowsing=${cb.safeBrowsingCategories} " +
+                "strictSocial=${cb.strictSocialTrackingProtection} " +
+                "cookieBehavior=${cb.cookieBehavior}")
         }
         return runtime!!
     }
@@ -123,7 +132,43 @@ object GeckoManager {
             .build()
         val session = GeckoSession(settings)
         session.progressDelegate = loadProgressLogger(label)
+        session.contentBlockingDelegate = blockingLogger(label)
         return session
+    }
+
+    /**
+     * Reports anything the browser refuses to load, and why.
+     *
+     * This is where the evidence now points. A `<script type="module">` pointing at the workbench
+     * bundle fails on vscode.dev in 4-5 ms, with a cache-busted URL failing identically, and `hosts`
+     * never rises above three — so the load is rejected locally, before any request is attempted, and
+     * it is not the module map remembering an earlier failure. No CSP violation is reported either,
+     * on a channel proven to work.
+     *
+     * Content blocking has exactly that shape: Enhanced Tracking Protection and Safe Browsing reject a
+     * URI before the fetch and raise no CSP event. It would also account for what never fitted
+     * before — an extension fetch of the same URL succeeding (extension requests are not filtered),
+     * DiagServer's loopback copy loading faultlessly, desktop being fine, a reload changing nothing,
+     * and a full clear helping. Most of all it accounts for the intermittency: blocklists update.
+     *
+     * The callback is native, so none of the routes that turned out to be closed — page console,
+     * logcat, eval — are involved.
+     */
+    private fun blockingLogger(label: String) = object : ContentBlocking.Delegate {
+        override fun onContentBlocked(session: GeckoSession, event: ContentBlocking.BlockEvent) {
+            FileLogger.w(TAG, "[$label] BLOCKED ${event.uri.take(140)} " +
+                "antiTracking=${event.antiTrackingCategory} " +
+                "safeBrowsing=${event.safeBrowsingCategory} " +
+                "cookie=${event.cookieBehaviorCategory} blocking=${event.isBlocking}")
+        }
+
+        override fun onContentLoaded(session: GeckoSession, event: ContentBlocking.BlockEvent) {
+            // Fires for content that matched a list but was allowed through. Logged because "matched
+            // and allowed" versus "never matched" is the difference between a near miss and an
+            // irrelevance, and this delegate is the only place either is visible.
+            FileLogger.d(TAG, "[$label] blocking-allowed ${event.uri.take(100)} " +
+                "antiTracking=${event.antiTrackingCategory}")
+        }
     }
 
     /**
