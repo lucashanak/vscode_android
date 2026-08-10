@@ -166,6 +166,33 @@ class OverlayManager(
                             val cursor = json.optString("cursor", "default")
                             geckoView.post { updateCursorType(cursor) }
                         }
+                        // The page asked to put something on the clipboard. Written through
+                        // TerminalClipboard because that path is known to work here, where the page's
+                        // own navigator.clipboard.writeText evidently did not: GitHub's device-code
+                        // flow copies the code and immediately navigates away, so a silent failure
+                        // there costs the login. Length only in the log — never the text.
+                        "clipboardWrite" -> {
+                            val text = json.optString("text")
+                            if (text.isNotEmpty()) {
+                                // Not flagged sensitive: that suppresses the system's paste preview,
+                                // and the whole complaint here was not being able to tell whether the
+                                // code had been copied at all. The terminal keeps that flag for the
+                                // cases where it belongs.
+                                TerminalClipboard.copy(geckoView.context, text)
+                                FileLogger.d(TAG, "Clipboard write from page: ${text.length} chars")
+                                // Confirmation without exposure. The original complaint was not
+                                // knowing whether the copy had happened; the character count answers
+                                // that, while showing the text itself would put a device code — or a
+                                // password copied in the editor — on screen for anyone nearby.
+                                geckoView.post {
+                                    android.widget.Toast.makeText(
+                                        geckoView.context,
+                                        "Copied ${text.length} characters",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        }
                         // The page describing its own state. Logged as one line: with the tunnel
                         // confirmed healthy from a desktop, this is the only evidence that
                         // distinguishes "workbench never rendered" from "rendered then died".

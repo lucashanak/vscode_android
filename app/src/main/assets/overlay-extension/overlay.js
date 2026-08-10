@@ -7,6 +7,52 @@
     // UI is in a native Android WebView (overlay-ui/overlay.html).
     // =====================================================================
 
+    // Route the page's clipboard writes through Android.
+    //
+    // GitHub's device-code flow is what exposed this. VS Code copies the code and *then* navigates to
+    // github.com/login/device, so a clipboard write that silently fails leaves you on the
+    // authorisation page with nothing to paste and the dialog holding the code already gone. The
+    // second failure is a consequence of the first.
+    //
+    // Not a pref problem: dom.events.asyncClipboard.clipboardItem and .readText are both true by
+    // default upstream, so there was nothing to switch on. Instead this writes through the path this
+    // app already knows works — ClipboardManager.setPrimaryClip on the main thread, which the SSH
+    // terminal has used all along.
+    //
+    // The page's own implementation is still invoked, so a working one is not disabled, and the
+    // returned promise always resolves: the text has reached the clipboard by then, and a rejection
+    // would only make VS Code report a failure that did not happen.
+    //
+    // A feature rather than a diagnostic, so unlike the probes it runs on every host — a self-hosted
+    // editor needs copy and paste as much as vscode.dev does. The text itself is never logged, only
+    // its length: it is a clipboard, and it carries exactly the things not to write to a file.
+    function installClipboardBridge() {
+        try {
+            if (typeof exportFunction !== 'function' || !window.wrappedJSObject) return 'no-wrap';
+            const w = window.wrappedJSObject;
+            const nav = w.navigator;
+            if (!nav || !nav.clipboard) return 'no-clipboard';
+            const original = nav.clipboard.writeText;
+            exportFunction(function (text) {
+                const s = String(text === null || text === undefined ? '' : text);
+                let native = false;
+                try {
+                    if (activePort) {
+                        activePort.postMessage({ type: 'clipboardWrite', text: s });
+                        native = true;
+                    }
+                } catch (e) {}
+                try { original.call(nav.clipboard, s); } catch (e) {}
+                try { return w.Promise.resolve(); } catch (e) {}
+                return undefined;
+            }, nav.clipboard, { defineAs: 'writeText' });
+            return 'ok';
+        } catch (e) {
+            return 'error:' + (e && e.name);
+        }
+    }
+    const clipboardBridge = installClipboardBridge();
+
     // Where the diagnostics are allowed to run.
     //
     // overlay.js now matches every http(s) host, because the keyboard, cursor and input routing have
