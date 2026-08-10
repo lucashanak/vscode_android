@@ -101,6 +101,63 @@
         }));
     }
 
+    // ====================== PASTE (fallback only) ======================
+    // The real paste is native: OverlayManager puts the text on the system clipboard and asks GeckoView
+    // to paste at the caret, which is the only way to produce a *trusted* paste event carrying real
+    // data. This runs only when Gecko reports no caret, so there is nothing for the browser to paste
+    // into.
+    //
+    // Deliberately absent: dispatching a synthetic ClipboardEvent. Measured in Firefox before shipping
+    // — a page handler receives it and calls preventDefault, but clipboardData.getData('text/plain')
+    // returns an empty string. The page swallows the paste and gets nothing while the dispatcher sees
+    // "consumed" and reports success. Worse than not trying: a silent failure dressed as a working
+    // feature, and from here it would have looked fixed.
+    //
+    // The direct write goes through the prototype's own value setter, which matters: React installs its
+    // own setter on the element and discards a plain `el.value = x` on the next render. That is half of
+    // why GitHub's device-code form accepted only one character.
+    function pasteText(text) {
+        const s = String(text === null || text === undefined ? '' : text);
+        if (!s) return;
+        const target = getTarget();
+        if (target && target.focus) target.focus();
+
+        try {
+            if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+                const proto = target.tagName === 'INPUT'
+                    ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
+                const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+                const start = target.selectionStart || 0;
+                const end = target.selectionEnd || start;
+                const next = target.value.substring(0, start) + s + target.value.substring(end);
+                setter.call(target, next);
+                try { target.selectionStart = target.selectionEnd = start + s.length; } catch (e2) {}
+                target.dispatchEvent(new InputEvent('input', {
+                    inputType: 'insertFromPaste', data: s, bubbles: true,
+                }));
+                reportPaste('native-setter', s.length);
+                return;
+            }
+        } catch (e) { /* fall through */ }
+
+        // Contenteditable and anything else: one insertion, not one per character — which is what the
+        // clipboard popup used to do by sending whole strings down the single-character path.
+        try {
+            if (document.execCommand('insertText', false, s)) {
+                reportPaste('execCommand', s.length);
+                return;
+            }
+        } catch (e) {}
+        insertChar(s);
+        reportPaste('insertChar-fallback', s.length);
+    }
+
+    function reportPaste(how, len) {
+        // Route and length only. A clipboard carries exactly the things that must not reach a log.
+        try { if (activePort) activePort.postMessage({ type: 'pasteResult', how: how, len: len }); }
+        catch (e) {}
+    }
+
     // ====================== SPECIAL KEY DISPATCH ======================
     // For non-printable keys and modified keys: ONLY keydown/keyup.
     const KEY_MAP = {
@@ -965,6 +1022,9 @@
                     // Keyboard input — still via content script (no native API for this)
                     case 'char':
                         insertChar(msg.char);
+                        break;
+                    case 'paste':
+                        pasteText(msg.text);
                         break;
                     case 'key':
                         dispatchSpecialKey(msg);

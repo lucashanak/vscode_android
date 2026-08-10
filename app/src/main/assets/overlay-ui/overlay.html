@@ -1358,7 +1358,7 @@ function showClipPopupAt(rect) {
             item.textContent = text.length > 40 ? text.substring(0,38) + '..' : text;
             item.addEventListener('pointerdown', ev => {
                 ev.preventDefault(); ev.stopPropagation();
-                A.sendChar(text);
+                A.sendPaste(text);
                 clipPopup.style.display = 'none';
             });
             clipPopup.appendChild(item);

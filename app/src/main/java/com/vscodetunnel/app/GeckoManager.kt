@@ -25,6 +25,13 @@ object GeckoManager {
     /** Where the commit-pinned workbench assets live — a different base domain from the editor. */
     private const val CDN_BASE_DOMAIN = "vscode-cdn.net"
 
+    /**
+     * Set once by MainActivity, which is the only place with the Activity a selection delegate needs.
+     * Held here because every tunnel session has to receive it, and this is where they are made.
+     */
+    @Volatile
+    var selectionBridge: SelectionBridge? = null
+
     private var runtime: GeckoRuntime? = null
     private var overlayExtension: WebExtension? = null
 
@@ -133,6 +140,9 @@ object GeckoManager {
         val session = GeckoSession(settings)
         session.progressDelegate = loadProgressLogger(label)
         session.contentBlockingDelegate = blockingLogger(label)
+        // Adds the native long-press selection menu, which this app previously had none of, and gives
+        // the paste path a trusted route to the system clipboard.
+        selectionBridge?.let { session.selectionActionDelegate = it }
         return session
     }
 

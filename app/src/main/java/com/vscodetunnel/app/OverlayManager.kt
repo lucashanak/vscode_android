@@ -171,6 +171,9 @@ class OverlayManager(
                         // own navigator.clipboard.writeText evidently did not: GitHub's device-code
                         // flow copies the code and immediately navigates away, so a silent failure
                         // there costs the login. Length only in the log — never the text.
+                        // Which paste route worked. Silence here would mean guessing again.
+                        "pasteResult" -> FileLogger.d(TAG,
+                            "Paste via ${json.optString("how")}: ${json.optInt("len")} chars")
                         "clipboardWrite" -> {
                             val text = json.optString("text")
                             if (text.isNotEmpty()) {
@@ -623,6 +626,40 @@ class OverlayManager(
                 sendToTerminal(ch)
             } else {
                 sendToContentScript("char", JSONObject().put("char", ch))
+            }
+        }
+
+        /**
+         * Paste, as distinct from typing a long string.
+         *
+         * The clipboard popup used to hand whole strings to [sendChar], which reaches the content
+         * script's single-character path. That fails in two ways at once on GitHub's device-code form:
+         * the page never receives a `paste` event, so it cannot distribute one character per box, and
+         * its inputs are React-controlled, which ignores a directly assigned value. The result was one
+         * character in the first box and nothing anywhere else.
+         *
+         * The terminal keeps the old route: a paste there is bracketed by the terminal itself.
+         */
+        @JavascriptInterface
+        fun sendPaste(text: String) {
+            if (inputTarget == InputTarget.SSH_TERMINAL) {
+                sendToTerminal(text)
+                return
+            }
+            // The system clipboard first, because the trusted paste below reads from it and nothing
+            // else can put data into a real paste event. Measured: a synthetic ClipboardEvent is
+            // consumed by page handlers but arrives with clipboardData empty, so the page swallows the
+            // paste and receives nothing.
+            TerminalClipboard.copy(geckoView.context, text)
+            val how = GeckoManager.selectionBridge?.pasteAtCaret() ?: "no-bridge"
+            if (how.startsWith("native")) {
+                FileLogger.d(TAG, "Paste via $how: ${text.length} chars")
+            } else {
+                // No caret reported, so there is nothing for the browser to paste into. The content
+                // script writes the value directly instead — good enough for an ordinary field, and the
+                // only option left.
+                FileLogger.d(TAG, "Paste falling back to content script ($how): ${text.length} chars")
+                sendToContentScript("paste", JSONObject().put("text", text))
             }
         }
 

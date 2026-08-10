@@ -206,6 +206,9 @@ class MainActivity : AppCompatActivity() {
         // Initialize GeckoView engine
         val runtime = GeckoManager.getRuntime(this)
         GeckoManager.installOverlayExtension(runtime)
+        // Before any session exists, since createTunnelSession applies it. Needs an Activity, which is
+        // why it is built here rather than inside GeckoManager.
+        GeckoManager.selectionBridge = SelectionBridge(this)
 
         geckoView = findViewById(R.id.geckoView)
         sessionWrapper = findViewById(R.id.sessionWrapper)
