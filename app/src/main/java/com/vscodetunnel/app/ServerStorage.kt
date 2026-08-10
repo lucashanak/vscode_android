@@ -650,6 +650,56 @@ object ServerStorage {
         }
     }
 
+    /**
+     * A self-hosted editor's URL and password, so it does not have to be typed on every connect.
+     *
+     * Kept in the same encrypted store as the SSH credentials rather than ordinary prefs, because it is
+     * a password and the app already has somewhere proper to put one. Returns null when the Keystore is
+     * unusable, which is the same failure the SSH credentials would hit — better an empty field than a
+     * password written somewhere weaker as a fallback.
+     *
+     * The stored password is auto-submitted on the matching origin. That is only defensible because the
+     * app can be locked behind biometrics at launch; the settings text says so, since a stored password
+     * that logs itself in is exactly as safe as whatever guards the app.
+     */
+    private const val EDITOR_PREFS = "editor_profile"
+
+    fun saveEditorProfile(ctx: Context, url: String, password: String): Boolean {
+        val prefs = SecurePrefs.open(ctx, EDITOR_PREFS) ?: return false
+        return prefs.edit()
+            .putString("url", url.trim())
+            .putString("password", password)
+            .commit()
+    }
+
+    /** URL and password, or null if nothing is stored or the store cannot be opened. */
+    fun getEditorProfile(ctx: Context): Pair<String, String>? {
+        val prefs = SecurePrefs.open(ctx, EDITOR_PREFS) ?: return null
+        val url = prefs.getString("url", "").orEmpty()
+        val pw = prefs.getString("password", "").orEmpty()
+        return if (url.isEmpty() || pw.isEmpty()) null else url to pw
+    }
+
+    fun clearEditorProfile(ctx: Context) {
+        SecurePrefs.open(ctx, EDITOR_PREFS)?.edit()?.clear()?.commit()
+    }
+
+    /**
+     * Whether [origin] is the origin of the saved editor URL.
+     *
+     * Compared as scheme + host + port rather than by prefix: a prefix test would let
+     * `https://vscode.hanaktech.org.example.com` collect the password.
+     */
+    fun editorOriginMatches(ctx: Context, origin: String): Boolean {
+        val saved = getEditorProfile(ctx)?.first ?: return false
+        return try {
+            val a = java.net.URI(saved)
+            val b = java.net.URI(origin)
+            a.scheme != null && a.host != null &&
+                a.scheme.equals(b.scheme, true) && a.host.equals(b.host, true) && a.port == b.port
+        } catch (_: Throwable) { false }
+    }
+
     fun getServers(ctx: Context): List<SshServer> = serversOrNull(ctx) ?: emptyList()
 
     /** @return false when nothing was written, in which case [lastError] says why. */

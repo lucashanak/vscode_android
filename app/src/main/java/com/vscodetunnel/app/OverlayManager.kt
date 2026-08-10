@@ -171,6 +171,27 @@ class OverlayManager(
                         // own navigator.clipboard.writeText evidently did not: GitHub's device-code
                         // flow copies the code and immediately navigates away, so a silent failure
                         // there costs the login. Length only in the log — never the text.
+                        // The page says which origin it is on; this side decides whether that is the
+                        // saved one. Deliberately not the other way round: a content script runs on
+                        // whatever page loaded, so the origin check belongs with the stored password.
+                        "loginProbe" -> {
+                            val origin = json.optString("origin")
+                            val ctx = geckoView.context
+                            if (origin.isNotEmpty() && ServerStorage.editorOriginMatches(ctx, origin)) {
+                                val pw = ServerStorage.getEditorProfile(ctx)?.second
+                                if (pw != null) {
+                                    FileLogger.d(TAG, "Saved login: filling for $origin")
+                                    sendToContentScript("loginFill", JSONObject().put("password", pw))
+                                }
+                            } else if (origin.isNotEmpty()) {
+                                // Worth a line: a login page on an origin with no saved profile is the
+                                // normal case, and silence would look like a broken feature.
+                                FileLogger.d(TAG, "Saved login: no profile for $origin")
+                            }
+                        }
+                        "loginFilled" -> FileLogger.d(TAG, "Saved login: submitted")
+                        "loginFailed" -> FileLogger.w(TAG,
+                            "Saved login failed: ${json.optString("why")}")
                         // Which paste route worked. Silence here would mean guessing again.
                         "pasteResult" -> FileLogger.d(TAG,
                             "Paste via ${json.optString("how")}: ${json.optInt("len")} chars")

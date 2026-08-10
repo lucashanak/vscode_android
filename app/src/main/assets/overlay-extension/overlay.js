@@ -101,6 +101,52 @@
         }));
     }
 
+    // ====================== SAVED EDITOR LOGIN ======================
+    // A self-hosted editor puts a password page between the user and the workbench on every fresh
+    // session, which on a phone is a real cost. The saved profile removes it.
+    //
+    // The password never lives here. This side reports only *where* it is — the app compares that
+    // against the origin of the URL it stored and sends the password back only on a match. A page on
+    // any other origin can ask and get nothing, and the decision stays with the side holding the stored
+    // value rather than in a content script running on someone else's page.
+    //
+    // Submitting is deliberate rather than a convenience shortcut: it was asked for, and the app can be
+    // locked behind biometrics at launch, which is what makes an auto-submitting password reasonable.
+    function findLoginForm() {
+        try {
+            const pw = document.querySelector('input[type="password"]');
+            if (!pw) return null;
+            const form = pw.closest('form');
+            return form ? { pw: pw, form: form } : null;
+        } catch (e) { return null; }
+    }
+
+    function requestSavedLogin() {
+        try {
+            if (!findLoginForm()) return;
+            if (activePort) activePort.postMessage({ type: 'loginProbe', origin: location.origin });
+        } catch (e) {}
+    }
+
+    function fillSavedLogin(password) {
+        const found = findLoginForm();
+        if (!found || !password) return;
+        try {
+            // Through the prototype's setter, for the same reason as paste: a framework-controlled input
+            // discards a plain assignment on its next render.
+            const setter = Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype, 'value').set;
+            setter.call(found.pw, String(password));
+            found.pw.dispatchEvent(new InputEvent('input', { inputType: 'insertText', bubbles: true }));
+            found.form.submit();
+            if (activePort) activePort.postMessage({ type: 'loginFilled' });
+        } catch (e) {
+            try {
+                if (activePort) activePort.postMessage({ type: 'loginFailed', why: String(e && e.name) });
+            } catch (e2) {}
+        }
+    }
+
     // ====================== PASTE (fallback only) ======================
     // The real paste is native: OverlayManager puts the text on the system clipboard and asks GeckoView
     // to paste at the caret, which is the only way to produce a *trusted* paste event carrying real
@@ -1017,6 +1063,7 @@
         try {
             const port = browser.runtime.connectNative('browser');
             activePort = port;
+            requestSavedLogin();
             port.onMessage.addListener(msg => {
                 switch (msg.type) {
                     // Keyboard input — still via content script (no native API for this)
@@ -1025,6 +1072,9 @@
                         break;
                     case 'paste':
                         pasteText(msg.text);
+                        break;
+                    case 'loginFill':
+                        fillSavedLogin(msg.password);
                         break;
                     case 'key':
                         dispatchSpecialKey(msg);

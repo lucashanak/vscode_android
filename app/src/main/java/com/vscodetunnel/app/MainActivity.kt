@@ -2200,6 +2200,74 @@ class MainActivity : AppCompatActivity() {
         layout.addView(staleRefreshField)
         label("Full reset is the fallback if a reload doesn't recover it. It signs you out of " +
             "VS Code and re-downloads the editor (~70 MB), so it isn't done automatically.")
+        label("Self-hosted editor: a URL and password stored encrypted, so a code-server login is not " +
+            "retyped on every connect. The password is submitted automatically and is only ever sent " +
+            "to this exact origin \u2014 which is safe to the extent that \"Biometric lock on app " +
+            "start\" above is enabled, since a stored password that logs itself in is exactly as " +
+            "protected as the app around it.")
+        val saved = ServerStorage.getEditorProfile(this)
+        val editorUrlField = EditText(this).apply {
+            hint = "https://vscode.example.org/"
+            setText(saved?.first ?: "")
+            inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI
+            setTextColor(resources.getColor(R.color.text_primary, theme))
+            setHintTextColor(resources.getColor(R.color.text_secondary, theme))
+            textSize = 14f
+            background = resources.getDrawable(R.drawable.bg_input, theme)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+        layout.addView(editorUrlField)
+        val editorPwField = EditText(this).apply {
+            hint = "code-server password"
+            setText(saved?.second ?: "")
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setTextColor(resources.getColor(R.color.text_primary, theme))
+            setHintTextColor(resources.getColor(R.color.text_secondary, theme))
+            textSize = 14f
+            background = resources.getDrawable(R.drawable.bg_input, theme)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(6) }
+        }
+        layout.addView(editorPwField)
+        val editorSaveBtn = Button(this).apply {
+            text = "Save editor profile"
+            isAllCaps = false; textSize = 14f
+            setTextColor(resources.getColor(R.color.text_white, theme))
+            setBackgroundColor(resources.getColor(R.color.surface_variant, theme))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(6) }
+            setOnClickListener {
+                val u = editorUrlField.text.toString().trim()
+                val pw = editorPwField.text.toString()
+                if (u.isEmpty() && pw.isEmpty()) {
+                    ServerStorage.clearEditorProfile(this@MainActivity)
+                    android.widget.Toast.makeText(this@MainActivity,
+                        "Editor profile cleared", android.widget.Toast.LENGTH_SHORT).show()
+                } else if (!u.startsWith("http://") && !u.startsWith("https://")) {
+                    android.widget.Toast.makeText(this@MainActivity,
+                        "URL must start with http:// or https://",
+                        android.widget.Toast.LENGTH_LONG).show()
+                } else if (ServerStorage.saveEditorProfile(this@MainActivity, u, pw)) {
+                    android.widget.Toast.makeText(this@MainActivity,
+                        "Saved. Add \"$u\" as a tunnel to open it.",
+                        android.widget.Toast.LENGTH_LONG).show()
+                } else {
+                    // The encrypted store is the only place this may go; there is no weaker fallback.
+                    android.widget.Toast.makeText(this@MainActivity,
+                        "Could not open the encrypted store \u2014 nothing was saved.",
+                        android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        layout.addView(editorSaveBtn)
+
         label("Module diagnostics loads six locally-served test pages that vary one factor each — " +
             "module size, same vs cross origin, a large inline module, and Trusted Types — to find " +
             "which one breaks the editor. Takes about 90 seconds; results go to the log as " +
