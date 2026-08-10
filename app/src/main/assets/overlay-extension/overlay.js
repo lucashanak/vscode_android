@@ -356,6 +356,7 @@
     //
     // Runs once, and only when the page is already broken.
     let modState = 'idle';
+    let modFreshState = 'idle';
     function startModuleElementProbe() {
         if (modState !== 'idle') return;
         try {
@@ -384,6 +385,32 @@
             });
             el.src = url;
             (document.head || document.documentElement).appendChild(el);
+
+            // The same load again under a distinct URL.
+            //
+            // Necessary because the first attempt measured something weaker than it appeared to. It ran
+            // in the document whose own import had already failed, and a module map remembers failed
+            // entries: a second import of the same URL is rejected from memory without touching the
+            // network. That is exactly what came back — FAIL in 5 ms with no new request, `hosts` still
+            // showing three. Consistent with a real failure, and equally consistent with merely
+            // reading the earlier one back.
+            //
+            // A query parameter makes a different map key, so this attempt has to fetch. The CDN
+            // serves it identically, with the same content type and ACAO (measured). If this one loads,
+            // the failure is not reproducible on demand and the first result was the map's memory; if
+            // it fails too, a CORS-mode module load from this origin genuinely does not work here.
+            modFreshState = 'running';
+            const t1 = Date.now();
+            const fresh = document.createElement('script');
+            fresh.type = 'module';
+            fresh.addEventListener('load', () => {
+                modFreshState = 'ok:fresh-url-loaded ' + (Date.now() - t1) + 'ms';
+            });
+            fresh.addEventListener('error', () => {
+                modFreshState = 'FAIL:fresh-url-error ' + (Date.now() - t1) + 'ms';
+            });
+            fresh.src = url + (url.indexOf('?') === -1 ? '?' : '&') + '__vsct=1';
+            (document.head || document.documentElement).appendChild(fresh);
         } catch (e) {
             modState = 'error:' + (e && e.name);
         }
@@ -466,15 +493,22 @@
                 // "never attempted" and "attempted and failed".
                 let fetched = [];
                 try {
-                    const w = window.wrappedJSObject;
-                    const names = ((w ? w.performance : performance).getEntriesByType('resource') || [])
-                        .map(e => String(e.name));
+                    // Reusing one lookup rather than making a second: the previous version asked
+                    // again inside its own try/catch, that throw was swallowed, and the report came
+                    // back count=1 with specs=[] — a field that looked absent rather than broken.
+                    let names = [];
+                    try {
+                        const w = window.wrappedJSObject;
+                        const perf = (w && w.performance) || performance;
+                        const list = perf.getEntriesByType('resource');
+                        for (let k = 0; k < list.length; k++) names.push(String(list[k].name));
+                    } catch (e2) { names = ['<perf unavailable>']; }
                     fetched = found.map(spec => {
                         const tail = spec.slice(spec.lastIndexOf('/') + 1);
                         const hit = names.some(n => tail && n.indexOf(tail) !== -1);
                         return (hit ? 'GOT ' : 'MISSING ') + tail.slice(0, 40);
                     });
-                } catch (e) {}
+                } catch (e) { fetched = ['<map failed>']; }
                 return { len: body.length, count: found.length, specs: fetched };
             }
             return { len: 0, count: -1, specs: [] };
@@ -687,6 +721,7 @@
             inlineImports: safe(inlineModuleImports),
             loaders: safe(loaderInventory),
             mod: safe(() => { startModuleElementProbe(); return modState; }),
+            modFresh: safe(() => modFreshState),
             auth: null,
             caches: null,
             idb: null,

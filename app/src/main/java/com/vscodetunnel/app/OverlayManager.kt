@@ -201,7 +201,10 @@ class OverlayManager(
                                 "loaders=${json.opt("loaders")} " +
                                 // A CORS-mode module load from the page's own origin — the one thing
                                 // never tested, since the byte-count fetch had extension privileges.
-                                "mod=${json.opt("mod")} " +
+                                // mod reuses the module map (a failed entry is remembered and
+                                // rejected without a fetch); modFresh uses a distinct URL, so it has
+                                // to go to the network. The contrast is the measurement.
+                                "mod=${json.opt("mod")} modFresh=${json.opt("modFresh")} " +
                                 "hosts=${json.opt("hosts")} res=${json.opt("res")} " +
                                 "resList=${json.opt("resList")} " +
                                 "text=\"${json.optString("text")}\" " +
