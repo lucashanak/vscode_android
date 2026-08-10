@@ -98,8 +98,24 @@ object TunnelApi {
         return endpoints != null && endpoints.length() > 0
     }
 
+    /**
+     * The editor URL for an entry, which is not always a Microsoft tunnel.
+     *
+     * A value that is already a URL is opened as it stands. That is what makes a self-hosted editor
+     * usable — `code-server` behind one of the SSH local forwards this app already sets up, reached at
+     * `http://127.0.0.1:<port>`. Worth having on its own terms: the assets come from the user's own
+     * server rather than a CDN, and the traffic no longer goes through Microsoft's relay, which was the
+     * original reason for looking at this at all.
+     *
+     * It is also the one arrangement where the page itself can be instrumented, and that has been the
+     * binding constraint on the blank-workbench investigation throughout: vscode.dev's bootstrap is a
+     * 325 KB minified inline module on someone else's server, so there was never anywhere to put a
+     * try/catch.
+     */
     fun buildTunnelUrl(tunnelName: String): String {
-        return "https://vscode.dev/tunnel/${URLEncoder.encode(tunnelName, "UTF-8")}"
+        val trimmed = tunnelName.trim()
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed
+        return "https://vscode.dev/tunnel/${URLEncoder.encode(trimmed, "UTF-8")}"
     }
 
     data class PatchStep(val url: String, val size: Long, val from: String, val to: String)
