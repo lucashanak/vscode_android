@@ -156,7 +156,7 @@ object DiagServer {
             "/harness" -> sendHtml(out, harnessHtml(), null)
             "/case" -> sendHtml(out, caseHtml(query), if (query["tt"] == "1") TT_CSP else null)
             "/mod.js" -> sendModule(out, (query["size"] ?: "0").toIntOrNull() ?: 0)
-            "/real.js" -> sendRealBundle(out)
+            "/real.js" -> sendRealBundle(out, query["mime"])
             "/report" -> {
                 val case = query["case"] ?: "?"
                 val result = query["r"] ?: "?"
@@ -261,7 +261,7 @@ object DiagServer {
         } catch (_: Throwable) { false }
     }
 
-    private fun sendRealBundle(out: OutputStream) {
+    private fun sendRealBundle(out: OutputStream, mimeOverride: String?) {
         val ctx = appContext
         val url = ctx?.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
             ?.getString("last_bundle_url", null)
@@ -319,8 +319,14 @@ object DiagServer {
                 }
             }
         }
+        // A deliberately wrong content type is a test, not an accident: see the case list.
+        val ctype = when (mimeOverride) {
+            "plain" -> "text/plain; charset=utf-8"
+            "none" -> null
+            else -> "application/javascript; charset=utf-8"
+        }
         val head = "HTTP/1.1 200 OK\r\n" +
-            "Content-Type: application/javascript; charset=utf-8\r\n" +
+            (if (ctype != null) "Content-Type: $ctype\r\n" else "") +
             "Content-Length: ${cached.length()}\r\n" +
             "Access-Control-Allow-Origin: *\r\n" +
             "Cache-Control: no-store\r\n" +
@@ -334,7 +340,8 @@ object DiagServer {
     /** Case parameters, kept next to the matrix in the class comment. */
     private data class Case(
         val id: Int, val size: Int, val cross: Boolean, val inlineBytes: Int, val tt: Boolean,
-        val label: String, val real: Boolean = false, val dyn: Boolean = false
+        val label: String, val real: Boolean = false, val dyn: Boolean = false,
+        val mime: String? = null
     )
 
     private fun cases() = listOf(
@@ -357,7 +364,17 @@ object DiagServer {
         Case(9, 0, false, INLINE_SIZE, false,
             "REAL bundle, same origin, dynamic import in try/catch", real = true, dyn = true),
         Case(10, 0, true, INLINE_SIZE, true,
-            "REAL bundle, cross + TT, dynamic import in try/catch", real = true, dyn = true)
+            "REAL bundle, cross + TT, dynamic import in try/catch", real = true, dyn = true),
+        // Signature comparison for the MIME hypothesis, and it needs no cache at all.
+        //
+        // On vscode.dev a module element for the bundle fails in ~5 ms with no console message, no CSP
+        // violation and nothing from the content blocking delegate. A response without a JavaScript
+        // content type is rejected exactly that way, and every check made on this bundle so far read
+        // its *body*, which fetch will hand over regardless of MIME. These two serve the correct bytes
+        // under a wrong content type and under none, so the resulting signature can be compared
+        // against the real failure. Matching signatures make MIME likely; a different one rules it out.
+        Case(11, 0, false, 0, false, "REAL bundle as text/plain", real = true, mime = "plain"),
+        Case(12, 0, false, 0, false, "REAL bundle with no Content-Type", real = true, mime = "none")
     )
 
     private fun harnessHtml(): String {
@@ -365,7 +382,8 @@ object DiagServer {
             "  {id:${c.id}, url:'/case?case=${c.id}&size=${c.size}" +
                 "&cross=${if (c.cross) 1 else 0}&inline=${c.inlineBytes}" +
                 "&tt=${if (c.tt) 1 else 0}&real=${if (c.real) 1 else 0}" +
-                "&dyn=${if (c.dyn) 1 else 0}', label:${quote(c.label)}}"
+                "&dyn=${if (c.dyn) 1 else 0}" +
+                (if (c.mime != null) "&mime=${c.mime}" else "") + "', label:${quote(c.label)}}"
         }
         // Sequential, not parallel: two 17.7 MB module compilations at once would muddy every result
         // and could fail for reasons that have nothing to do with the question.
@@ -416,7 +434,9 @@ next();
         val cross = q["cross"] == "1"
         val inlineBytes = (q["inline"] ?: "0").toIntOrNull() ?: 0
         val origin = if (cross) "http://127.0.0.1:$portAlt" else ""
-        val modUrl = if (q["real"] == "1") "$origin/real.js" else "$origin/mod.js?size=$size"
+        val modUrl = if (q["real"] == "1") {
+            "$origin/real.js" + (q["mime"]?.let { "?mime=$it" } ?: "")
+        } else "$origin/mod.js?size=$size"
 
         val loader = if (q["dyn"] == "1") {
             // await import() inside try/catch: the only arrangement that yields the actual Error

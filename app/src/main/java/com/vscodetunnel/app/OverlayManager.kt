@@ -205,6 +205,12 @@ class OverlayManager(
                                 // rejected without a fetch); modFresh uses a distinct URL, so it has
                                 // to go to the network. The contrast is the measurement.
                                 "mod=${json.opt("mod")} modFresh=${json.opt("modFresh")} " +
+                                // Response headers as the page's own layer sees them. Everything
+                                // before this read the body, and a module load is rejected on the
+                                // content type — which fetch ignores entirely.
+                                "hdr=${json.opt("hdr")} " +
+                                "hdrCached=[${json.opt("hdrCached")}] " +
+                                "hdrFresh=[${json.opt("hdrFresh")}] " +
                                 "hosts=${json.opt("hosts")} res=${json.opt("res")} " +
                                 "resList=${json.opt("resList")} " +
                                 "text=\"${json.optString("text")}\" " +

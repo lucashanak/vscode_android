@@ -350,6 +350,62 @@
         ).then(() => { clearTimeout(abort); pageWorld = out; return out; });
     }
 
+    // The response headers, cached and fresh.
+    //
+    // Never once measured, and the gap matters. Every check on this bundle so far read its *body* --
+    // the byte count that cleared it, the local copies DiagServer served -- and `fetch` does not care
+    // about MIME type. A module load does: a response without a JavaScript content type is rejected
+    // outright, instantly, with no CSP violation and nothing for a content blocker to report.
+    //
+    // Which fits what the device shows. A `<script type=module>` for this URL fails in about 5 ms,
+    // and 5 ms is the shape of an answer from cache rather than from the network. My earlier claim
+    // that no request was even attempted was an inference from `hosts` staying at three, not a
+    // measurement -- a failed load need not leave a resource timing entry at all.
+    //
+    // So read what the page's own layer returns: status, content type, length, and whether it came
+    // from cache. Cached first, then fresh, so the fresh fetch cannot overwrite the entry being
+    // examined.
+    let hdrState = 'idle';
+    let hdrCached = null;
+    let hdrFresh = null;
+
+    function describeResponse(r) {
+        try {
+            return 'status=' + r.status +
+                ' type=' + (r.headers.get('content-type') || '<none>') +
+                ' len=' + (r.headers.get('content-length') || '?') +
+                ' enc=' + (r.headers.get('content-encoding') || '-') +
+                ' acao=' + (r.headers.get('access-control-allow-origin') || '<none>');
+        } catch (e) { return 'describe-failed:' + (e && e.name); }
+    }
+
+    function startHeaderProbe() {
+        if (hdrState !== 'idle') return;
+        try {
+            const w = window.wrappedJSObject;
+            if (w && typeof w.define !== 'undefined') { hdrState = 'skip:healthy'; return; }
+            let url = null;
+            const es = (w ? w.performance : performance).getEntriesByType('resource');
+            for (let i = 0; i < es.length; i++) {
+                if (String(es[i].name).indexOf('workbench.web.main.internal.js') !== -1) {
+                    url = String(es[i].name);
+                    break;
+                }
+            }
+            if (!url) { hdrState = 'nourl'; return; }
+            hdrState = 'running';
+            fetch(url, { cache: 'force-cache' })
+                .then(r => { hdrCached = describeResponse(r); return r.body.cancel().catch(() => {}); },
+                      e => { hdrCached = 'FAIL:' + (e && e.name); })
+                .then(() => fetch(url, { cache: 'reload' }))
+                .then(r => { hdrFresh = describeResponse(r); hdrState = 'done';
+                             return r.body.cancel().catch(() => {}); },
+                      e => { hdrFresh = 'FAIL:' + (e && e.name); hdrState = 'done'; });
+        } catch (e) {
+            hdrState = 'error:' + (e && e.name);
+        }
+    }
+
     // Load the bundle the way the page does: a CORS-mode module fetch from this origin.
     //
     // This is a gap in everything measured so far. The byte count that proved the body intact was an
@@ -731,6 +787,9 @@
             loaders: safe(loaderInventory),
             mod: safe(() => { startModuleElementProbe(); return modState; }),
             modFresh: safe(() => modFreshState),
+            hdr: safe(() => { startHeaderProbe(); return hdrState; }),
+            hdrCached: safe(() => hdrCached),
+            hdrFresh: safe(() => hdrFresh),
             auth: null,
             caches: null,
             idb: null,
