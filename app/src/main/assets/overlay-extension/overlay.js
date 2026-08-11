@@ -259,8 +259,73 @@
             ctrlKey: !!msg.ctrl, altKey: !!msg.alt,
             shiftKey: !!msg.shift, metaKey: !!msg.meta,
         };
-        target.dispatchEvent(new KeyboardEvent('keydown', opts));
+        // A synthetic KeyboardEvent performs no default action, so an editing key does nothing at all
+        // unless the page implements it itself. Monaco and xterm do, which is exactly why Backspace has
+        // always worked in the editor and never in an ordinary form field — typing a password into
+        // code-server's login page is where that finally showed.
+        //
+        // dispatchEvent returns false when a handler called preventDefault, so the edit below only
+        // happens when nothing took the key. In the editor that means it never runs, and Monaco keeps
+        // sole control of its own buffer.
+        const handled = !target.dispatchEvent(new KeyboardEvent('keydown', opts));
+        if (!handled && !msg.ctrl && !msg.alt && !msg.meta &&
+            (msg.key === 'Bksp' || msg.key === 'Del')) {
+            applyDeletion(target, msg.key === 'Bksp');
+        }
         target.dispatchEvent(new KeyboardEvent('keyup', opts));
+    }
+
+    /**
+     * Deletes at the caret, for pages that leave editing to the browser.
+     *
+     * Mirrors what the browser would have done with a real key press: a selection is removed, otherwise
+     * one character goes before or after the caret. The value is written through the prototype's own
+     * setter, for the same reason paste and login-fill do — a framework-controlled input discards a
+     * plain assignment on its next render, which would look like nothing happening.
+     *
+     * inputType is reported honestly as deleteContentBackward/Forward so any listener sees the same
+     * thing it would see from a real edit.
+     */
+    function applyDeletion(target, backwards) {
+        try {
+            const tag = target.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA') {
+                const proto = tag === 'INPUT'
+                    ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
+                const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+                const value = target.value || '';
+                let start = target.selectionStart;
+                let end = target.selectionEnd;
+                // Some input types (email, number) report null for selection; nothing safe to do there.
+                if (start === null || start === undefined) return false;
+                if (end === null || end === undefined) end = start;
+
+                let next, caret;
+                if (end > start) {
+                    next = value.slice(0, start) + value.slice(end);
+                    caret = start;
+                } else if (backwards) {
+                    if (start === 0) return true;   // nothing to delete; not a failure
+                    next = value.slice(0, start - 1) + value.slice(start);
+                    caret = start - 1;
+                } else {
+                    if (start >= value.length) return true;
+                    next = value.slice(0, start) + value.slice(start + 1);
+                    caret = start;
+                }
+                setter.call(target, next);
+                try { target.selectionStart = target.selectionEnd = caret; } catch (e) {}
+                target.dispatchEvent(new InputEvent('input', {
+                    inputType: backwards ? 'deleteContentBackward' : 'deleteContentForward',
+                    bubbles: true,
+                }));
+                return true;
+            }
+            // contenteditable and anything else the browser considers editable
+            return document.execCommand(backwards ? 'delete' : 'forwardDelete');
+        } catch (e) {
+            return false;
+        }
     }
 
     // ====================== POINTER / MOUSE ======================
