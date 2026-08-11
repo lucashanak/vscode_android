@@ -322,6 +322,12 @@ function SK(ch) {
             if (labels[i] && FN_MAP[labels[i]]) { labels[i] = FN_MAP[labels[i]]; break; }
         }
     }
+    // A south corner that holds the shifted twin of the corner above it is derivable from the
+    // rule, so it is left blank. This is what keeps every key to two glyphs or fewer, and it is
+    // computed from SHIFT_TWIN rather than hand-listed so a label cannot contradict the table.
+    // Only the label is dropped — attachKeyEvents still reads the full table, so the swipe works.
+    if (labels[3] && SHIFT_TWIN[labels[1]] === labels[3]) labels[3] = null;
+    if (labels[2] && SHIFT_TWIN[labels[0]] === labels[2]) labels[2] = null;
     const [nw,ne,sw,se] = labels.map(v => v ? esc(v) : '');
     return `<button class="key char-key swipe-key" data-char="${ch}">
         <span class="sw-nw">${nw}</span><span class="sw-ne">${ne}</span>
@@ -331,117 +337,130 @@ function SK(ch) {
 }
 // Plain key for wide layout: no swipe corner labels (symbols have dedicated keys)
 function PK(ch) {
-    return `<button class="key char-key" data-char="${ch}">${ch}</button>`;
+    // data-noswipe is what makes the comment above true. Without it these keys still matched the
+    // .char-key selector in attachKeyEvents and picked up the full swipe table, so in landscape —
+    // 14 keys per row, 72 px tall — a 12 px drag while typing silently replaced the letter with a
+    // symbol, with no corner label anywhere to explain it. Long-press for accents still works.
+    return `<button class="key char-key" data-char="${ch}" data-noswipe="1">${ch}</button>`;
 }
 
-// ======================== LAYOUTS ========================
-// Each layout: { name, swipe: {char: [nw, ne, sw, se]} }
+// ======================== LAYOUT ========================
+// One swipe table, shared by every language. Each entry is [NW, NE, SW, SE].
+//
+// THE RULE: swipe up for the character, straight down for its shifted twin.
+//   `9` is up-right of o, `(` is down-right of o. `[` is up-right of j, `{` is down-right.
+//
+// Two things follow, and they are the whole point of this layout:
+//
+//  * Only the UP corners are ever labelled. A shifted twin is derived, not printed, because
+//    anybody writing code already knows `{` is Shift+`[`. That takes the board from ~50 corner
+//    glyphs down to 23, which is what makes the remaining ones findable at a glance. SK() works
+//    this out from SHIFT_TWIN below rather than from a hand-maintained list, so a label cannot
+//    drift out of step with the table.
+//
+//  * A vertical mis-swipe hands you the shifted twin of what you aimed at — visibly wrong, one
+//    backspace. Nothing on the board can silently become an unrelated character.
+//
+// What this replaced: the old table had `2`/`@` on w and `-`/`_` on g the right way round, but
+// `l c v b n m` inverted it — `|` above `\`, `:` above `;`, `"` above `'` — and those keys carry
+// 54% of the punctuation actually typed (counted across this machine's TypeScript, Kotlin, Python,
+// shell and bash history). Two contradictory rules on one keyboard are worse than none: you learn
+// the pattern from the eight keys where it holds and get punished on the most frequent characters.
+// `c`/`v` were worse still, with the pairs split across keys (`<` beside `.`, `>` beside `,`).
+//
+// US and CZ are now the same table. Czech accents live on long-press instead, where DIAC already
+// carried all fifteen of them (á č ď é ě í ň ó ř š ť ú ů ý ž) in both languages — so putting them
+// in swipe slots was duplication, and it was what had pushed CZ's digits to NW and its brackets
+// onto f/g/b. Dropped outright: † (zero occurrences in 30.9 M characters of real source), ß and §
+// (still on long-press), and € (long-press on 4).
+const SWIPE = {
+    // Number row. On a PC, q..p sit under 1..0 — so up-right is the digit, down-right its shift.
+    'q': ['`','1','~','!'],
+    'w': [null,'2',null,'@'],
+    'e': [null,'3',null,'#'],
+    'r': [null,'4',null,'$'],
+    't': [null,'5',null,'%'],
+    'y': [null,'6',null,'^'],
+    'u': [null,'7',null,'&'],
+    'i': [null,'8',null,'*'],
+    'o': [null,'9',null,'('],
+    // p also takes the backslash key, which is off the right edge of the letter rows.
+    'p': ['\\','0','|',')'],
+
+    // a is the left edge of the home row, so it keeps the left-edge cluster. Esc is labelled
+    // because it is not a shifted twin of anything and cannot be derived.
+    'a': ['Tab',null,'Esc',null],
+
+    // -_ and =+ stay on g/h. Strict PC geography would exile them past p, into the worst reach
+    // zone on the board, and they are among the most-typed characters in a terminal. This is the
+    // one place frequency beats geography, and it is also where they already are.
+    'g': [null,'-',null,'_'],
+    'h': [null,'=',null,'+'],
+
+    // Brackets keep j/k, one pair per key, so [{ and ]} are never split across corners.
+    'j': [null,'[',null,'{'],
+    'k': [null,']',null,'}'],
+
+    // The two PC keys right of l, in PC order: ;: then '".
+    'l': [';',"'",':','"'],
+
+    // The three PC keys right of m, on the bottom row, reading left to right as they do on a PC.
+    // Only , and . swap hosts versus before, so that each sits with its own shifted twin.
+    'c': [null,',',null,'<'],
+    'v': [null,'.',null,'>'],
+    'b': [null,'/',null,'?'],
+
+    // ---- keys that exist only in the wide layout ----
+    // Tapping these already types the character, so the swipes carry the extras. Shift stays on
+    // down-right here too, which makes one sentence true of both orientations.
+    '`': [null,'Esc',null,'~'],
+    '1': [null,'F1',null,'!'],
+    '2': [null,'F2',null,'@'],
+    '3': [null,'F3',null,'#'],
+    '4': [null,'F4',null,'$'],
+    '5': [null,'F5',null,'%'],
+    '6': [null,'F6',null,'^'],
+    '7': [null,'F7',null,'&'],
+    '8': [null,'F8',null,'*'],
+    '9': [null,'F9',null,'('],
+    '0': [null,'F10',null,')'],
+    '-': [null,'F11',null,'_'],
+    '=': [null,'F12',null,'+'],
+    '[': [null,null,null,'{'],
+    ']': [null,null,null,'}'],
+    '\\': [null,null,null,'|'],
+    ';': [null,null,null,':'],
+    "'": [null,'`',null,'"'],
+    ',': [null,null,null,'<'],
+    '.': [null,null,null,'>'],
+    '/': [null,null,null,'?'],
+};
+
+// Shifted twins, used to decide which corners need a label at all. Keyed by the unshifted
+// character; a corner whose value is the twin of the corner above it is derivable and stays blank.
+const SHIFT_TWIN = {
+    '1':'!','2':'@','3':'#','4':'$','5':'%','6':'^','7':'&','8':'*','9':'(','0':')',
+    '-':'_','=':'+','[':'{',']':'}','\\':'|',';':':',"'":'"',',':'<','.':'>','/':'?','`':'~',
+};
+
+// Language now selects only the order of the long-press accent popup: the swipe table is shared,
+// so switching mid-file never moves a coding symbol. DIAC is already Czech-first for most letters;
+// these two are the exceptions worth correcting for a Czech user.
 const LAYOUTS = {
-    'us': {
-        name: 'US',
-        swipe: {
-            'q': [null,'1',null,'Esc'],
-            'w': ['~','2','@',null],
-            'e': ['!','3','#','\u20AC'],
-            'r': [null,'4','$',null],
-            't': [null,'5','%',null],
-            'y': [null,'6','^',null],
-            'u': [null,'7','&',null],
-            'i': [null,'8','*',null],
-            'o': [null,'9','(',')'],
-            'p': [null,'0',null,null],
-            'a': ['Tab','`',null,null],
-            's': [null,'\u00A7','\u00DF',null],
-            'g': [null,'-','_',null],
-            'h': [null,'=','+',null],
-            'j': [null,null,'{','}'],
-            'k': [null,null,'[',']'],
-            'l': [null,'|','\\',null],
-            'x': [null,'\u2020',null,null],
-            'c': [null,'<','.',null],
-            'v': [null,'>',',',null],
-            'b': [null,'?','/',null],
-            'n': [null,':',';',null],
-            'm': [null,'"',"'",null],
-            // Number row keys (wide layout)
-            '`': ['Esc',null,'~',null],
-            '1': [null,'F1','!',null],
-            '2': [null,'F2','@',null],
-            '3': [null,'F3','#',null],
-            '4': [null,'F4','$',null],
-            '5': [null,'F5','%',null],
-            '6': [null,'F6','^',null],
-            '7': [null,'F7','&',null],
-            '8': [null,'F8','*',null],
-            '9': [null,'F9','(',null],
-            '0': [null,'F10',')',null],
-            '-': [null,'F11','_',null],
-            '=': [null,'F12','+',null],
-            // Symbol keys (wide layout)
-            '[': [null,'{',null,null],
-            ']': [null,'}',null,null],
-            '\\': [null,'|',null,null],
-            ';': [null,':',null,null],
-            "'": [null,'"','`',null],
-            ',': [null,'<',null,null],
-            '.': [null,'>',null,null],
-            '/': [null,'?',null,null],
-        }
-    },
-    'cz': {
-        name: 'CZ',
-        swipe: {
-            'q': ['1','Esc',null,'~'],
-            'w': ['2','+','|','\\'],
-            'e': ['3','\u00E9','^','\u011B'],
-            'r': ['4',null,null,'\u0159'],
-            't': ['5',null,'\u00B0','\u0165'],
-            'y': ['6','\u00FD',null,null],
-            'u': ['7','\u00FA','`','\u016F'],
-            'i': ['8','\u00ED','(',')'],
-            'o': ['9','\u00F3','/','%'],
-            'p': ['0',null,'=',null],
-            'a': ['Tab','\u00E1',';',null],
-            's': ['\u00A7',null,null,'\u0161'],
-            'd': [null,null,null,'\u010F'],
-            'f': [null,null,'[',null],
-            'g': [null,null,']',null],
-            'l': ['"',"'",'$','!'],
-            'z': [null,null,null,'\u017E'],
-            'x': ['\u2020',null,'#',null],
-            'c': [null,null,'&','\u010D'],
-            'v': [null,null,'@',null],
-            'b': ['<','>','{','}'],
-            'n': ['?','.',',','\u0148'],
-            'm': [':','*','-','_'],
-            // Number row keys (wide layout)
-            '`': ['Esc',null,'~',null],
-            '1': [null,'F1','!',null],
-            '2': [null,'F2','@',null],
-            '3': [null,'F3','#',null],
-            '4': [null,'F4','$',null],
-            '5': [null,'F5','%',null],
-            '6': [null,'F6','^',null],
-            '7': [null,'F7','&',null],
-            '8': [null,'F8','*',null],
-            '9': [null,'F9','(',null],
-            '0': [null,'F10',')',null],
-            '-': [null,'F11','_',null],
-            '=': [null,'F12','+',null],
-            // Symbol keys (wide layout)
-            '[': [null,'{',null,null],
-            ']': [null,'}',null,null],
-            '\\': [null,'|',null,null],
-            ';': [null,':',null,null],
-            "'": [null,'"','`',null],
-            ',': [null,'<',null,null],
-            '.': [null,'>',null,null],
-            '/': [null,'?',null,null],
-        }
-    }
+    'us': { name: 'US' },
+    'cz': { name: 'CZ', diacFirst: { 'e': '\u011B', 'u': '\u016F' } },
 };
 let currentLang = 'us';
-function SWIPE_MAP() { return LAYOUTS[currentLang].swipe; }
+function SWIPE_MAP() { return SWIPE; }
+
+/** Accent list for a long-press, with the current language's preferred form first. */
+function diacFor(ch) {
+    const base = DIAC[ch];
+    if (!base) return null;
+    const first = (LAYOUTS[currentLang].diacFirst || {})[ch];
+    if (!first || base[0] === first || base.indexOf(first) < 0) return base;
+    return [first].concat(base.filter(c => c !== first));
+}
 
 // Nav key: 8 directions [N, NE, E, SE, S, SW, W, NW]
 const NAV_SWIPE = ['Up','PgUp','Right','PgDn','Down','End','Left','Home'];
@@ -554,10 +573,16 @@ function compactLetters() {
 // ======================== COMPACT: SYMBOLS ========================
 function compactSymbols() {
     return `
-        <div class="row row-num">${'1234567890'.split('').map(d=>K(d)).join('')}</div>
-        <div class="row">${['-','=','`','~','_','+','\\','|','/','?'].map(s=>K(s)).join('')}</div>
+        <!-- Each shifted row sits directly under its own base row, column for column, so this page
+             is a picture of the same rule the letter page follows: down means Shift. The old page
+             interleaved them: row 2 mixed plain and shifted with no pattern to read.
+             Digits use PK() rather than K() so a long press reaches DIAC — F-keys, EUR, GBP. As K()
+             keys they carried data-key, the long-press handler binds to .char-key, and so those
+             alternates were dead in portrait while the wide layout had them. -->
+        <div class="row row-num">${'1234567890'.split('').map(d=>PK(d)).join('')}</div>
         <div class="row">${['!','@','#','$','%','^','&','*','(',')'].map(s=>K(s)).join('')}</div>
-        <div class="row">${['{','}','[',']',':',';',"'",'"','<','>'].map(s=>K(s)).join('')}</div>
+        <div class="row">${['-','=','[',']','\\',';',"'",',','.','/'].map(s=>K(s)).join('')}</div>
+        <div class="row">${['_','+','{','}','|',':','"','<','>','?'].map(s=>K(s)).join('')}</div>
         <div class="row">
             ${K('Left','\u25C0')} ${K('Down','\u25BC')} ${K('Up','\u25B2')} ${K('Right','\u25B6')}
             ${K('Esc')} ${K('Tab')} ${K('Home','Hm')} ${K('End')} ${K('Del')}
@@ -606,7 +631,6 @@ function fullKB() {
         <div class="row">
             ${M('ctrl','Ctrl','wide-key')} ${M('alt','Alt','wide-key')} ${M('meta','Win','wide-key')}
             <button class="key space-key" data-key="Space"><span class="sp-hint-l">\u25C0</span><span class="sp-hint-r">\u25B6</span></button>
-            <button class="key wide-key" id="wideFnToggle" style="font-size:18px;color:#ccc;background:#333">Fn</button>
             ${K('Left','\u25C0','nav-key')} ${K('Down','\u25BC','nav-key')} ${K('Up','\u25B2','nav-key')} ${K('Right','\u25B6','nav-key')}
         </div>`;
 }
@@ -756,7 +780,7 @@ const diacRow = document.getElementById('diacRow');
 let diacTimer = null, diacShown = false, diacChars = [], diacSelected = -1, diacOrigChar = '';
 
 function showDiacPopup(ch, btnRect) {
-    const alts = DIAC[ch.toLowerCase()];
+    const alts = diacFor(ch.toLowerCase());
     if (!alts || alts.length === 0) return;
     diacChars = alts;
     diacSelected = -1;
@@ -806,8 +830,13 @@ function commitDiac() {
         } else {
             A.sendChar(mods.shift ? d.toUpperCase() : d);
         }
+    } else if (diacShown && diacOrigChar) {
+        // Releasing without picking an accent used to send *nothing at all*. Together with the
+        // long-press timer firing mid-swipe, that is how a hesitant gesture produced no character
+        // and no feedback whatsoever. The base letter is what the gesture plainly asked for: the
+        // finger went down on `c`, so `c` is the honest answer when nothing else was chosen.
+        A.sendChar(mods.shift ? diacOrigChar.toUpperCase() : diacOrigChar);
     }
-    // If no diac selected and popup was shown, send nothing (original char not sent yet)
     hideDiacPopup();
     resetMods();
 }
@@ -823,7 +852,9 @@ function attachKeyEvents() {
     // Character keys (a-z) — swipe for symbols, hold for diacritics
     kbPanel.querySelectorAll('.char-key').forEach(btn => {
         const ch = btn.dataset.char;
-        const swipeMap = SWIPE_MAP()[ch]; // [nw, ne, sw, se] or undefined
+        // Wide-layout letters opt out via data-noswipe: they have dedicated symbol keys and no
+        // corner labels, so a swipe there could only ever be an accident.
+        const swipeMap = btn.dataset.noswipe ? null : SWIPE_MAP()[ch]; // [nw, ne, sw, se]
 
         const fireChar = () => {
             const c = mods.shift ? ch.toUpperCase() : ch;
@@ -845,18 +876,35 @@ function attachKeyEvents() {
             pendingChar = true;
 
             // Do NOT fire char yet — wait for pointerup to detect swipe vs tap
-            if (DIAC[ch] && !mods.ctrl && !mods.alt && !mods.meta) {
+            if (diacFor(ch) && !mods.ctrl && !mods.alt && !mods.meta) {
                 // Has diacritics: long-press shows popup
                 diacTimer = setTimeout(() => {
                     pendingChar = false;
                     stopRepeat();
                     showDiacPopup(ch, btn.getBoundingClientRect());
+                    // Highlight from where the finger actually is, so the popup shows what releasing
+                    // right now would give. The popup is centred on the key, so that is the middle
+                    // item, not the first — highlighting the first would have been a lie.
+                    updateDiacHighlight(startX, startY);
                 }, 300);
             }
         });
 
         btn.addEventListener('pointermove', e => {
-            if (diacShown) updateDiacHighlight(e.clientX, e.clientY);
+            if (diacShown) { updateDiacHighlight(e.clientX, e.clientY); return; }
+            // A gesture that has travelled is a swipe, not a hold. Without this the 300 ms
+            // long-press timer fired mid-swipe, the accent popup opened, and releasing anywhere
+            // outside it sent *nothing at all* (see commitDiac). So a slow, careful swipe silently
+            // produced no character — precisely the gesture of someone still learning where a
+            // symbol lives, which made the keyboard feel unpredictable exactly when it was being
+            // learned.
+            if (diacTimer) {
+                const dx = e.clientX - startX, dy = e.clientY - startY;
+                if (Math.sqrt(dx*dx + dy*dy) >= SWIPE_THRESHOLD) {
+                    clearTimeout(diacTimer);
+                    diacTimer = null;
+                }
+            }
         });
 
         btn.addEventListener('pointerup', e => {
@@ -943,7 +991,7 @@ function attachKeyEvents() {
             }
         };
         const key = btn.dataset.key;
-        const hasDiac = DIAC[key] && !SPECIAL_KEYS.has(key) && key !== 'Space';
+        const hasDiac = diacFor(key) && !SPECIAL_KEYS.has(key) && key !== 'Space';
         const isSpace = key === 'Space';
         const isBksp = key === 'Bksp';
         let pendingKey = false;
@@ -1259,19 +1307,6 @@ function attachKeyEvents() {
         wideEnter.addEventListener('pointercancel', () => { stopRepeat(); wideEnter.classList.remove('pressed'); });
     }
 
-    // Wide layout: Fn toggle
-    const wideFn = document.getElementById('wideFnToggle');
-    if (wideFn) {
-        if (fnActive) wideFn.classList.add('mod-active');
-        wideFn.addEventListener('pointerdown', e => {
-            e.preventDefault(); e.stopPropagation();
-            haptic();
-            fnActive = !fnActive;
-            // Re-render wide layout to update swipe labels (attachKeyEvents restores Fn visual)
-            kbPanel.innerHTML = fullKB();
-            attachKeyEvents();
-        });
-    }
 
     // Fn toggle — re-render to show F-key labels
     const fnBtn = document.getElementById('fnToggle');
@@ -1533,7 +1568,14 @@ langBtn.addEventListener('pointerdown', e => {
     const idx = (LANG_ORDER.indexOf(currentLang) + 1) % LANG_ORDER.length;
     currentLang = LANG_ORDER[idx];
     langBtn.textContent = LAYOUTS[currentLang].name;
-    if (currentLayout === 'compact') renderCompact();
+    // Re-render whichever layout is showing. This used to rebuild only compact, so in landscape the
+    // caption changed and the previous language's map stayed live inside the handlers' closures.
+    if (currentLayout === 'compact') {
+        renderCompact();
+    } else {
+        kbPanel.innerHTML = fullKB();
+        attachKeyEvents();
+    }
 });
 
 document.getElementById('hideBtn').addEventListener('pointerdown', e => {
