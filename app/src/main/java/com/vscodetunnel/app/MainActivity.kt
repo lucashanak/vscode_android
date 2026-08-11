@@ -2269,31 +2269,41 @@ class MainActivity : AppCompatActivity() {
         layout.addView(editorSaveBtn)
 
         label("Local editor on the phone: code-server inside Termux, no server needed. The backend is " +
-            "deliberately not bundled into this app \u2014 it needs a Node runtime, which would add " +
-            "150\u2013250 MB and make this app responsible for Node's security updates, while Termux " +
-            "already keeps it patched. Copy the script below, paste it into Termux, and put " +
-            "${TermuxSetup.LOCAL_URL} plus the password it prints into the profile above.")
-        val termuxScript = EditText(this).apply {
-            setText(TermuxSetup.INSTALL_SCRIPT)
-            // Read-only rather than disabled: the text must stay selectable so it can be copied by
-            // hand if the button below is not what the user wants.
-            isFocusable = true
-            isFocusableInTouchMode = true
-            setTextIsSelectable(true)
-            keyListener = null
-            setTextColor(resources.getColor(R.color.text_secondary, theme))
-            textSize = 11f
-            typeface = android.graphics.Typeface.MONOSPACE
-            background = resources.getDrawable(R.drawable.bg_input, theme)
-            setPadding(dp(10), dp(8), dp(10), dp(8))
+            "deliberately not bundled into this app \u2014 it would need a Node runtime, adding " +
+            "150\u2013250 MB and making this app responsible for Node's security updates, while Termux " +
+            "keeps it patched for free.")
+        label("Step 1 is one line, and it is the only part that cannot be automated: Termux refuses " +
+            "commands from other apps until allow-external-apps is set, and it will not let this app " +
+            "write that file. Everything after it the app can do itself.")
+
+        val termuxEnableBtn = Button(this).apply {
+            text = "1. Copy the enable line, open Termux"
+            isAllCaps = false; textSize = 14f
+            setTextColor(resources.getColor(R.color.text_white, theme))
+            setBackgroundColor(resources.getColor(R.color.surface_variant, theme))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp(4) }
+            setOnClickListener {
+                TerminalClipboard.copy(this@MainActivity, TermuxSetup.ENABLE_SCRIPT)
+                val opened = TermuxSetup.openTermux(this@MainActivity)
+                android.widget.Toast.makeText(
+                    this@MainActivity,
+                    if (opened) "Copied \u2014 long-press in Termux, paste, press Enter, then come back"
+                    else "Copied. Install Termux from F-Droid or GitHub, then paste it there.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
         }
-        layout.addView(termuxScript)
+        layout.addView(termuxEnableBtn)
 
-        val termuxCopyBtn = Button(this).apply {
-            text = "Copy install script"
+        // Offered only when Termux is present. Both of these report what actually came back rather
+        // than assuming: Termux answers through a pending intent, and silence is itself the answer —
+        // it is what "allow-external-apps is still not set" looks like from outside.
+        if (TermuxSetup.isInstalled(this)) {
+        val termuxProbeBtn = Button(this).apply {
+            text = "2. Check that Termux accepts commands"
             isAllCaps = false; textSize = 14f
             setTextColor(resources.getColor(R.color.text_white, theme))
             setBackgroundColor(resources.getColor(R.color.surface_variant, theme))
@@ -2302,47 +2312,51 @@ class MainActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { topMargin = dp(6) }
             setOnClickListener {
-                TerminalClipboard.copy(this@MainActivity, TermuxSetup.INSTALL_SCRIPT)
-                val opened = TermuxSetup.openTermux(this@MainActivity)
-                android.widget.Toast.makeText(
-                    this@MainActivity,
-                    if (opened) "Script copied \u2014 long-press in Termux to paste"
-                    else "Script copied. Install Termux (F-Droid or GitHub), then paste it there.",
-                    android.widget.Toast.LENGTH_LONG
-                ).show()
-            }
-        }
-        layout.addView(termuxCopyBtn)
-
-        // Only offered when Termux is actually present, and it still may do nothing: Termux ignores
-        // external commands until allow-external-apps=true exists in its own properties file, which it
-        // will not let this app write. That is why the copy button above is the primary path and this
-        // one says plainly that it may be refused.
-        if (TermuxSetup.isInstalled(this)) {
-            val termuxRunBtn = Button(this).apply {
-                text = "Run it in Termux now"
-                isAllCaps = false; textSize = 14f
-                setTextColor(resources.getColor(R.color.text_white, theme))
-                setBackgroundColor(resources.getColor(R.color.surface_variant, theme))
-                setPadding(dp(16), dp(12), dp(16), dp(12))
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = dp(6) }
-                setOnClickListener {
-                    val how = TermuxSetup.runInTermux(this@MainActivity, TermuxSetup.INSTALL_SCRIPT)
-                    android.widget.Toast.makeText(
-                        this@MainActivity,
-                        if (how == "sent")
-                            "Sent to Termux. If nothing happens, allow-external-apps is not set yet " +
-                                "\u2014 use Copy instead, its first line sets it."
-                        else "Termux would not take it ($how). Use Copy instead.",
-                        android.widget.Toast.LENGTH_LONG
-                    ).show()
+                isEnabled = false; text = "Checking..."
+                TermuxSetup.probe(this@MainActivity) { outcome ->
+                    runOnUiThread {
+                        isEnabled = true; text = "2. Check that Termux accepts commands"
+                        android.widget.Toast.makeText(
+                            this@MainActivity, outcome, android.widget.Toast.LENGTH_LONG).show()
+                    }
                 }
             }
-            layout.addView(termuxRunBtn)
         }
+        layout.addView(termuxProbeBtn)
 
+        val termuxInstallBtn = Button(this).apply {
+            text = "3. Install code-server in Termux"
+            isAllCaps = false; textSize = 14f
+            setTextColor(resources.getColor(R.color.text_white, theme))
+            setBackgroundColor(resources.getColor(R.color.surface_variant, theme))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(6) }
+            setOnClickListener {
+                android.widget.Toast.makeText(this@MainActivity,
+                    "Installing in Termux \u2014 watch it there, it takes a few minutes",
+                    android.widget.Toast.LENGTH_LONG).show()
+                // Foreground session on purpose: this takes minutes and the user needs to see npm's
+                // output, and any failure, rather than waiting on an invisible process. Generous
+                // timeout for the same reason.
+                TermuxSetup.runInTermux(
+                    this@MainActivity, TermuxSetup.INSTALL_SCRIPT, "install-code-server",
+                    background = false, timeoutMs = 900_000
+                ) { outcome ->
+                    runOnUiThread {
+                        android.widget.Toast.makeText(this@MainActivity,
+                            outcome, android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
+        layout.addView(termuxInstallBtn)
+
+        } else {
+            label("Termux is not installed. Get it from F-Droid or github.com/termux/termux-app \u2014 " +
+                "the Play Store build is deprecated and will not work.")
+        }
 
         label("Module diagnostics loads six locally-served test pages that vary one factor each — " +
             "module size, same vs cross origin, a large inline module, and Trusted Types — to find " +
