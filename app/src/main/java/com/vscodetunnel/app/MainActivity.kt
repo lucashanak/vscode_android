@@ -2419,13 +2419,21 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Cold-start staleness check. There is no live page to reload here, so this drops
-        // vscode.dev's own document cache before loading — narrowly. It deliberately does NOT use
-        // the full reset: that would take the stored sign-in and the service worker's ~72 MB
-        // precache with it, and neither can be the problem. Scoping by base domain also spares the
-        // workbench bundle automatically, since that is served from main.vscode-cdn.net.
+        // Cold-start staleness check. There is no live page to reload here, so this drops the
+        // editor's own document cache before loading — narrowly. It deliberately does NOT use the
+        // full reset: that would take the stored sign-in and the service worker's ~72 MB precache
+        // with it, and neither can be the problem.
+        //
+        // It applies to vscode.dev only, and that restriction is load-bearing. The clear is scoped by
+        // base domain, which on vscode.dev spares the workbench bundle for free because that lives on
+        // main.vscode-cdn.net — a different base domain. A self-hosted editor serves the bundle from
+        // the *same* domain as the document, so the same call would throw away ~17.6 MB on every cold
+        // start after an idle period. Nor is there anything to gain: measured against code-server, the
+        // bundle comes back with `Cache-Control: public, max-age=31536000` under a URL containing the
+        // commit, so it is immutable and an upgrade invalidates it by changing the URL. There is no
+        // stale entry document to clear, which is the only thing this existed for.
         val thresholdMin = tunnelStaleRefreshMin
-        if (thresholdMin > 0 && !coldStartStaleHandled) {
+        if (thresholdMin > 0 && !coldStartStaleHandled && isMicrosoftTunnel(url)) {
             coldStartStaleHandled = true
             val lastActive = sessionPrefs.getLong(KEY_LAST_TUNNEL_ACTIVE, 0L)
             val stale = lastActive == 0L ||
@@ -3434,6 +3442,18 @@ class MainActivity : AppCompatActivity() {
     /** Position on the reload button's escalation ladder — see [reloadCurrentTunnel]. */
     private var reloadRung = 0
     private var lastReloadPressAt = 0L
+
+    /**
+     * Whether this URL is one of Microsoft's hosted tunnels rather than a self-hosted editor.
+     *
+     * Used to keep vscode.dev-specific workarounds off a server the user runs themselves, where they
+     * would range from pointless to actively harmful.
+     */
+    private fun isMicrosoftTunnel(url: String): Boolean =
+        try {
+            val host = java.net.URI(url).host?.lowercase() ?: return false
+            host == "vscode.dev" || host.endsWith(".vscode.dev")
+        } catch (_: Throwable) { false }
 
     private fun reloadCurrentTunnel(reason: String) {
         val idx = currentSessionIdx
