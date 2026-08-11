@@ -12,6 +12,17 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Termux integration for the local-editor option. RUN_COMMAND lets the app hand a command to
+         Termux, but only once the user has set allow-external-apps=true in ~/.termux/termux.properties
+         themselves — Termux deliberately forbids an external app from writing that file, so the
+         "Run in Termux" button can never be the whole story and the copyable script is the path that
+         always works. <queries> is needed because Android 11+ hides other packages otherwise, and
+         without it the app cannot even tell whether Termux is installed. -->
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+    <queries>
+        <package android:name="com.termux" />
+    </queries>
+
     <application
         android:name=".App"
         android:allowBackup="false"
