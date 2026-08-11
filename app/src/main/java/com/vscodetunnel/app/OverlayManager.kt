@@ -154,6 +154,16 @@ class OverlayManager(
         }
     }
 
+    /**
+     * Asks the page whether it lost its connection while backgrounded, and to recover if so.
+     *
+     * Replaces a reload on a timer: that fired whether or not anything had broken and cost a full
+     * workbench boot every time. This costs nothing when the connection survived.
+     */
+    fun checkConnection() {
+        sendToContentScript("checkConnection", JSONObject())
+    }
+
     fun setPort(p: WebExtension.Port) {
         port = p
         FileLogger.d(TAG, "Content script port connected")
@@ -193,6 +203,11 @@ class OverlayManager(
                         "loginFailed" -> FileLogger.w(TAG,
                             "Saved login failed: ${json.optString("why")}")
                         // Which paste route worked. Silence here would mean guessing again.
+                        // Whether the editor had actually lost its connection, and what was done.
+                        // Logged either way: this replaced a timer-driven reload, so "nothing happened"
+                        // has to be distinguishable from "the check silently stopped working".
+                        "recovery" -> FileLogger.w(TAG,
+                            "Recovery: ${json.optString("kind")} ${json.optString("detail")}")
                         "pasteResult" -> FileLogger.d(TAG,
                             "Paste via ${json.optString("how")}: ${json.optInt("len")} chars")
                         "clipboardWrite" -> {

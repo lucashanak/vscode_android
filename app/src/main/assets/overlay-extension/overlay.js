@@ -101,6 +101,50 @@
         }));
     }
 
+    // ====================== RECONNECT RECOVERY ======================
+    // After a long background the editor's WebSocket is dead, and past the server's grace period it
+    // cannot be revived: VS Code puts up "Cannot reconnect. Please reload the window." and waits for a
+    // tap. The app used to pre-empt that by reloading on a timer whenever it had been backgrounded for
+    // a while, which cost a full workbench boot — about ten seconds — on every return, whether the
+    // connection had actually died or not.
+    //
+    // This is the same recovery, but only when it is needed and without a timer: on resume, look for
+    // that dialog and press VS Code's own Reload Window button. Using its button rather than reloading
+    // the GeckoSession keeps the editor's own recovery path, which is the one it is designed around.
+    //
+    // Two conditions are required together, because clicking a button in someone else's UI on a text
+    // match is exactly the kind of thing that goes wrong quietly: the dialog must talk about
+    // reconnecting, and the button must be a reload. Either alone is not enough.
+    function recoverIfDisconnected() {
+        try {
+            const dialogs = document.querySelectorAll('.monaco-dialog-box, [role="dialog"]');
+            for (const d of dialogs) {
+                const text = (d.textContent || '');
+                if (!/reconnect/i.test(text)) continue;
+                const buttons = d.querySelectorAll('button, a.monaco-button, .monaco-button');
+                for (const b of buttons) {
+                    if (!/reload/i.test(b.textContent || '')) continue;
+                    b.click();
+                    report('reconnect-recovered', 'clicked "' + (b.textContent || '').trim().slice(0, 30) + '"');
+                    return true;
+                }
+                // Dialog found, no reload button in it: say so rather than silently doing nothing, so a
+                // changed dialog shows up as a changed message instead of as this feature disappearing.
+                report('reconnect-dialog-no-button', text.replace(/\s+/g, ' ').slice(0, 60));
+                return false;
+            }
+            return false;
+        } catch (e) {
+            report('reconnect-check-failed', String(e && e.name));
+            return false;
+        }
+    }
+
+    function report(kind, detail) {
+        try { if (activePort) activePort.postMessage({ type: 'recovery', kind: kind, detail: detail }); }
+        catch (e) {}
+    }
+
     // ====================== SAVED EDITOR LOGIN ======================
     // A self-hosted editor puts a password page between the user and the workbench on every fresh
     // session, which on a phone is a real cost. The saved profile removes it.
@@ -1140,6 +1184,9 @@
                         break;
                     case 'loginFill':
                         fillSavedLogin(msg.password);
+                        break;
+                    case 'checkConnection':
+                        recoverIfDisconnected();
                         break;
                     case 'key':
                         dispatchSpecialKey(msg);

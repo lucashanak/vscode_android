@@ -3566,6 +3566,13 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         maybeAutoRefreshStaleTunnel()
+        // For a self-hosted editor the line above deliberately does nothing (see its comment). Instead
+        // ask the page whether it actually lost the connection, and let it use VS Code's own Reload
+        // Window button if it did. Delayed a little because the content script's port is re-established
+        // on resume and a message sent before that lands nowhere.
+        if (sessionWrapper.visibility == View.VISIBLE && geckoContainer.visibility == View.VISIBLE) {
+            geckoView.postDelayed({ overlayManager.checkConnection() }, 1200)
+        }
         // Deliberate: this resets the retry counter and force-reconnects, so even a session the
         // user was already told had failed gets one more try. Reopening the app is exactly when
         // someone wants their terminal back — don't "fix" this into a no-op.
