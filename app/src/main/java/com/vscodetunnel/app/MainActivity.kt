@@ -727,8 +727,6 @@ class MainActivity : AppCompatActivity() {
         val keyPassField = addField("Key passphrase (if the key is encrypted)", existing?.keyPassphrase ?: "",
             android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD)
         val startupField = addField("Startup command (e.g. cd /app && tmux attach)", existing?.startupCommand ?: "")
-        val portFwdField = addField("Port forwards (e.g. L8080:127.0.0.1:80,R3000:localhost:3000)",
-            existing?.portForwards?.joinToString(",") ?: "")
         val snippetsField = addField("Snippets (comma-separated commands)",
             existing?.snippets?.joinToString(",") ?: "")
 
@@ -764,8 +762,112 @@ class MainActivity : AppCompatActivity() {
 
         addLabel("Automation")
         layout.addView(startupField)
-        addLabel("Port forwarding (L=local, R=remote)")
-        layout.addView(portFwdField)
+        // Port forwarding, as fields rather than as a syntax to remember.
+        //
+        // This used to be one text box parsed from "L8080:127.0.0.1:80,R3000:host:3000". That round-trips
+        // correctly — PortForward overrides toString to emit exactly that — but it required knowing the
+        // form, and a typo produced a silently dropped forward, because the parser skipped anything it
+        // could not read. That parser is gone with it. Storage is unchanged: forwards were always stored
+        // as JSON, and the text box was only ever an input method.
+        addLabel("Port forwarding \u2014 \u2197 opens a local forward in your browser "
+            + "(needs the session connected)")
+        val fwdContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+        layout.addView(fwdContainer)
+        val fwdRows = mutableListOf<Triple<Button, Array<EditText>, View>>()
+
+        fun smallField(value: String, hintText: String, numeric: Boolean, weight: Float) =
+            EditText(this).apply {
+                setText(value)
+                hint = hintText
+                inputType = if (numeric) android.text.InputType.TYPE_CLASS_NUMBER
+                    else android.text.InputType.TYPE_CLASS_TEXT
+                setTextColor(resources.getColor(R.color.text_primary, theme))
+                setHintTextColor(resources.getColor(R.color.text_secondary, theme))
+                textSize = 13f
+                background = resources.getDrawable(R.drawable.bg_input, theme)
+                setPadding(dp(8), dp(6), dp(8), dp(6))
+                layoutParams = LinearLayout.LayoutParams(0,
+                    LinearLayout.LayoutParams.WRAP_CONTENT, weight).apply { marginEnd = dp(4) }
+            }
+
+        fun addForwardRow(pf: PortForward?) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(4) }
+            }
+            // L or R as a toggle, because those are the only two options and a spinner for two values
+            // is more taps than a button that says which one it is.
+            val typeBtn = Button(this).apply {
+                text = if (pf?.type == "remote") "R" else "L"
+                isAllCaps = false; textSize = 13f
+                setTextColor(resources.getColor(R.color.text_white, theme))
+                setBackgroundColor(resources.getColor(R.color.surface_variant, theme))
+                setPadding(0, dp(6), 0, dp(6))
+                layoutParams = LinearLayout.LayoutParams(dp(38),
+                    LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(4) }
+                setOnClickListener { text = if (text == "L") "R" else "L" }
+            }
+            val localF = smallField(pf?.localPort?.takeIf { it > 0 }?.toString() ?: "", "8080", true, 1.1f)
+            val hostF = smallField(pf?.remoteHost ?: "127.0.0.1", "127.0.0.1", false, 2.4f)
+            val remoteF = smallField(pf?.remotePort?.takeIf { it > 0 }?.toString() ?: "", "80", true, 1.1f)
+            // Opens the forwarded port in the phone's own browser. Only meaningful for a local forward
+            // and only once the session is connected — the toast says so rather than letting the
+            // browser show a bare connection error the user has to interpret.
+            val openBtn = Button(this).apply {
+                text = "\u2197"
+                isAllCaps = false; textSize = 15f
+                setTextColor(resources.getColor(R.color.text_white, theme))
+                setBackgroundColor(resources.getColor(R.color.surface_variant, theme))
+                setPadding(0, dp(6), 0, dp(6))
+                layoutParams = LinearLayout.LayoutParams(dp(40),
+                    LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(4) }
+                setOnClickListener {
+                    val port = localF.text.toString().trim().toIntOrNull()
+                    if (typeBtn.text != "L" || port == null || port <= 0) {
+                        android.widget.Toast.makeText(this@MainActivity,
+                            "Only a local (L) forward with a port can be opened",
+                            android.widget.Toast.LENGTH_SHORT).show()
+                    } else {
+                        openInDefaultBrowser("http://127.0.0.1:$port")
+                    }
+                }
+            }
+            val delBtn = Button(this).apply {
+                text = "\u00D7"
+                isAllCaps = false; textSize = 15f
+                setTextColor(resources.getColor(R.color.text_secondary, theme))
+                setBackgroundColor(resources.getColor(R.color.surface_variant, theme))
+                setPadding(0, dp(6), 0, dp(6))
+                layoutParams = LinearLayout.LayoutParams(dp(36), LinearLayout.LayoutParams.WRAP_CONTENT)
+                setOnClickListener {
+                    fwdContainer.removeView(row)
+                    fwdRows.removeAll { it.third === row }
+                }
+            }
+            row.addView(typeBtn); row.addView(localF); row.addView(hostF)
+            row.addView(remoteF); row.addView(openBtn); row.addView(delBtn)
+            fwdContainer.addView(row)
+            fwdRows.add(Triple(typeBtn, arrayOf(localF, hostF, remoteF), row))
+        }
+
+        existing?.portForwards?.forEach { addForwardRow(it) }
+        val addFwdBtn = Button(this).apply {
+            text = "+ Add port forward"
+            isAllCaps = false; textSize = 13f
+            setTextColor(resources.getColor(R.color.text_white, theme))
+            setBackgroundColor(resources.getColor(R.color.surface_variant, theme))
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            setOnClickListener { addForwardRow(null) }
+        }
+        layout.addView(addFwdBtn)
         addLabel("Quick snippets for toolbar")
         layout.addView(snippetsField)
 
@@ -880,7 +982,17 @@ class MainActivity : AppCompatActivity() {
                 privateKey = key,
                 keyPassphrase = keyPassField.text.toString(),
                 startupCommand = startupField.text.toString().trim(),
-                portForwards = parsePortForwards(portFwdField.text.toString()),
+                portForwards = fwdRows.mapNotNull { (typeBtn, fields, _) ->
+                    val local = fields[0].text.toString().trim().toIntOrNull()
+                    val host = fields[1].text.toString().trim().ifEmpty { "127.0.0.1" }
+                    val remote = fields[2].text.toString().trim().toIntOrNull()
+                    // A half-filled row is dropped rather than stored as a zero port, which the
+                    // connect path would then skip anyway without saying so.
+                    if (local == null || remote == null || local <= 0 || remote <= 0) null
+                    else PortForward(
+                        type = if (typeBtn.text == "R") "remote" else "local",
+                        localPort = local, remoteHost = host, remotePort = remote)
+                },
                 snippets = snippetsField.text.toString().split(",").map { it.trim() }.filter { it.isNotBlank() },
                 useMosh = moshCheck.isChecked,
                 useTmux = tmuxCheck.isChecked,
@@ -901,17 +1013,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun parsePortForwards(input: String): List<PortForward> {
-        if (input.isBlank()) return emptyList()
-        return input.split(",").mapNotNull { s ->
-            val t = s.trim()
-            if (t.length < 2) return@mapNotNull null
-            val type = if (t[0] == 'R' || t[0] == 'r') "remote" else "local"
-            val parts = t.substring(1).split(":", limit = 3)
-            if (parts.size < 3) return@mapNotNull null
-            PortForward(type, parts[0].toIntOrNull() ?: 0, parts[1], parts[2].toIntOrNull() ?: 0)
-        }
-    }
 
     private fun showKeyGenDialog() {
         val layout = LinearLayout(this).apply {
@@ -3544,6 +3645,26 @@ class MainActivity : AppCompatActivity() {
             val host = java.net.URI(url).host?.lowercase() ?: return false
             host == "vscode.dev" || host.endsWith(".vscode.dev")
         } catch (_: Throwable) { false }
+
+    /**
+     * Hands a URL to the phone's own browser.
+     *
+     * Used for forwarded ports: a local forward binds 127.0.0.1 on the *phone*, so once the SSH session
+     * is up the port is reachable by anything on the device, the browser included. CATEGORY_BROWSABLE
+     * keeps this app out of its own chooser.
+     */
+    private fun openInDefaultBrowser(url: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
+                addCategory(Intent.CATEGORY_BROWSABLE)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+        } catch (t: Throwable) {
+            FileLogger.w(TAG, "No browser for $url: ${t.message}")
+            android.widget.Toast.makeText(this, "No browser available for $url",
+                android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 
     private fun reloadCurrentTunnel(reason: String) {
         val idx = currentSessionIdx
