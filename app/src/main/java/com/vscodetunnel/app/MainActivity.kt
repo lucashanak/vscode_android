@@ -3584,6 +3584,15 @@ class MainActivity : AppCompatActivity() {
     private fun maybeAutoRefreshStaleTunnel() {
         val thresholdMin = tunnelStaleRefreshMin
         if (thresholdMin <= 0) return
+        // vscode.dev only, and for the same reason the cold-start clear is: the justification below
+        // does not transfer. The reload exists because VS Code's reconnection sets a *static*
+        // permanent-failure flag, so after a long idle every connection is dead and a fresh JS context
+        // is the only way back. That is a hosted-tunnel problem. A self-hosted code-server reconnects
+        // its own WebSocket, has no Microsoft credential to go stale, and serves commit-pinned assets
+        // with a one-year max-age — so reloading buys nothing and costs a full workbench boot, which
+        // is the ~10 s pause on every return to the app after a while.
+        val currentUrl = currentTunnelUrl
+        if (currentUrl != null && !isMicrosoftTunnel(currentUrl)) return
         if (autoRefreshInFlight) return
         if (lastBackgroundTimeMs == 0L) return
         if (sessionWrapper.visibility != View.VISIBLE) return
