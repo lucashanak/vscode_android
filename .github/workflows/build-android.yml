@@ -8,6 +8,21 @@ on:
 permissions:
   contents: write
 
+# The version comes from the newest existing tag plus one, so two runs that overlap both compute the
+# same number and the second dies on `gh release create` with "a release with the same tag name
+# already exists". Serialising the group removes the overlap, which is the only fix that does not risk
+# a mismatched artifact: the version is baked into the APK by the Sync step long before the release is
+# cut, so bumping the tag on a collision would publish vX.Y.Z+1 containing an APK that reports vX.Y.Z
+# and quietly break the in-app updater.
+#
+# cancel-in-progress stays false so a queued run still gets released rather than being discarded. Note
+# the consequence: with three pushes in quick succession GitHub keeps only one run pending, so an
+# intermediate commit may not get a release of its own. The newest always does, which is what matters
+# for something installed from the latest release.
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
 jobs:
   build-mosh:
     runs-on: ubuntu-latest
@@ -70,9 +85,13 @@ jobs:
       - name: Auto-increment version
         id: version
         run: |
-          # Get latest tag, default to v2.0.0 if none
-          LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "v2.0.0")
-          LATEST="${LATEST#v}"
+          # Refresh tags first: a checkout does not necessarily have the tag another run just
+          # pushed, and `git describe` additionally only considers tags reachable from HEAD.
+          git fetch --tags --force --quiet origin || true
+
+          # Highest version tag that exists, by version order rather than by reachability or date.
+          LATEST=$(git tag --list 'v[0-9]*' | sed 's/^v//' | sort -V | tail -1)
+          LATEST="${LATEST:-2.0.0}"
           IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST"
 
           # Bump patch version
@@ -205,6 +224,13 @@ jobs:
           ASSETS="VSCodeTunnel.apk"
           if [ -n "${{ steps.patch.outputs.patch_file }}" ]; then
             ASSETS="$ASSETS ${{ steps.patch.outputs.patch_file }}"
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::$TAG already exists. Two runs overlapped despite the concurrency group."
+            echo "The APK already carries $TAG internally, so re-tagging it would publish a release"
+            echo "whose contents disagree with its name. Re-run this job instead."
+            exit 1
           fi
 
           gh release create "$TAG" $ASSETS \

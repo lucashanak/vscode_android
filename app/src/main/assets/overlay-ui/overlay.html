@@ -87,6 +87,11 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 .sw-ne { grid-area:ne; justify-self:end; padding-right:4px; }
 .sw-sw { grid-area:sw; justify-self:start; padding-left:4px; }
 .sw-se { grid-area:se; justify-self:end; padding-right:4px; }
+/* Shifted twins are shown, but dimmed and smaller. They are derivable from the key above them, so
+   they are reference rather than primary information — printing them at full weight is what made the
+   old board unreadable at ~50 glyphs. This way every character a swipe can produce is visible and the
+   glyph you actually aim at still stands out. */
+.swipe-key .sw-derived { opacity:0.45; font-size:15px; }
 .shifted .swipe-key .sw-c { text-transform:uppercase; }
 
 /* Swipe-enabled special keys (Shift, Backspace) — UK style */
@@ -195,6 +200,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
     .swipe-special { height:var(--kh-wide); }
     .sw-c { font-size:20px; }
     .sw-nw,.sw-ne,.sw-sw,.sw-se { font-size:14px; }
+    .swipe-key .sw-derived { font-size:12px; }
     .swipe-key { grid-template-rows: 18px 1fr 18px; }
     .swipe-special { grid-template-rows: 18px 1fr 18px; }
     .row-scroll .key { height:calc(var(--kh-wide) * 0.83); font-size:20px; }
@@ -213,6 +219,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
     .swipe-special .sw-c { font-size:22px; }
     .swipe-special .sw-ne { font-size:15px; }
     .sw-nw,.sw-ne,.sw-sw,.sw-se { font-size:17px; }
+    .swipe-key .sw-derived { font-size:14px; }
     .swipe-key { grid-template-rows: 20px 1fr 20px; }
     .swipe-special { grid-template-rows: 20px 1fr 20px; }
     .row { gap:3px; padding:1px 2px; }
@@ -322,17 +329,19 @@ function SK(ch) {
             if (labels[i] && FN_MAP[labels[i]]) { labels[i] = FN_MAP[labels[i]]; break; }
         }
     }
-    // A south corner that holds the shifted twin of the corner above it is derivable from the
-    // rule, so it is left blank. This is what keeps every key to two glyphs or fewer, and it is
-    // computed from SHIFT_TWIN rather than hand-listed so a label cannot contradict the table.
-    // Only the label is dropped — attachKeyEvents still reads the full table, so the swipe works.
-    if (labels[3] && SHIFT_TWIN[labels[1]] === labels[3]) labels[3] = null;
-    if (labels[2] && SHIFT_TWIN[labels[0]] === labels[2]) labels[2] = null;
+    // Every character a swipe can produce is shown. A south corner holding the shifted twin of the
+    // corner above it is marked derived and rendered dimmer and smaller: it is reference rather than
+    // something to hunt for, since the rule already tells you it is there. Which corners those are is
+    // computed from SHIFT_TWIN, not hand-listed, so the styling cannot contradict the table.
+    const derivedSw = !!(labels[2] && SHIFT_TWIN[labels[0]] === labels[2]);
+    const derivedSe = !!(labels[3] && SHIFT_TWIN[labels[1]] === labels[3]);
     const [nw,ne,sw,se] = labels.map(v => v ? esc(v) : '');
+    const swCls = derivedSw ? 'sw-sw sw-derived' : 'sw-sw';
+    const seCls = derivedSe ? 'sw-se sw-derived' : 'sw-se';
     return `<button class="key char-key swipe-key" data-char="${ch}">
         <span class="sw-nw">${nw}</span><span class="sw-ne">${ne}</span>
         <span class="sw-c">${ch}</span>
-        <span class="sw-sw">${sw}</span><span class="sw-se">${se}</span>
+        <span class="${swCls}">${sw}</span><span class="${seCls}">${se}</span>
     </button>`;
 }
 // Plain key for wide layout: no swipe corner labels (symbols have dedicated keys)
