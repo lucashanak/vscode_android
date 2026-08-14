@@ -31,6 +31,7 @@ class FloatingTouchpad(
     private var totalMove = 0f
     private var fingerCount = 0
     private var scrollLastY = 0f
+    private var scrollLastX = 0f
     private var tapStart = 0L
     private var lastTapTime = 0L
     private var isDragSelecting = false
@@ -251,7 +252,10 @@ class FloatingTouchpad(
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 fingerCount = event.pointerCount
-                if (fingerCount >= 2) scrollLastY = event.getY(0)
+                if (fingerCount >= 2) {
+                    scrollLastX = event.getX(0)
+                    scrollLastY = event.getY(0)
+                }
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
@@ -261,15 +265,21 @@ class FloatingTouchpad(
                 totalMove += Math.abs(dx) + Math.abs(dy)
 
                 if (event.pointerCount >= 2) {
+                    // Both axes. This had the same omission as the overlay's touchpad: only Y was tracked,
+                    // so a sideways two-finger gesture had nothing to send.
+                    val scrollDx = (event.getX(0) - scrollLastX) / density
                     val scrollDy = (event.getY(0) - scrollLastY) / density
+                    scrollLastX = event.getX(0)
                     scrollLastY = event.getY(0)
                     val dir = if (scrollInvert) -1f else 1f
-                    overlayManager.performScroll(scrollDy * scrollSpeed * dir)
+                    overlayManager.performScroll(
+                        scrollDx * scrollSpeed * dir, scrollDy * scrollSpeed * dir)
                 } else if (edgeScrolling) {
                     // Right-edge single-finger scroll
                     val dyDp = dy / density
                     val dir = if (scrollInvert) -1f else 1f
-                    overlayManager.performScroll(dyDp * scrollSpeed * dir)
+                    // Right-edge single-finger scroll: vertical by design, so no X component.
+                        overlayManager.performScroll(0f, dyDp * scrollSpeed * dir)
                 } else if (dragCandidate && !isDragSelecting) {
                     // Freeze cursor during drag-detection window so the drag
                     // anchors at the first-click position, not wherever the

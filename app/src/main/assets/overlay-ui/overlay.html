@@ -267,7 +267,7 @@ html, body { background:#1b1b1b; touch-action:none; user-select:none; -webkit-us
 
 // ======================== STATE ========================
 const mods = { ctrl:false, alt:false, shift:false, meta:false };
-const tp = { tracking:false, lastX:0, lastY:0, startX:0, startY:0, totalMove:0, fingers:0, scrollLastY:0, tapStart:0, lastTap:0, tapTimeout:null };
+const tp = { tracking:false, lastX:0, lastY:0, startX:0, startY:0, totalMove:0, fingers:0, scrollLastX:0, scrollLastY:0, tapStart:0, lastTap:0, tapTimeout:null };
 let SENSITIVITY = 1.5, SCROLL_SENS = 0.2, SCROLL_INVERT = true;
 // Called from Android when touchpad settings change
 function updateTouchpad(sensPct, scrollPct, invertScroll) {
@@ -283,7 +283,7 @@ let spaceAccum = 0, spaceDragging = false, spaceLastX = 0;
 // ======================== ANDROID BRIDGE ========================
 const A = window.Android || {
     sendChar(){}, sendKey(){}, pointerMove(){}, click(){}, mouseDown(){}, mouseUp(){},
-    doubleClick(){}, scroll(){}, hideOverlay(){}, sendModifier(){}, backToMenu(){},
+    doubleClick(){}, scroll(){}, scrollBy(){}, hideOverlay(){}, sendModifier(){}, backToMenu(){},
     getClipboard(){ return ''; }, requestResize(){}
 };
 
@@ -1440,7 +1440,7 @@ tpArea.addEventListener('touchstart', e => {
     tp.lastX = t[0].clientX; tp.lastY = t[0].clientY;
     tp.startX = t[0].clientX; tp.startY = t[0].clientY;
     tp.totalMove = 0;
-    if (t.length >= 2) tp.scrollLastY = t[0].clientY;
+    if (t.length >= 2) { tp.scrollLastX = t[0].clientX; tp.scrollLastY = t[0].clientY; }
     tp.tapStart = Date.now();
     // Detect right-edge scroll zone
     const rect = tpArea.getBoundingClientRect();
@@ -1465,8 +1465,12 @@ tpArea.addEventListener('touchmove', e => {
     tp.lastX = t.clientX; tp.lastY = t.clientY;
     tp.totalMove += Math.abs(dx) + Math.abs(dy);
     if (e.targetTouches.length >= 2) {
-        const sd = t.clientY - tp.scrollLastY; tp.scrollLastY = t.clientY;
-        A.scroll(sd * SCROLL_SENS * (SCROLL_INVERT ? -1 : 1));
+        // Both axes. The horizontal delta was never computed, so sideways scrolling had nothing to
+        // deliver — it was missing rather than broken.
+        const sdx = t.clientX - tp.scrollLastX; tp.scrollLastX = t.clientX;
+        const sdy = t.clientY - tp.scrollLastY; tp.scrollLastY = t.clientY;
+        const inv = SCROLL_INVERT ? -1 : 1;
+        A.scrollBy(sdx * SCROLL_SENS * inv, sdy * SCROLL_SENS * inv);
     } else if (tpEdgeScrolling) {
         // Right-edge single-finger scroll
         A.scroll(dy * SCROLL_SENS * (SCROLL_INVERT ? -1 : 1));

@@ -486,12 +486,17 @@ class OverlayManager(
         event.recycle()
     }
 
-    private fun injectScroll(x: Float, y: Float, deltaY: Float) {
+    private fun injectScroll(x: Float, y: Float, deltaX: Float, deltaY: Float) {
         val session = geckoView.session ?: return
         val now = SystemClock.uptimeMillis()
         val coords = MotionEvent.PointerCoords().apply {
             this.x = x; this.y = y
+            // Both axes. Only VSCROLL was ever set, which is why two-finger scrolling worked
+            // vertically and did nothing sideways — the horizontal component was computed nowhere and
+            // carried nowhere. Same negation on both so the invert setting stays symmetrical, the way
+            // natural scrolling behaves on a real trackpad.
             setAxisValue(MotionEvent.AXIS_VSCROLL, -deltaY)
+            setAxisValue(MotionEvent.AXIS_HSCROLL, -deltaX)
         }
         val event = MotionEvent.obtain(now, now, MotionEvent.ACTION_SCROLL, 1,
             arrayOf(makeMouseProps()), arrayOf(coords),
@@ -644,13 +649,15 @@ class OverlayManager(
         }
     }
 
-    fun performScroll(deltaY: Float) {
+    fun performScroll(deltaX: Float, deltaY: Float) {
         if (inputTarget == InputTarget.SSH_TERMINAL) {
+            // Vertical only: a terminal has no horizontal scrollback to move, and xterm.js does not
+            // consume horizontal wheel events, so forwarding them would be noise.
             injectTerminalWheel(sshCursorX, sshCursorY, deltaY)
             return
         }
         geckoView.post {
-            injectScroll(cursorX, cursorY, deltaY)
+            injectScroll(cursorX, cursorY, deltaX, deltaY)
         }
     }
 
@@ -736,7 +743,17 @@ class OverlayManager(
         fun doubleClick() = performDoubleClick()
 
         @JavascriptInterface
-        fun scroll(deltaY: Float) = performScroll(deltaY)
+        fun scroll(deltaY: Float) = performScroll(0f, deltaY)
+
+        /**
+         * Two-axis scroll from the touchpad.
+         *
+         * Kept as a separate name rather than an overload of [scroll]: the WebView bridge resolves
+         * overloads by argument count, and a silently mis-resolved call here would look exactly like
+         * the bug this fixes.
+         */
+        @JavascriptInterface
+        fun scrollBy(deltaX: Float, deltaY: Float) = performScroll(deltaX, deltaY)
 
         @JavascriptInterface
         fun hideOverlay() {
